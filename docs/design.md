@@ -15,9 +15,10 @@ The Swift app (`Sources/`) is the behavioural and visual reference.
 
 ## Non-goals
 
-In-app browser and anything web-based, cloud/VMs, remote machines, SSH workspaces,
-browser cookie import, Sparkle auto-update, iOS. The Swift CLI's hundreds of
-cloud/browser/VM commands are out of scope.
+This is the **local** app. In-app browser and anything web-based, cmux Cloud/VMs,
+Manaflow relays and phone sync, browser cookie import, iOS. The Swift CLI's
+cloud/browser/VM commands are out of scope. See "Not planned" for local
+alternatives.
 
 ## Constraints
 
@@ -82,6 +83,25 @@ criteria pass and STATUS.md says so.
 | M4 notifications | Agents get your attention | OSC 9/99/777 → pane ring, tab highlight, sidebar text + badge, notification panel, Super+Shift+U, KDE desktop notification. |
 | M5 cli-socket | Scriptable like cmux | `cmux notify`, `dismiss-notification`, new workspace, split, send keys, list, focus over the socket; Claude Code hooks work unchanged. |
 | M6 parity-release | Feels like the Mac app, installable | Visual parity pass vs Swift app, macOS build, Linux package (AUR PKGBUILD), performance check with many panes. |
+| M7 feed | Approve agents without switching panes | Claude Code permission and plan approvals answered from the right sidebar Feed. |
+| M8 groups-dock | Organise many agents | Collapsible workspace groups in the sidebar; right-side Dock of terminals. |
+| M9 agent-coordination | Agents work together | `cmux agent message`, Claude Teams as native splits, workspace auto-naming, automations. |
+| M10 persistence | Nothing lost on restart | Layout restore, Vault agent-session resume, opt-in `local-tmux` persistence. |
+| M11 productivity | Faster everyday use | Command palette, `cmux.json` custom commands, SSH workspaces. |
 
-**Later (unscheduled):** session/layout restore, command palette, `cmux.json`
-custom commands, SSH workspaces, Claude Teams.
+M0–M6 are v1. M7–M11 come after, in order, unless STATUS.md records a change.
+
+## Not planned
+
+These cmux features depend on macOS or Manaflow's servers. Local alternatives
+are welcome but unscheduled; add one as a milestone only with the user's OK.
+
+| cmux feature | Why not | Possible local alternative |
+|---|---|---|
+| iOS Simulator pane | Needs Xcode | Works only in the macOS build, if ever added there |
+| cmux Cloud, VMs | Paid Manaflow service | SSH workspaces (M11) to your own machines |
+| iOS app, phone sync, push | Manaflow relays (BUSL-1.1) | KDE Connect forwards desktop notifications to a phone |
+| Custom SwiftUI sidebars | Needs a SwiftUI interpreter | Sidebar fields driven by a script or config file |
+| Computer use (`cmux-cua`) | macOS backend | A Linux MCP backend, if one exists |
+| Sparkle auto-update | macOS framework | AUR / pacman updates (M6) |
+| Privileged `sudo` helper | macOS helper | `pkexec`/polkit prompt |

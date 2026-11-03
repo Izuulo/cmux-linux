@@ -23,12 +23,18 @@
 | M4 notifications | not started |
 | M5 cli-socket | not started |
 | M6 parity-release | not started |
+| M7 feed | not started (post-v1) |
+| M8 groups-dock | not started (post-v1) |
+| M9 agent-coordination | not started (post-v1) |
+| M10 persistence | not started (post-v1) |
+| M11 productivity | not started (post-v1) |
 
 ## Decisions so far
 - Port from source (cmux is GPL-3.0-or-later); REA not needed. Our license: GPL-3.0-or-later.
 - Never copy from cmux's BUSL-1.1 server directories.
 - gpui for UI; libghostty-vt for terminal state (fallback `alacritty_terminal`, decided in M0).
-- Scope: terminal workspace only. No browser, cloud, remote, SSH.
+- Local app only: no browser, cmux Cloud, Manaflow relays. v1 = M0–M6; M7–M11 add the buildable extras.
+- macOS/server-only features are "Not planned" in docs/design.md; local alternatives need user OK.
 - Target: KDE Plasma Wayland first, macOS second. ⌘ → Super by default, all keys remappable.
 
 ## Open risks
