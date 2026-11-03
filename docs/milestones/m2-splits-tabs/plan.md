@@ -1196,7 +1196,7 @@ rc §1 (model, tab rules, close rules, new split), §2 (focus), §6 (zoom). Bons
   - `struct Layout` (`pub(crate) root`): `new()`, `root()`, `focused() -> PaneId`, `zoomed() -> Option<PaneId>`, `pane(PaneId) -> Option<&Pane>`, `focused_pane() -> &Pane`, `active_surface() -> SurfaceId`, `panes() -> Vec<&Pane>` (tree order), `pane_count()`, `surfaces()`, `pane_of(SurfaceId) -> Option<PaneId>`, `focus_pane(PaneId) -> bool`, `split(Orientation) -> SurfaceId` (no size check), `new_tab() -> SurfaceId`, `select_surface(SurfaceId) -> bool`, `cycle_tab(forward: bool)`, `select_tab_number(usize) -> bool`, `move_tab(isize) -> bool`, `move_surface(SurfaceId, to: PaneId, index: usize) -> bool`, `close_surface(SurfaceId) -> Closed`, `close_other_tabs() -> Vec<SurfaceId>`, `toggle_zoom() -> bool`, `focus_cycle(forward: bool) -> bool`, `neighbor(Direction) -> Option<PaneId>`, `focus_direction(Direction) -> bool`
   - `pub(crate)` for Task 4: `Node::contains_pane`, field `Layout::root`.
 
-- [ ] **Step 1: Write the failing tests.** Change `crates/cmux-core/src/lib.rs` to:
+- [x] **Step 1: Write the failing tests.** Change `crates/cmux-core/src/lib.rs` to:
 
 ```rust
 //! cmux-core: the UI-free model. M2: one workspace's split tree, panes and tabs.
@@ -1514,9 +1514,9 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail.** Run: `cargo test -p cmux-core`. Expected: compile errors (`cannot find type Layout`, `cannot find type PaneId`).
+- [x] **Step 2: Run tests to verify they fail.** Run: `cargo test -p cmux-core`. Expected: compile errors (`cannot find type Layout`, `cannot find type PaneId`).
 
-- [ ] **Step 3: Implement.** Insert above the tests module in `tree.rs`:
+- [x] **Step 3: Implement.** Insert above the tests module in `tree.rs`:
 
 ```rust
 use std::collections::HashMap;
@@ -2161,9 +2161,9 @@ fn overlap_y(a: &Rect, b: &Rect) -> f32 {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass.** Run: `cargo test -p cmux-core`. Expected: `test result: ok. 21 passed`.
+- [x] **Step 4: Run tests to verify they pass.** Run: `cargo test -p cmux-core`. Expected: `test result: ok. 21 passed`.
 
-- [ ] **Step 5: Format, lint, commit.**
+- [x] **Step 5: Format, lint, commit.**
 
 ```bash
 cargo fmt -p cmux-core
