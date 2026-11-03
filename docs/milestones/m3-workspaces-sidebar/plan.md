@@ -160,7 +160,7 @@ impl Workspaces {
 ```
 Ids are never reused. `move_to` returns false and changes nothing when `gap` is `index` or `index + 1`.
 
-- [ ] **Step 1: Write the failing tests** in `workspaces.rs` `#[cfg(test)] mod tests`:
+- [x] **Step 1: Write the failing tests** in `workspaces.rs` `#[cfg(test)] mod tests`:
 
 ```rust
 fn ids(w: &Workspaces) -> Vec<u64> { w.list().iter().map(|x| x.id.0).collect() }
@@ -283,10 +283,10 @@ fn ids_are_never_reused() {
 }
 ```
 
-- [ ] **Step 2: Run them.** `cargo test -p cmux-core workspaces`. Expected: compile errors (`Workspaces` not found).
-- [ ] **Step 3: Implement** the Interfaces block in `workspaces.rs`. The id counter starts at 1.
-- [ ] **Step 4: Run them.** `cargo test -p cmux-core`. Expected: all M2 tests plus 9 new ones pass.
-- [ ] **Step 5: Commit.** `cargo fmt -p cmux-core`, clippy line, then `git add crates/cmux-core && git commit -m "feat(cmux-core): workspace list with cmux insert, close, cycle, number, move and rename rules"`.
+- [x] **Step 2: Run them.** `cargo test -p cmux-core workspaces`. Expected: compile errors (`Workspaces` not found).
+- [x] **Step 3: Implement** the Interfaces block in `workspaces.rs`. The id counter starts at 1.
+- [x] **Step 4: Run them.** `cargo test -p cmux-core`. Expected: all M2 tests plus 9 new ones pass.
+- [x] **Step 5: Commit.** `cargo fmt -p cmux-core`, clippy line, then `git add crates/cmux-core && git commit -m "feat(cmux-core): workspace list with cmux insert, close, cycle, number, move and rename rules"`.
 
 ---
 
