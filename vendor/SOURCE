@@ -1,0 +1,9 @@
+ghostty-vt, ghostty-vt-sys
+  from https://github.com/manaflow-ai/cmux/tree/21dcc2b27b2ed014d723067ed253702e914d97ca/cmux-tui/crates
+  licence: MIT (cmux-tui Cargo metadata)
+  local edit: Cargo.toml `license.workspace = true` -> `license = "MIT"`
+  local addition: vendor/LICENSE-MIT (cmux-tui ships no LICENSE file; text added from its Cargo metadata)
+
+ghostty (git submodule)
+  https://github.com/manaflow-ai/ghostty @ ef4f1570d62117ebc51e3b0f07ad4f34032267b6
+  licence: MIT (Mitchell Hashimoto, Ghostty contributors)

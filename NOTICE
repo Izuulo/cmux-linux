@@ -19,5 +19,18 @@ REA reverse-engineer-anything skill (https://github.com/morluto/rea)
   .claude/skills/reverse-engineer-anything/
   Copyright (c) 2026 morluto. MIT License; see that directory's LICENSE.
 
-Further components (Ghostty, gpui, Rust crates) are listed here as they are
-added, with their licences.
+libghostty-vt Rust bindings (vendor/ghostty-vt, vendor/ghostty-vt-sys)
+  From cmux's cmux-tui crates. Copyright (c) 2024-present Manaflow, Inc. and
+  contributors. MIT; see vendor/LICENSE-MIT. Provenance in vendor/SOURCE.
+  These crates are MIT-licensed per their Cargo metadata, while cmux's
+  application code is GPL-3.0-or-later.
+
+Ghostty (vendor/ghostty, git submodule of github.com/manaflow-ai/ghostty)
+  Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors. MIT.
+  manaflow-ai/ghostty is a fork of ghostty-org/ghostty.
+
+gpui (https://github.com/zed-industries/zed, crates.io gpui 0.2.2)
+  Copyright Zed Industries. Apache-2.0.
+
+Further components (Rust crates) are listed here as they are added,
+with their licences.

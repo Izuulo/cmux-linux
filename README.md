@@ -11,8 +11,8 @@
   <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20macOS-lightgrey" alt="Platforms: Linux, macOS"/>
 </p>
 
-> **Status: pre-alpha.** The design is done and implementation is starting.
-> Nothing is usable yet. See [`STATUS.md`](STATUS.md) for where things stand.
+> **Status: pre-alpha.** Milestone M0 (toolchain and foundations) is done.
+> Nothing is usable as a terminal yet. See [`STATUS.md`](STATUS.md) for where things stand.
 
 ## Why
 
@@ -69,7 +69,35 @@ Each milestone has a spec, plan and journal under [`docs/milestones/`](docs/mile
 
 ## Building
 
-Not buildable yet. Build instructions arrive with milestone M0.
+```sh
+git clone --recursive https://github.com/finneritter/cmux-linux
+# existing clone: git submodule update --init --recursive
+```
+
+System packages:
+
+```sh
+# Ubuntu 24.04
+sudo apt-get install -y --no-install-recommends \
+  clang libclang-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+  libvulkan-dev libfontconfig-dev libfreetype-dev libx11-xcb-dev libxcb1-dev \
+  libssl-dev libzstd-dev
+# Arch / CachyOS
+sudo pacman -S --needed clang libxkbcommon libxkbcommon-x11 wayland \
+  vulkan-icd-loader vulkan-headers fontconfig freetype2 libxcb openssl zstd
+```
+
+Then install the pinned Zig 0.16.0 and put it on `PATH` (Ghostty's build calls a bare `zig`):
+
+```sh
+scripts/install-zig.sh
+export PATH="$PWD/.tools/zig:$PATH"
+cargo build --locked
+cargo test --locked
+cargo run -p cmux-app   # opens an empty window for now
+```
+
+Don't `cargo update` libc: it is pinned to 0.2.189 in `Cargo.lock` because xattr 0.2.3 needs `libc::ENOATTR`.
 
 ## Contributing
 

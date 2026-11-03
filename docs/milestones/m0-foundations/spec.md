@@ -15,7 +15,7 @@ libghostty-vt bindings) before building on them.
 Any terminal rendering, input, or real UI.
 
 ## Exit criteria
-1. `cargo run -p cmux-app` opens a blurred empty window on KDE Plasma Wayland.
+1. `cargo run -p cmux-app` opens a translucent empty window on KDE Plasma Wayland. Blur moved to M3 (user decision 2026-11-02): KWin 6.8 only offers `ext_background_effect_v1`, gpui 0.2.2 only binds `org_kde_kwin_blur`.
 2. `cargo test -p cmux-term` passes the byte-stream spike test.
 3. Engine decision recorded.
 4. CI green on the default branch.
