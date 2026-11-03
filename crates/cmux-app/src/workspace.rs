@@ -353,7 +353,8 @@ impl WorkspaceView {
             .flex_col()
             .overflow_hidden()
             .key_context("Pane")
-            .child(self.render_tab_strip(pane, focused, r.x, cx))
+            // Tab bounds are window-space; the content area starts at left_inset.
+            .child(self.render_tab_strip(pane, focused, self.left_inset + r.x, cx))
             .child(
                 div()
                     .relative()
