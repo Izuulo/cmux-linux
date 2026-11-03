@@ -80,6 +80,8 @@ pub struct Config {
     pub palette: [Option<Rgb>; 256],
     pub background_opacity: f32,
     pub background_opacity_cells: bool,
+    /// `background-blur`: any radius above zero (or `true`) turns the blur on.
+    pub background_blur: bool,
     pub cursor_style: CursorStyle,
     /// `None` lets the application (DEC mode 12) decide.
     pub cursor_style_blink: Option<bool>,
@@ -120,6 +122,7 @@ impl Default for Config {
             palette: [None; 256],
             background_opacity: 1.0,
             background_opacity_cells: false,
+            background_blur: false,
             cursor_style: CursorStyle::Block,
             cursor_style_blink: None,
             cursor_color: None,
@@ -162,6 +165,11 @@ impl Config {
             }
             "background-opacity" => self.background_opacity = number(value)?.clamp(0.0, 1.0),
             "background-opacity-cells" => self.background_opacity_cells = boolean(value)?,
+            "background-blur" => {
+                self.background_blur = boolean(value)
+                    .or_else(|_| number(value).map(|v| v > 0.0))
+                    .map_err(|_| format!("expected true, false or a radius: {value}"))?
+            }
             "cursor-style" => {
                 self.cursor_style = match value {
                     "block" => CursorStyle::Block,
