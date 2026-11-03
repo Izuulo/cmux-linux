@@ -2194,7 +2194,7 @@ rc §1 "Minimum size admission" and "Equalize", §3 resize notes, §4 "Dividers"
   - `Layout::resize_pane(&mut self, Direction, step: f32, width, height, scale) -> bool`
   - `Layout::equalize_all(&mut self)`, `Layout::equalize_run(&mut self, SplitId) -> bool`
 
-- [ ] **Step 1: Write the failing tests.** Change `crates/cmux-core/src/lib.rs` to:
+- [x] **Step 1: Write the failing tests.** Change `crates/cmux-core/src/lib.rs` to:
 
 ```rust
 //! cmux-core: the UI-free model. M2: one workspace's split tree, panes and tabs.
@@ -2424,9 +2424,9 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail.** Run: `cargo test -p cmux-core`. Expected: compile errors (`no method named rects`, `cannot find value RESIZE_STEP`).
+- [x] **Step 2: Run tests to verify they fail.** Run: `cargo test -p cmux-core`. Expected: compile errors (`no method named rects`, `cannot find value RESIZE_STEP`).
 
-- [ ] **Step 3: Implement.** Insert above the tests module in `geometry.rs`:
+- [x] **Step 3: Implement.** Insert above the tests module in `geometry.rs`:
 
 ```rust
 use crate::tree::{
@@ -2895,9 +2895,9 @@ impl Layout {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass.** Run: `cargo test -p cmux-core`. Expected: `test result: ok. 32 passed`.
+- [x] **Step 4: Run tests to verify they pass.** Run: `cargo test -p cmux-core`. Expected: `test result: ok. 32 passed`.
 
-- [ ] **Step 5: Format, lint, commit.**
+- [x] **Step 5: Format, lint, commit.**
 
 ```bash
 cargo fmt -p cmux-core
