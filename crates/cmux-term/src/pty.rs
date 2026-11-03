@@ -3,8 +3,14 @@
 //! Threads: a reader feeds PTY output into the `Term` (under its mutex) and reports events;
 //! a writer owns the PTY writer and drains one channel that carries both user input and the
 //! terminal's own replies, so nothing ever writes from inside `Term::feed`.
+//!
+//! The reader `poll`s the master, a wake socket and (Linux) a pidfd of the shell, so it never
+//! blocks forever: dropping the `Session` wakes it, and the shell exiting ends the session even
+//! when a `setsid` grandchild still holds the PTY slave open.
 
 use std::io::{self, Read, Write};
+use std::os::fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd};
+use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
@@ -30,6 +36,8 @@ pub struct Session {
     child: ChildGuard,
     /// Set on drop so the reader stops reporting events.
     closed: Arc<AtomicBool>,
+    /// Dropped with the session; the reader sees its peer hang up and returns.
+    _wake: UnixStream,
 }
 
 /// Owns the child; dropping it tears the child down without blocking the caller.
@@ -116,6 +124,18 @@ impl Session {
         let master = pair.master;
         let mut reader = master.try_clone_reader().map_err(io::Error::other)?;
         let mut pty_writer = master.take_writer().map_err(io::Error::other)?;
+        let raw = master
+            .as_raw_fd()
+            .ok_or_else(|| io::Error::other("PTY master has no fd"))?;
+        // SAFETY: `raw` is the master's fd and `master` is alive for this borrow; the clone
+        // is an independent fd the reader polls.
+        let master_fd = unsafe { BorrowedFd::borrow_raw(raw) }.try_clone_to_owned()?;
+        let exit_fd = child
+            .0
+            .as_ref()
+            .and_then(|c| c.process_id())
+            .and_then(pidfd);
+        let (wake, wake_peer) = UnixStream::pair()?;
 
         let (tx, rx) = mpsc::channel::<Vec<u8>>();
         let mut term = Term::new(cols, rows, tx.clone()).map_err(io::Error::other)?;
@@ -143,14 +163,33 @@ impl Session {
             .name("pty-reader".into())
             .spawn(move || {
                 let mut buf = vec![0u8; 64 * 1024];
+                let mut child_gone = false;
                 loop {
+                    let ready = match wait(&master_fd, &wake_peer, exit_fd.as_ref(), child_gone) {
+                        Ok(ready) => ready,
+                        Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                        Err(_) => break,
+                    };
+                    if ready.wake {
+                        return; // the Session was dropped
+                    }
+                    if ready.exited {
+                        // Drain what is buffered, then end even if a grandchild keeps the slave.
+                        child_gone = true;
+                    }
+                    if !ready.master {
+                        if child_gone {
+                            break;
+                        }
+                        continue;
+                    }
                     match reader.read(&mut buf) {
                         Ok(0) => break,
                         Ok(n) => {
-                            let events = shared
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                .feed(&buf[..n]);
+                            let Some(events) = guarded(&shared, |t| t.feed(&buf[..n])) else {
+                                eprintln!("cmux-linux: terminal parser panicked; closing it");
+                                break;
+                            };
                             if reader_closed.load(Ordering::Acquire) {
                                 return;
                             }
@@ -171,6 +210,7 @@ impl Session {
             master,
             child,
             closed,
+            _wake: wake,
         })
     }
 
@@ -205,7 +245,87 @@ impl Session {
 impl Drop for Session {
     fn drop(&mut self) {
         self.closed.store(true, Ordering::Release);
-        // Fields drop after this: `writer` closing ends the writer thread, and `child`
-        // hangs up the process group and reaps it in the background.
+        // Fields drop after this: `_wake` closing wakes the reader, which returns and drops its
+        // `Term` clone; `writer` closing then ends the writer thread, so every master fd closes
+        // and the kernel hangs up the PTY. `child` SIGHUPs the process group and reaps it.
+    }
+}
+
+/// Runs `f` on the locked value. A panic inside `f` is caught and reported as `None`, and the
+/// poison is cleared so the GUI thread's later `lock().unwrap()` does not panic too.
+fn guarded<T, R>(m: &Mutex<T>, f: impl FnOnce(&mut T) -> R) -> Option<R> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        f(&mut m.lock().unwrap_or_else(std::sync::PoisonError::into_inner))
+    }));
+    m.clear_poison();
+    result.ok()
+}
+
+struct Ready {
+    master: bool,
+    wake: bool,
+    exited: bool,
+}
+
+/// Blocks until the master is readable (or hung up), the wake socket's peer is gone, or the
+/// child exited. Once `child_gone`, only checks whether output is still buffered.
+fn wait(
+    master: &OwnedFd,
+    wake: &UnixStream,
+    exit: Option<&OwnedFd>,
+    child_gone: bool,
+) -> io::Result<Ready> {
+    let fd = |fd: RawFd| libc::pollfd {
+        fd,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    // A negative fd is ignored by poll.
+    let exit_fd = exit.filter(|_| !child_gone).map_or(-1, AsRawFd::as_raw_fd);
+    let mut fds = [fd(master.as_raw_fd()), fd(wake.as_raw_fd()), fd(exit_fd)];
+    let timeout = if child_gone { 0 } else { -1 };
+    // SAFETY: `fds` is a valid array of 3 pollfds for the duration of the call.
+    if unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, timeout) } < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let hit = |p: &libc::pollfd| p.revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0;
+    Ok(Ready {
+        master: hit(&fds[0]),
+        wake: hit(&fds[1]),
+        exited: hit(&fds[2]),
+    })
+}
+
+/// A pidfd that becomes readable when `pid` exits.
+// shortcut: Linux only (pidfd_open, 5.3+); elsewhere the session ends on PTY EOF as in M1, so a
+// setsid grandchild can keep a pane open. Use kqueue EVFILT_PROC in the M6 macOS build.
+fn pidfd(pid: u32) -> Option<OwnedFd> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::fd::FromRawFd;
+        // SAFETY: plain syscall; on success the kernel returns a new fd that nothing else owns.
+        let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid as libc::pid_t, 0) };
+        // SAFETY: `fd` is that new, open fd.
+        (fd >= 0).then(|| unsafe { OwnedFd::from_raw_fd(fd as RawFd) })
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = pid;
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_panic_under_the_lock_is_caught_and_unpoisoned() {
+        let m = Mutex::new(1);
+        assert_eq!(guarded(&m, |v| *v + 1), Some(2));
+        let r: Option<()> = guarded(&m, |_| panic!("boom"));
+        assert_eq!(r, None);
+        assert!(!m.is_poisoned());
+        assert_eq!(*m.lock().unwrap(), 1);
     }
 }
