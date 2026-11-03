@@ -138,9 +138,11 @@ pub fn key_input(ks: &Keystroke, action: KeyAction) -> KeyInput {
     let utf8 = match &ks.key_char {
         Some(text) if !text.chars().any(char::is_control) => text.clone(),
         Some(_) => String::new(),
-        None if ks.key == "space" => " ".into(),
-        None if ks.key.chars().count() == 1 && m.shift => ks.key.to_uppercase(),
-        None if ks.key.chars().count() == 1 => ks.key.clone(),
+        // Only under Ctrl: without it, a missing key_char means a dead key or compose is pending,
+        // and typing the key's own character would leak a stray `'` before the composed `é`.
+        None if m.control && ks.key == "space" => " ".into(),
+        None if m.control && ks.key.chars().count() == 1 && m.shift => ks.key.to_uppercase(),
+        None if m.control && ks.key.chars().count() == 1 => ks.key.clone(),
         None => String::new(),
     };
     let consumed_mods = if m.shift && !utf8.is_empty() {
@@ -190,6 +192,14 @@ mod tests {
         let mut out = Vec::new();
         enc.encode(&key_input(k, action), &mut out).unwrap();
         out
+    }
+
+    #[test]
+    fn pending_dead_key_types_nothing() {
+        // gpui: dead_acute on the US-Intl `'` key arrives as key "'" with key_char None while composing.
+        assert_eq!(key_input(&ks("", "'", None), KeyAction::Press).utf8, "");
+        assert!(encode(&ks("", "'", None)).is_empty());
+        assert!(encode(&ks("s", "`", None)).is_empty());
     }
 
     #[test]
