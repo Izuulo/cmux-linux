@@ -9,8 +9,8 @@
 use cmux_term::ghostty_vt::{CellWidth, CursorShape, UnderlineStyle as VtUnderline};
 use cmux_term::selection::range_contains;
 use gpui::{
-    App, BorderStyle, Bounds, Element, ElementId, Entity, Font, FontStyle, FontWeight,
-    GlobalElementId, Hsla, InspectorElementId, IntoElement, LayoutId, Pixels, Point,
+    App, BorderStyle, Bounds, Element, ElementId, ElementInputHandler, Entity, Font, FontStyle,
+    FontWeight, GlobalElementId, Hsla, InspectorElementId, IntoElement, LayoutId, Pixels, Point,
     StrikethroughStyle, Style, TextRun, UnderlineStyle, Window, fill, outline, point, px, relative,
     size,
 };
@@ -396,12 +396,18 @@ impl Element for TerminalElement {
         &mut self,
         _: Option<&GlobalElementId>,
         _: Option<&InspectorElementId>,
-        _bounds: Bounds<Pixels>,
+        bounds: Bounds<Pixels>,
         _: &mut (),
         frame: &mut Frame,
         window: &mut Window,
         cx: &mut App,
     ) {
+        let focus = self.view.read(cx).focus.clone();
+        window.handle_input(
+            &focus,
+            ElementInputHandler::new(bounds, self.view.clone()),
+            cx,
+        );
         let frame = &*frame;
         for r in &frame.rects {
             window.paint_quad(fill(frame.cell_bounds(r.col, r.row, r.cells), r.color));

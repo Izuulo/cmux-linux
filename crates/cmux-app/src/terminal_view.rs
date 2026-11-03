@@ -239,6 +239,10 @@ impl TerminalView {
         self.bound_keys.clear();
         // A release lost while unfocused would otherwise keep clicks local on a tracking TUI.
         self.dragging = false;
+        // The IME is disabled on leave and never ends the preedit itself.
+        if !focused {
+            self.marked_text.clear();
+        }
         if self.session.term.lock().unwrap().vt().mode(1004, false) {
             self.session.write(encode_focus(focused));
         }
@@ -288,8 +292,10 @@ impl TerminalView {
         };
         let bytes = self.encode_key(&ev.keystroke, action);
         if !bytes.is_empty() {
-            // Stopping here also keeps gpui from re-sending the key as IME text.
+            // Stopping here also keeps gpui from re-sending the key as IME text. A composed key
+            // ends the dead-key preedit; gpui sends no unmark for it (wayland/client.rs:1320).
             self.selection = None;
+            self.marked_text.clear();
             self.send_input(bytes);
             cx.stop_propagation();
             cx.notify();
