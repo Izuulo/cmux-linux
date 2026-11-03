@@ -303,7 +303,7 @@ D4, D6. rc §2.
 - `const NUMBERED: &str` becomes `const NUMBERED: &[&str] = &["selectSurfaceByNumber", "selectWorkspaceByNumber"];`. Every `action == NUMBERED` becomes `NUMBERED.contains(&action)`.
 - `Config.background_blur: bool`, default `false`.
 
-- [ ] **Step 1: Failing tests.** In `keybindings.rs` tests:
+- [x] **Step 1: Failing tests.** In `keybindings.rs` tests:
 
 ```rust
 #[test]
@@ -344,10 +344,10 @@ fn background_blur_accepts_bool_and_radius() {
 }
 ```
 
-- [ ] **Step 2: Run.** `cargo test -p cmux-config`. Expected: the new tests fail.
-- [ ] **Step 3: Implement.** Add the defaults and `NUMBERED`. Add `background-blur`: `true`/`false` → bool, else `number(value)? > 0.0`, else the parse error the other keys give. Extend the module's doc comment on the defaults table with "workspace actions: rc §2 (M3)".
-- [ ] **Step 4: Run.** `cargo test -p cmux-config --locked`. Expected: all pass.
-- [ ] **Step 5: Commit.** `git commit -m "feat(cmux-config): cmux workspace shortcuts and Ghostty background-blur"`.
+- [x] **Step 2: Run.** `cargo test -p cmux-config`. Expected: the new tests fail.
+- [x] **Step 3: Implement.** Add the defaults and `NUMBERED`. Add `background-blur`: `true`/`false` → bool, else `number(value)? > 0.0`, else the parse error the other keys give. Extend the module's doc comment on the defaults table with "workspace actions: rc §2 (M3)".
+- [x] **Step 4: Run.** `cargo test -p cmux-config --locked`. Expected: all pass.
+- [x] **Step 5: Commit.** `git commit -m "feat(cmux-config): cmux workspace shortcuts and Ghostty background-blur"`.
 
 ---
 
