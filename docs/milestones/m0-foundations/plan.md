@@ -16,7 +16,7 @@
 - gpui pinned with `=0.2.2`.
 - No personal info (names, emails, home paths, machine details) in tracked files.
 - `STATUS.md` max 100 lines; archive it to `docs/status-archive.md` before replacing it.
-- Default branch is `master`.
+- Default branch is `master`; M0 work happens on branch `m0-foundations` and merges at the end.
 
 ## File structure
 
@@ -724,7 +724,6 @@ Expected: first prints the line count and `exit=0`; second prints `has 101 lines
 name: CI
 on:
   push:
-    branches: [master]
   pull_request:
 
 jobs:
@@ -761,8 +760,8 @@ jobs:
 ```bash
 git add scripts/check-status-lines.sh .github/workflows/ci.yml
 git commit -m "ci: build, test, clippy and STATUS.md line check"
-git push
-gh run watch --exit-status
+git push -u origin HEAD
+gh run watch --exit-status "$(gh run list --branch "$(git branch --show-current)" --limit 1 --json databaseId --jq '.[0].databaseId')"
 ```
 
 Expected: run succeeds. If a system library is missing on Ubuntu, add its `-dev` package to the apt line and push again; record it in the journal.
