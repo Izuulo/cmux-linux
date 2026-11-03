@@ -86,9 +86,10 @@ fn parse(payload: &str) -> Option<OscEvent> {
     match code {
         "7" => parse_cwd(rest).map(OscEvent::Cwd),
         // shortcut: only ConEmu's 9;4 progress is filtered; other ConEmu 9;N subcommands read as text. Revisit in M4.
-        "9" if !rest.is_empty() && !rest.starts_with("4;") => {
-            Some(OscEvent::Notify { title: None, body: rest.to_string() })
-        }
+        "9" if !rest.is_empty() && !rest.starts_with("4;") => Some(OscEvent::Notify {
+            title: None,
+            body: rest.to_string(),
+        }),
         "777" => {
             let mut parts = rest.splitn(3, ';');
             if parts.next()? != "notify" {
@@ -96,7 +97,10 @@ fn parse(payload: &str) -> Option<OscEvent> {
             }
             let title = parts.next()?.to_string();
             let body = parts.next().unwrap_or("").to_string();
-            Some(OscEvent::Notify { title: Some(title), body })
+            Some(OscEvent::Notify {
+                title: Some(title),
+                body,
+            })
         }
         _ => None,
     }
@@ -144,7 +148,10 @@ mod tests {
     fn osc9_notification_with_st() {
         assert_eq!(
             scan(b"\x1b]9;Build done\x1b\\"),
-            vec![OscEvent::Notify { title: None, body: "Build done".into() }]
+            vec![OscEvent::Notify {
+                title: None,
+                body: "Build done".into()
+            }]
         );
     }
 
@@ -157,7 +164,10 @@ mod tests {
     fn osc777_notify_title_and_body() {
         assert_eq!(
             scan(b"\x1b]777;notify;Claude;Waiting for input\x07"),
-            vec![OscEvent::Notify { title: Some("Claude".into()), body: "Waiting for input".into() }]
+            vec![OscEvent::Notify {
+                title: Some("Claude".into()),
+                body: "Waiting for input".into()
+            }]
         );
     }
 
@@ -166,7 +176,13 @@ mod tests {
         let mut s = OscScanner::new();
         assert_eq!(s.feed(b"text \x1b]9;hel"), vec![]);
         assert_eq!(s.feed(b"lo\x1b"), vec![]);
-        assert_eq!(s.feed(b"\\more"), vec![OscEvent::Notify { title: None, body: "hello".into() }]);
+        assert_eq!(
+            s.feed(b"\\more"),
+            vec![OscEvent::Notify {
+                title: None,
+                body: "hello".into()
+            }]
+        );
     }
 
     #[test]
