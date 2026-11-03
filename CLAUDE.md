@@ -26,4 +26,5 @@ Start every session by reading `STATUS.md`, then the current milestone's docs.
 - No personal info (names, emails, home paths, machine details) in tracked files.
 
 ## Dev setup
+- `git submodule update --init --recursive` first (Ghostty lives in `vendor/ghostty`).
 - `scripts/install-zig.sh` once, then `export PATH="$PWD/.tools/zig:$PATH"` from the repo root before any cargo command (Ghostty's build calls a bare `zig`).

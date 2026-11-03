@@ -35,7 +35,7 @@ alternatives.
 
 | Decision | Choice | Why |
 |---|---|---|
-| UI toolkit | **gpui** (Zed's), pinned version | Draws everything itself on the GPU → identical look on Linux and macOS; Wayland + KWin blur; Zed's GPL-3 terminal view is a reference. |
+| UI toolkit | **gpui** (Zed's), pinned version | Draws everything itself on the GPU → identical look on Linux and macOS; Wayland; KWin blur needs `ext_background_effect_v1`, planned for M3; Zed's GPL-3 terminal view is a reference. |
 | Terminal engine | **libghostty-vt** via vendored cmux crates (decided M0, see journal) | Same engine as cmux/Ghostty. |
 | Terminal rendering | Own gpui element drawing the cell grid | Ghostty's full embedding API is macOS/iOS-only, so on Linux we render ourselves. |
 | Agent integration | `cmux` CLI + Unix socket, same command names, flags, env vars as cmux | Existing Claude Code hooks work unchanged. |
@@ -76,7 +76,7 @@ criteria pass and STATUS.md says so.
 
 | ID | Goal | Exit demo |
 |---|---|---|
-| M0 foundations | Toolchain and risky choices proven | Empty blurred gpui window on KDE Wayland; libghostty-vt builds and parses bytes; engine decision recorded; CI green. |
+| M0 foundations | Toolchain and risky choices proven | Empty translucent gpui window on KDE Wayland (blur → M3); libghostty-vt builds and parses bytes; engine decision recorded; CI green. |
 | M1 terminal | One fully usable terminal | Run Claude Code in a single window: correct colours/fonts from Ghostty config, input, mouse, selection, clipboard, scrollback, resize. |
 | M2 splits-tabs | Panes and tabs | Split H/V, tab strip per pane, focus moves, drag-resize dividers, Super shortcuts, remap via config. |
 | M3 workspaces-sidebar | Workspaces + sidebar | Multiple workspaces in a vertical sidebar showing cwd, git branch, ports, PR; Super+1–9 switching. |

@@ -16,7 +16,7 @@
 ## Milestones
 | ID | State |
 |---|---|
-| M0 foundations | done |
+| M0 foundations | done (pending CI on master) |
 | M1 terminal | not started |
 | M2 splits-tabs | not started |
 | M3 workspaces-sidebar | not started |
@@ -49,6 +49,9 @@
 - Surface bell and title-change events.
 - Add a resize/scroll API.
 - Avoid `Snapshot`'s per-frame cell clones and double row walk.
+- `Snapshot`: add dims (cols/rows) and `#[derive(Debug)]`.
+- Pin the toolchain with `rust-toolchain.toml` (floating stable + `-D warnings` can break CI).
+- Lint tests too: `clippy --all-targets`.
 - OSC scanner misses 8-bit C1 OSC (0x9d), which libghostty-vt does normalize.
 - rustfmt isn't installed locally (`rustup component add rustfmt`).
 - Clippy in CI uses `--no-deps --exclude ghostty-vt --exclude ghostty-vt-sys` (vendored lint); drop once clean.

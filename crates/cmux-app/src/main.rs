@@ -7,7 +7,8 @@ struct Root;
 
 impl Render for Root {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        // Translucent fill so KWin's blur behind the window is visible.
+        // Translucent fill. KWin blur behind it needs ext_background_effect_v1, which gpui 0.2.2 lacks
+        // (see M0 journal); Blurred is kept so it works once gpui supports it.
         div().size_full().bg(rgba(0x1e1e2eb3))
     }
 }
