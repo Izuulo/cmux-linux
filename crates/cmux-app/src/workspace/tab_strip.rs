@@ -162,13 +162,13 @@ impl WorkspaceView {
         } else {
             p.inactive_text
         };
-        let close_text = if selected {
-            p.inactive_text
-        } else {
-            gpui::transparent_black().into()
-        };
+        let close_group = SharedString::from(format!("tab-close-{}", surface.0));
+        // gpui's svg paints only its own text colour (it does not inherit), so the button is
+        // revealed with opacity (which applies to children) and the glyph brightens through its
+        // own group hover.
         let close = div()
-            .id(SharedString::from(format!("tab-close-{}", surface.0)))
+            .id(close_group.clone())
+            .group(close_group.clone())
             .flex()
             .flex_none()
             .items_center()
@@ -176,15 +176,16 @@ impl WorkspaceView {
             .ml(px(CONTENT_GAP))
             .size(px(CLOSE_SLOT))
             .rounded_full()
-            .text_color(close_text)
-            // Shown on the selected or hovered tab; brighter with a hover circle over the button.
-            .group_hover(group.clone(), |s| s.text_color(p.inactive_text))
-            .hover(|s| s.bg(p.hover_fill).text_color(p.active_text))
+            // Shown on the selected or hovered tab, with a hover circle over the button.
+            .opacity(if selected { 1.0 } else { 0.0 })
+            .group_hover(group.clone(), |s| s.opacity(1.0))
+            .hover(|s| s.bg(p.hover_fill))
             .child(
                 svg()
                     .path("icons/x.svg")
                     .size(px(CLOSE_GLYPH))
-                    .text_color(close_text),
+                    .text_color(p.inactive_text)
+                    .group_hover(close_group, |s| s.text_color(p.active_text)),
             )
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                 cx.stop_propagation();
