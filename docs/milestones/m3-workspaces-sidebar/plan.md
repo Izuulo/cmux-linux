@@ -453,7 +453,7 @@ pub fn listening_ports(proc_root: &Path, ttys: &HashSet<i32>) -> HashMap<i32, BT
 pub fn tty_of(proc_root: &Path, pid: u32) -> Option<i32>;   // reads <root>/<pid>/stat
 ```
 
-- [ ] **Step 1: Failing tests.** Fixture `/proc` trees use the same `scratch` helper as Task 3. Move it to `lib.rs` as `#[cfg(test)] pub(crate) fn scratch`. Symlinks via `std::os::unix::fs::symlink`.
+- [x] **Step 1: Failing tests.** Fixture `/proc` trees use the same `scratch` helper as Task 3. Move it to `lib.rs` as `#[cfg(test)] pub(crate) fn scratch`. Symlinks via `std::os::unix::fs::symlink`.
 
 ```rust
 const TCP: &str = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
@@ -511,13 +511,13 @@ fn scan_skips_vanished_and_unreadable_processes() {
 }
 ```
 
-- [ ] **Step 2: Run.** Expected: compile errors.
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run.** Expected: compile errors.
+- [x] **Step 3: Implement.**
   - `parse_listen_inodes` skips the header. Per line, split on whitespace: field 1 is `local_address` (port = hex after the last `:`), field 3 is `st`, field 9 is the inode. Skip malformed lines.
   - `listening_ports` reads `net/tcp` and `net/tcp6` (a missing file counts as empty), then iterates numeric entries of `proc_root`, reads `stat`, and filters on `ttys` (excluding 0). For each match it runs `read_dir(fd)` → `read_link` → `socket_inode` → map lookup.
   - Every IO error is skipped, never propagated.
-- [ ] **Step 4: Run.** Expected: 4 tests pass.
-- [ ] **Step 5: Commit.** `git commit -m "feat(cmux-meta): listening ports by controlling tty from /proc"`.
+- [x] **Step 4: Run.** Expected: 4 tests pass.
+- [x] **Step 5: Commit.** `git commit -m "feat(cmux-meta): listening ports by controlling tty from /proc"`.
 
 ---
 
