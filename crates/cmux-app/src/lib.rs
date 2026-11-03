@@ -2,6 +2,8 @@
 
 pub mod actions;
 pub mod assets;
+#[cfg(target_os = "linux")]
+pub mod blur;
 pub mod chrome;
 pub mod colors;
 pub mod ime;
