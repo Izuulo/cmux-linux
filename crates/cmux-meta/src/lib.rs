@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PanelInput {
+    /// The OSC 7 cwd; when None, `collect` reads `<proc_root>/<pid>/cwd` off the UI thread.
     pub cwd: Option<String>,
     pub pid: Option<u32>,
 }
@@ -63,7 +64,11 @@ pub fn collect(
             let mut meta = WorkspaceMeta::default();
             let mut seen = HashSet::new();
             for p in &w.panels {
-                let Some(cwd) = p.cwd.as_deref().filter(|c| c.starts_with('/')) else {
+                let cwd = p
+                    .cwd
+                    .clone()
+                    .or_else(|| p.pid.and_then(|pid| proc_cwd(proc_root, pid)));
+                let Some(cwd) = cwd.as_deref().filter(|c| c.starts_with('/')) else {
                     continue;
                 };
                 let path = if cwd.len() > 1 {
@@ -97,6 +102,13 @@ pub fn collect(
             meta
         })
         .collect()
+}
+
+/// The process's cwd from `<proc_root>/<pid>/cwd`; None if it is gone or unreadable.
+fn proc_cwd(proc_root: &Path, pid: u32) -> Option<String> {
+    let link = std::fs::read_link(proc_root.join(pid.to_string()).join("cwd")).ok()?;
+    let s = link.to_str()?;
+    Some(s.strip_suffix(" (deleted)").unwrap_or(s).to_string())
 }
 
 /// Fresh per-test scratch dir under the OS temp dir (shared by all module tests).
@@ -153,5 +165,36 @@ mod tests {
         assert_eq!(dirs, vec![(r.as_str(), Some("feat")), ("/", None)]);
         assert_eq!(meta[0].ports, vec![3000]);
         assert_eq!(meta[1], WorkspaceMeta::default());
+    }
+
+    #[test]
+    fn collect_falls_back_to_the_proc_cwd_without_osc7() {
+        let root = scratch("proc-cwd");
+        let repo = root.join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        std::fs::write(repo.join(".git/HEAD"), "ref: refs/heads/feat\n").unwrap();
+        let proc_root = root.join("proc");
+        std::fs::create_dir_all(proc_root.join("10")).unwrap();
+        std::os::unix::fs::symlink(&repo, proc_root.join("10/cwd")).unwrap();
+        let input = WorkspaceInput {
+            panels: vec![
+                PanelInput {
+                    cwd: None,
+                    pid: Some(10),
+                },
+                // Vanished process: skipped, not an error.
+                PanelInput {
+                    cwd: None,
+                    pid: Some(99),
+                },
+            ],
+        };
+        let meta = collect(&[input], &proc_root, None);
+        let dirs: Vec<_> = meta[0]
+            .dirs
+            .iter()
+            .map(|d| (d.path.as_str(), d.branch.as_deref()))
+            .collect();
+        assert_eq!(dirs, vec![(repo.to_str().unwrap(), Some("feat"))]);
     }
 }

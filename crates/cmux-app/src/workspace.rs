@@ -142,7 +142,7 @@ impl WorkspaceView {
             .map(|s| {
                 let v = s.view.read(cx);
                 PanelInput {
-                    cwd: v.cwd(),
+                    cwd: v.osc_cwd(),
                     pid: v.pid(),
                 }
             })
