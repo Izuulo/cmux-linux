@@ -971,7 +971,7 @@ pub(crate) enum RenameEvent { Done(WorkspaceId, Option<String>) } // None = canc
 pub(crate) fn drop_gap(row_mids: &[f32], y: f32) -> usize;     // first row whose mid is below y, else len
 ```
 
-- [ ] **Step 1: Failing tests.**
+- [x] **Step 1: Failing tests.**
 
 ```rust
 // rename.rs
@@ -1011,14 +1011,14 @@ fn drop_gap_uses_row_midpoints() {
 }
 ```
 
-- [ ] **Step 2: Run.** Expected: compile errors.
-- [ ] **Step 3: Implement** `RenameState`/`drop_gap`. Run: pass. Commit `feat(cmux-app): rename state and drop-gap maths`.
-- [ ] **Step 4: Implement the UI.**
+- [x] **Step 2: Run.** Expected: compile errors.
+- [x] **Step 3: Implement** `RenameState`/`drop_gap`. Run: pass. Commit `feat(cmux-app): rename state and drop-gap maths`.
+- [x] **Step 4: Implement the UI.**
   - **`RenameInput`:** a focused div with `on_key_down`. Map the event as follows: `keystroke.key_char` → `Char`; `backspace`/`enter`/`escape` → the matching key; anything else → `Other`, with `cx.stop_propagation()` for all of these so they don't trigger bindings. Losing focus (`cx.on_blur`) commits. Render it in the row's title slot with the same font, text plus a 1 px caret in the title colour. The placeholder "Workspace name" shows when empty.
   - **`start_rename`:** opened by double-clicking a row (`ClickEvent::click_count() == 2`) or by `RenameWorkspace` on the selected row, which first sets `sidebar_visible = true`. The prefill is `title_of(id)`.
   - **`Done(id, Some(t))`:** call `workspaces.rename(id, &t)` and focus the active terminal. On `None`, just refocus. Closing a workspace that is being renamed drops the input.
   - Commit `feat(cmux-app): inline workspace rename`.
-- [ ] **Step 5: Implement the drag.**
+- [x] **Step 5: Implement the drag.**
   - Each row calls `.on_drag(DraggedWorkspace, |d, _, _, cx| cx.new(|_| ghost(d)))`. The ghost is the title in a rounded accent-tinted box.
   - The list takes `on_drag_move::<DraggedWorkspace>`. It turns the row bounds (from `on_children_prepainted`) into midpoints and computes `drop_gap`. It draws the 2 px accent line inset 8 at that gap, and the dragged row at 0.6 opacity.
   - `on_drop` calls `workspaces.move_to(id, gap)`.
