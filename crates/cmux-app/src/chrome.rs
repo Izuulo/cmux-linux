@@ -102,6 +102,54 @@ pub fn accent(light_bar: bool) -> Rgba {
     }
 }
 
+/// cmux's own accent (`CmuxAccentColor.swift`): #0088FF on a light background, #0091FF on dark.
+pub fn cmux_accent(light_bg: bool) -> Rgba {
+    let g = if light_bg { 0x88 } else { 0x91 };
+    rgba(Rgb { r: 0, g, b: 0xff }, 1.0)
+}
+
+/// Colours of the workspace sidebar (plan D3).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SidebarPalette {
+    pub bg: Rgba,
+    pub border: Rgba,
+    pub selected_fill: Rgba,
+    pub title: Rgba,
+    pub detail: Rgba,
+    pub selected_title: Rgba,
+    pub selected_detail: Rgba,
+    pub accent: Rgba,
+}
+
+/// The sidebar sits on the terminal backdrop `bg`; selected rows are solid accent with white
+/// text, unselected text approximates the macOS label colours.
+pub fn sidebar_palette(bg: Rgba) -> SidebarPalette {
+    let light = wcag_is_light(bg);
+    let v = if light { 0.0 } else { 1.0 };
+    let label = |a: f32| Rgba {
+        r: v,
+        g: v,
+        b: v,
+        a,
+    };
+    let white = |a: f32| Rgba {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a,
+    };
+    SidebarPalette {
+        bg,
+        border: separator(bg),
+        selected_fill: cmux_accent(light),
+        title: label(0.85),
+        detail: label(if light { 0.5 } else { 0.55 }),
+        selected_title: white(1.0),
+        selected_detail: white(0.75),
+        accent: cmux_accent(light),
+    }
+}
+
 /// Colours of one pane's tab strip.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TabPalette {
@@ -289,6 +337,39 @@ mod tests {
                 a: 1.0
             }
         ));
+    }
+
+    #[test]
+    fn sidebar_palette_uses_cmux_accent_and_label_alphas() {
+        let dark = Rgba {
+            r: 0.1,
+            g: 0.1,
+            b: 0.1,
+            a: 1.0,
+        };
+        let p = sidebar_palette(dark);
+        assert_eq!(p.selected_fill, cmux_accent(false));
+        assert_eq!((p.title.r, p.title.a), (1.0, 0.85));
+        assert_eq!(p.detail.a, 0.55);
+        assert_eq!((p.selected_title.r, p.selected_title.a), (1.0, 1.0));
+        assert_eq!(p.selected_detail.a, 0.75);
+        let light = sidebar_palette(Rgba {
+            r: 0.97,
+            g: 0.97,
+            b: 0.97,
+            a: 1.0,
+        });
+        assert_eq!(light.selected_fill, cmux_accent(true));
+        assert_eq!((light.title.r, light.detail.a), (0.0, 0.5));
+        assert_eq!(
+            light.border,
+            separator(Rgba {
+                r: 0.97,
+                g: 0.97,
+                b: 0.97,
+                a: 1.0
+            })
+        );
     }
 
     #[test]

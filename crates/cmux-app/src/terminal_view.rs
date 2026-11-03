@@ -256,6 +256,21 @@ impl TerminalView {
             .or_else(|| self.start_cwd.clone())
     }
 
+    /// Only the OSC 7 cwd: no syscalls, safe to call on the UI thread for the sidebar.
+    pub fn osc_cwd(&self) -> Option<String> {
+        self.cwd.clone()
+    }
+
+    /// The shell's process id.
+    pub fn pid(&self) -> Option<u32> {
+        self.session.process_id()
+    }
+
+    /// Whether a foreground job (not just the idle shell) is running.
+    pub fn busy(&self) -> bool {
+        self.session.foreground_busy()
+    }
+
     /// Called by the element after painting: logs key-to-echo-to-paint latency when tracing.
     pub(crate) fn painted(&mut self) {
         if let Some(at) = self.echo_at.take()

@@ -9,10 +9,11 @@ use std::rc::Rc;
 use cmux_core::{
     Closed, Direction, DividerRect, Layout, Orientation, PaneId, RESIZE_STEP, Rect, SurfaceId,
 };
+use cmux_meta::PanelInput;
 use gpui::{
-    AppContext, Bounds, ClickEvent, Context, CursorStyle, DragMoveEvent, EmptyView, Entity,
-    FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Pixels, Render, Rgba,
-    StatefulInteractiveElement, Styled, Subscription, Window, div, px,
+    App, AppContext, Bounds, ClickEvent, Context, CursorStyle, DragMoveEvent, EmptyView, Entity,
+    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Pixels,
+    Render, Rgba, StatefulInteractiveElement, Styled, Subscription, Window, div, px,
 };
 
 mod tab_strip;
@@ -47,14 +48,38 @@ pub struct WorkspaceView {
     tab_bounds: Rc<RefCell<HashMap<PaneId, Vec<Bounds<Pixels>>>>>,
     /// Where a dragged tab would land: pane and insertion index.
     drop_target: Option<(PaneId, usize)>,
+    /// Width the sidebar takes from the left of the window.
+    left_inset: f32,
+    /// Only the active workspace pulls focus back after a focus loss.
+    active: bool,
+    has_terminals: bool,
     _subscriptions: Vec<Subscription>,
 }
 
+/// What the owner of this workspace needs to hear about.
+pub enum WorkspaceEvent {
+    /// The last surface closed.
+    Empty,
+    /// Something shown in the sidebar (a title) changed.
+    Changed,
+}
+
+impl EventEmitter<WorkspaceEvent> for WorkspaceView {}
+
 impl WorkspaceView {
-    pub fn new(style: Rc<TermStyle>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        style: Rc<TermStyle>,
+        cwd: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         // Nothing focused (a closed tab's handle is gone) means keys reach only the root:
         // put focus back on the active terminal (research-gpui.md §1.4).
-        let lost = cx.on_focus_lost(window, |this, window, cx| this.focus_active(window, cx));
+        let lost = cx.on_focus_lost(window, |this, window, cx| {
+            if this.active {
+                this.focus_active(window, cx);
+            }
+        });
         let mut this = Self {
             layout: Layout::new(),
             surfaces: HashMap::new(),
@@ -63,16 +88,70 @@ impl WorkspaceView {
             window_title: String::new(),
             tab_bounds: Rc::default(),
             drop_target: None,
+            left_inset: 0.0,
+            active: true,
+            has_terminals: true,
             _subscriptions: vec![lost],
         };
         let first = this.layout.active_surface();
-        if this.add_terminal(first, None, window, cx) {
+        if this.add_terminal(first, cwd, window, cx) {
             this.focus_active(window, cx);
         } else {
-            // Nothing to show without a shell.
-            cx.quit();
+            this.has_terminals = false;
         }
         this
+    }
+
+    /// False if the first shell failed to start.
+    pub fn has_terminals(&self) -> bool {
+        self.has_terminals
+    }
+
+    pub fn set_left_inset(&mut self, inset: f32) {
+        self.left_inset = inset;
+    }
+
+    pub fn set_active(&mut self, active: bool) {
+        self.active = active;
+        if active {
+            // Another workspace may have set the window title meanwhile; force a resend.
+            self.window_title.clear();
+        }
+    }
+
+    /// The focused surface's OSC title.
+    pub fn title(&self, cx: &App) -> Option<String> {
+        let s = self.surfaces.get(&self.layout.active_surface())?;
+        s.view.read(cx).title().map(str::to_string)
+    }
+
+    pub fn active_cwd(&self, cx: &App) -> Option<String> {
+        self.surfaces
+            .get(&self.layout.active_surface())?
+            .view
+            .read(cx)
+            .cwd()
+    }
+
+    /// One entry per surface, in `layout.surfaces()` order.
+    pub fn panels(&self, cx: &App) -> Vec<PanelInput> {
+        self.layout
+            .surfaces()
+            .iter()
+            .filter_map(|id| self.surfaces.get(id))
+            .map(|s| {
+                let v = s.view.read(cx);
+                PanelInput {
+                    cwd: v.osc_cwd(),
+                    pid: v.pid(),
+                }
+            })
+            .collect()
+    }
+
+    /// Whether any surface has a foreground job running.
+    pub fn busy(&self, cx: &App) -> bool {
+        self.surfaces.values().any(|s| s.view.read(cx).busy())
     }
 
     pub fn layout(&self) -> &Layout {
@@ -101,7 +180,10 @@ impl WorkspaceView {
         let view = cx.new(|cx| TerminalView::new(style, cwd, started, window, cx));
         let events = cx.subscribe_in(&view, window, move |this, _, ev, window, cx| match ev {
             TerminalEvent::Exited => this.close_surface(surface, window, cx),
-            TerminalEvent::TitleChanged => cx.notify(),
+            TerminalEvent::TitleChanged => {
+                cx.notify();
+                cx.emit(WorkspaceEvent::Changed);
+            }
         });
         let handle = view.read(cx).focus_handle(cx);
         // A click focuses the terminal itself; follow it in the model.
@@ -136,8 +218,13 @@ impl WorkspaceView {
     }
 
     /// Focuses the active surface's terminal (after any change to focus or tabs).
-    fn focus_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(s) = self.surfaces.get(&self.layout.active_surface()) {
+    pub fn focus_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // A hidden workspace must never take keyboard focus.
+        if let Some(s) = self
+            .surfaces
+            .get(&self.layout.active_surface())
+            .filter(|_| self.active)
+        {
             let handle = s.view.read(cx).focus_handle(cx);
             window.focus(&handle);
         }
@@ -150,10 +237,10 @@ impl WorkspaceView {
         inherit.then(|| s.view.read(cx).cwd()).flatten()
     }
 
-    fn container(window: &Window) -> (f32, f32, f32) {
+    fn container(&self, window: &Window) -> (f32, f32, f32) {
         let size = window.viewport_size();
         (
-            f32::from(size.width),
+            (f32::from(size.width) - self.left_inset).max(0.0),
             f32::from(size.height),
             window.scale_factor(),
         )
@@ -166,18 +253,22 @@ impl WorkspaceView {
         cx: &mut Context<Self>,
     ) {
         match self.layout.close_surface(surface) {
-            // M2 has no workspaces: the last surface closing quits, as M1 did (M3 revisits).
-            Closed::LastSurface => cx.quit(),
+            Closed::LastSurface => {
+                self.surfaces.remove(&surface);
+                cx.emit(WorkspaceEvent::Empty);
+            }
             Closed::NotFound => {}
             Closed::Tab | Closed::Pane => {
                 self.surfaces.remove(&surface);
                 self.focus_active(window, cx);
+                // The active surface, and so the sidebar title, may have changed.
+                cx.emit(WorkspaceEvent::Changed);
             }
         }
     }
 
     fn split(&mut self, o: Orientation, window: &mut Window, cx: &mut Context<Self>) {
-        let (w, h, scale) = Self::container(window);
+        let (w, h, scale) = self.container(window);
         let cwd = self.inherited_cwd(self.style.cfg.split_inherit_working_directory, cx);
         // shortcut: cmux beeps on a refused split; gpui 0.2.2 has no beep API, so nothing happens.
         if let Ok(surface) = self.layout.try_split(o, w, h, scale) {
@@ -198,7 +289,7 @@ impl WorkspaceView {
     }
 
     fn resize(&mut self, dir: Direction, window: &mut Window, cx: &mut Context<Self>) {
-        let (w, h, scale) = Self::container(window);
+        let (w, h, scale) = self.container(window);
         if self.layout.resize_pane(dir, RESIZE_STEP, w, h, scale) {
             cx.notify();
         }
@@ -222,7 +313,7 @@ impl WorkspaceView {
             Orientation::Horizontal => ev.event.position.x - ev.bounds.origin.x,
             Orientation::Vertical => ev.event.position.y - ev.bounds.origin.y,
         };
-        let (w, h, scale) = Self::container(window);
+        let (w, h, scale) = self.container(window);
         // shortcut: the divider jumps to the pointer (at most the 8 px band half) when the drag
         // starts; NSSplitView keeps the grab offset. Store it in DividerDrag if it bothers anyone.
         if self
@@ -268,7 +359,8 @@ impl WorkspaceView {
             .flex_col()
             .overflow_hidden()
             .key_context("Pane")
-            .child(self.render_tab_strip(pane, focused, r.x, cx))
+            // Tab bounds are window-space; the content area starts at left_inset.
+            .child(self.render_tab_strip(pane, focused, self.left_inset + r.x, cx))
             .child(
                 div()
                     .relative()
@@ -350,7 +442,7 @@ impl Render for WorkspaceView {
         if !cx.has_active_drag() {
             self.drop_target = None;
         }
-        let (w, h, scale) = Self::container(window);
+        let (w, h, scale) = self.container(window);
         let rects = self.layout.rects(w, h, scale);
         let focused = self.layout.focused();
         let dim = chrome::dim_overlay(&self.style.cfg).filter(|_| self.layout.pane_count() > 1);

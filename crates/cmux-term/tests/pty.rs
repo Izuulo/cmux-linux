@@ -201,3 +201,27 @@ fn drop_releases_the_reader_even_if_a_setsid_grandchild_holds_the_pty() {
         std::thread::sleep(Duration::from_millis(10));
     }
 }
+
+#[test]
+fn foreground_busy_tracks_a_running_job() {
+    let (tx, _rx) = mpsc::channel::<bool>();
+    let cmd = CommandBuilder::new("sh"); // interactive: job control on a tty
+    let session = Session::spawn(
+        cmd,
+        80,
+        24,
+        |_| {},
+        move |ev| {
+            let _ = tx.send(matches!(ev, PtyEvent::Exited));
+        },
+    )
+    .unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!session.foreground_busy(), "idle shell");
+    session.write(b"sleep 3\n".to_vec());
+    let t = Instant::now();
+    while !session.foreground_busy() && t.elapsed() < Duration::from_secs(2) {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(session.foreground_busy(), "sleep is the foreground job");
+}

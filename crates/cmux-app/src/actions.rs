@@ -29,6 +29,14 @@ gpui::actions!(
         PrevSurface,
         MoveSurfaceLeft,
         MoveSurfaceRight,
+        NewWorkspace,
+        CloseWorkspace,
+        RenameWorkspace,
+        NextWorkspace,
+        PrevWorkspace,
+        MoveWorkspaceUp,
+        MoveWorkspaceDown,
+        ToggleSidebar,
     ]
 );
 
@@ -36,6 +44,11 @@ gpui::actions!(
 #[derive(Clone, PartialEq, Debug, gpui::Action)]
 #[action(namespace = cmux, no_json)]
 pub struct SelectSurfaceByNumber(pub u8);
+
+/// cmux `selectWorkspaceByNumber`: 1-8 pick that workspace, 9 the last one.
+#[derive(Clone, PartialEq, Debug, gpui::Action)]
+#[action(namespace = cmux, no_json)]
+pub struct SelectWorkspaceByNumber(pub u8);
 
 /// The gpui action for one config binding. `None` only if cmux-config lists an action this
 /// table lacks (a test keeps them in sync).
@@ -64,6 +77,15 @@ pub fn action_for(b: &Binding) -> Option<Box<dyn Action>> {
         "prevSurface" => Box::new(PrevSurface),
         "moveSurfaceLeft" => Box::new(MoveSurfaceLeft),
         "moveSurfaceRight" => Box::new(MoveSurfaceRight),
+        "newTab" => Box::new(NewWorkspace),
+        "closeWorkspace" => Box::new(CloseWorkspace),
+        "renameWorkspace" => Box::new(RenameWorkspace),
+        "nextSidebarTab" => Box::new(NextWorkspace),
+        "prevSidebarTab" => Box::new(PrevWorkspace),
+        "moveWorkspaceUp" => Box::new(MoveWorkspaceUp),
+        "moveWorkspaceDown" => Box::new(MoveWorkspaceDown),
+        "toggleSidebar" => Box::new(ToggleSidebar),
+        "selectWorkspaceByNumber" => Box::new(SelectWorkspaceByNumber(b.number?)),
         "selectSurfaceByNumber" => Box::new(SelectSurfaceByNumber(b.number?)),
         _ => return None,
     })

@@ -13,6 +13,7 @@ publish = false
 
 [workspace.dependencies]
 base64 = "0.22"
+serde_json = "1"
 png = "0.17"
 bindgen = "0.72"
 ghostty-vt-sys = { path = "vendor/ghostty-vt-sys" }
@@ -20,9 +21,15 @@ ghostty-vt = { path = "vendor/ghostty-vt" }
 cmux-term = { path = "crates/cmux-term" }
 cmux-config = { path = "crates/cmux-config" }
 cmux-core = { path = "crates/cmux-core" }
+cmux-meta = { path = "crates/cmux-meta" }
 gpui = "=0.2.2"
 portable-pty = "0.9"
 libc = "0.2"
 futures = "0.3"
 # Already in Cargo.lock (cbindgen); `parse` only, no serde derive.
 toml = { version = "0.8.23", default-features = false, features = ["parse"] }
+# Blur shim (Linux). All already in Cargo.lock via gpui/ashpd; wayland-client/backend match gpui's.
+wayland-client = "0.31"
+wayland-backend = { version = "0.3", features = ["client_system"] }
+wayland-protocols = { version = "0.32.9", features = ["client", "staging"] }
+raw-window-handle = "0.6"

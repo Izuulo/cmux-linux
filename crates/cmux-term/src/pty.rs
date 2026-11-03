@@ -224,6 +224,14 @@ impl Session {
         self.child.0.as_ref().and_then(|c| c.process_id())
     }
 
+    /// True when the PTY's foreground process group is not the shell's own (a job is running).
+    pub fn foreground_busy(&self) -> bool {
+        match (self.master.process_group_leader(), self.process_id()) {
+            (Some(fg), Some(shell)) => i64::from(fg) != i64::from(shell),
+            _ => false,
+        }
+    }
+
     /// The child's current working directory as the OS reports it (see [`process_cwd`]).
     pub fn cwd(&self) -> Option<String> {
         process_cwd(self.process_id()?)

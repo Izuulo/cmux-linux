@@ -3,7 +3,7 @@ use std::rc::Rc;
 use cmux_app::actions;
 use cmux_app::assets::Assets;
 use cmux_app::style::{TermStyle, installed_families, load_bundled_fonts};
-use cmux_app::workspace::WorkspaceView;
+use cmux_app::window_view::WindowView;
 use cmux_config::ghostty::{Env, load};
 use cmux_config::keybindings;
 use gpui::{
@@ -38,10 +38,9 @@ fn main() {
         load_bundled_fonts(cx);
         let installed = installed_families(cx);
         let style = Rc::new(TermStyle::new(&loaded.config, &installed));
-        // Translucent only when asked. KWin blur needs ext_background_effect_v1, which gpui 0.2.2
-        // lacks (M0 journal); Blurred is kept so it works once gpui supports it.
+        // Translucent only when asked. Not Blurred: KWin blur comes from our own shim (blur.rs).
         let window_background = if loaded.config.background_opacity < 1.0 {
-            WindowBackgroundAppearance::Blurred
+            WindowBackgroundAppearance::Transparent
         } else {
             WindowBackgroundAppearance::Opaque
         };
@@ -53,7 +52,7 @@ fn main() {
                 app_id: Some("cmux-linux".into()),
                 ..Default::default()
             },
-            |window, cx| cx.new(|cx| WorkspaceView::new(style, window, cx)),
+            |window, cx| cx.new(|cx| WindowView::new(style, window, cx)),
         )
         .expect("open window");
         cx.activate(true);

@@ -55,13 +55,23 @@ toml (crates.io 0.8, https://github.com/toml-rs/toml), used by cmux-config, with
   toml_edit, toml_datetime, toml_write, serde_spanned and winnow dependencies
   MIT OR Apache-2.0 (winnow: MIT).
 
+serde_json (crates.io 1, https://github.com/serde-rs/json), used by cmux-meta
+  MIT OR Apache-2.0.
+
 Lucide icons (crates/cmux-app/assets/icons/*.svg, https://lucide.dev, lucide-static 0.460.0)
-  terminal, square-terminal, x, columns-2, rows-2. Copyright Lucide Contributors and
-  Cole Bemis (Feather). ISC License; see crates/cmux-app/assets/icons/LICENSE-lucide.txt.
+  terminal, square-terminal, x, columns-2, rows-2, plus, panel-left, git-pull-request,
+  git-merge, circle-x. Copyright Lucide Contributors and Cole Bemis (Feather). ISC License; see crates/cmux-app/assets/icons/LICENSE-lucide.txt.
 
 Bonsplit (https://github.com/manaflow-ai/bonsplit @ 58b73fd), cmux's split/tab library
   Copyright (c) 2026 Alasdair Monk. MIT. crates/cmux-core and crates/cmux-app/src/workspace*
   follow its split, focus, tab and tab-bar behaviour and metrics; no code is copied.
+
+wayland-client, wayland-backend, wayland-protocols (crates.io 0.31 / 0.3 / 0.32,
+  https://github.com/Smithay/wayland-rs), used by crates/cmux-app/src/blur.rs on Linux
+  MIT.
+
+raw-window-handle (crates.io 0.6, https://github.com/rust-windowing/raw-window-handle)
+  MIT OR Apache-2.0 OR Zlib.
 
 Further components (Rust crates) are listed here as they are added,
 with their licences.

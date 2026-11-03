@@ -13,5 +13,12 @@ workspace = true
 cmux-term.workspace = true
 cmux-config.workspace = true
 cmux-core.workspace = true
+cmux-meta.workspace = true
 gpui.workspace = true
 futures.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+wayland-client.workspace = true
+wayland-backend.workspace = true
+wayland-protocols.workspace = true
+raw-window-handle.workspace = true

@@ -53,9 +53,19 @@ pub const DEFAULTS: &[(&str, &[&str])] = &[
     ("selectSurfaceByNumber", &["ctrl+1"]),
     ("moveSurfaceLeft", &["super+shift+opt+["]),
     ("moveSurfaceRight", &["super+shift+opt+]"]),
+    // Workspace actions: rc §2 (M3).
+    ("newTab", &["super+n"]),
+    ("closeWorkspace", &["super+shift+w"]),
+    ("renameWorkspace", &["super+shift+r"]),
+    ("selectWorkspaceByNumber", &["super+1"]),
+    ("nextSidebarTab", &["super+ctrl+]"]),
+    ("prevSidebarTab", &["super+ctrl+["]),
+    ("moveWorkspaceUp", &["super+ctrl+opt+["]),
+    ("moveWorkspaceDown", &["super+ctrl+opt+]"]),
+    ("toggleSidebar", &["super+b"]),
 ];
 
-const NUMBERED: &str = "selectSurfaceByNumber";
+const NUMBERED: &[&str] = &["selectSurfaceByNumber", "selectWorkspaceByNumber"];
 
 /// What a US-layout Shift turns a key into. gpui on Linux reports Shift+] as key `}` with
 /// Shift cleared (platform/linux/platform.rs `from_xkb`), so the binding must say `}` too.
@@ -172,7 +182,7 @@ fn expand(action: &'static str, chords: &[String]) -> Result<Vec<Binding>, Strin
     let mut out = Vec::new();
     for chord in chords {
         let chord = chord.trim();
-        if action == NUMBERED {
+        if NUMBERED.contains(&action) {
             let last = chord.rsplit('+').next().unwrap_or_default();
             if last.len() != 1 || !last.chars().all(|c| c.is_ascii_digit()) {
                 return Err(format!("`{chord}` must end in a digit (it binds 1-9)"));
@@ -386,8 +396,49 @@ mod tests {
 
     #[test]
     fn numbered_chords_are_trimmed_and_take_one_digit() {
-        let ok = expand(NUMBERED, &["ctrl+1\u{a0}".to_string()]).unwrap();
+        let ok = expand(NUMBERED[0], &["ctrl+1\u{a0}".to_string()]).unwrap();
         assert_eq!(ok[8].keystroke, "ctrl-9");
-        assert!(expand(NUMBERED, &["ctrl+12".to_string()]).is_err());
+        assert!(expand(NUMBERED[0], &["ctrl+12".to_string()]).is_err());
+    }
+    #[test]
+    fn workspace_defaults_bind_like_cmux() {
+        let k = keybindings(None, "config.toml");
+        let chord = |a: &str| {
+            k.bindings
+                .iter()
+                .filter(|b| b.action == a)
+                .map(|b| b.keystroke.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(chord("newTab"), vec!["super-n"]);
+        assert_eq!(chord("closeWorkspace"), vec!["shift-super-w"]);
+        assert_eq!(chord("nextSidebarTab"), vec!["ctrl-super-]"]);
+        assert_eq!(chord("moveWorkspaceDown"), vec!["ctrl-alt-super-]"]);
+        assert_eq!(chord("toggleSidebar"), vec!["super-b"]);
+        let numbered: Vec<_> = k
+            .bindings
+            .iter()
+            .filter(|b| b.action == "selectWorkspaceByNumber")
+            .map(|b| (b.keystroke.as_str(), b.number))
+            .collect();
+        assert_eq!(numbered.len(), 9);
+        assert_eq!(numbered[0], ("super-1", Some(1)));
+        assert_eq!(numbered[8], ("super-9", Some(9)));
+    }
+
+    #[test]
+    fn workspace_number_remap_keeps_digit_family() {
+        let k = keybindings(
+            Some("[keybindings]\nselectWorkspaceByNumber = \"alt+1\"\n"),
+            "config.toml",
+        );
+        assert!(k.warnings.is_empty(), "{:?}", k.warnings);
+        assert!(
+            k.bindings
+                .iter()
+                .any(|b| b.action == "selectWorkspaceByNumber"
+                    && b.keystroke == "alt-9"
+                    && b.number == Some(9))
+        );
     }
 }

@@ -871,9 +871,14 @@ version = "0.1.0"
 dependencies = [
  "cmux-config",
  "cmux-core",
+ "cmux-meta",
  "cmux-term",
  "futures",
  "gpui",
+ "raw-window-handle",
+ "wayland-backend",
+ "wayland-client",
+ "wayland-protocols 0.32.13",
 ]
 
 [[package]]
@@ -894,6 +899,9 @@ version = "0.1.0"
 [[package]]
 name = "cmux-meta"
 version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "cmux-term"
