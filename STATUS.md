@@ -4,8 +4,8 @@
      current version to docs/status-archive.md. -->
 
 **Updated:** 2026-11-02
-**Current milestone:** M1 terminal — planning
-**Next action:** write docs/milestones/m1-terminal/plan.md
+**Current milestone:** M1 terminal — plan written, executing
+**Next action:** execute `docs/milestones/m1-terminal/plan.md` task by task (ledger: `.superpowers/sdd/progress.md`).
 
 ## Where things are
 - Project design and milestone table: `docs/design.md`
