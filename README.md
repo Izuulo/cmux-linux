@@ -94,10 +94,55 @@ scripts/install-zig.sh
 export PATH="$PWD/.tools/zig:$PATH"
 cargo build --locked
 cargo test --locked
-cargo run -p cmux-app   # opens an empty window for now
+cargo run -p cmux-app
 ```
 
 Don't `cargo update` libc: it is pinned to 0.2.189 in `Cargo.lock` because xattr 0.2.3 needs `libc::ENOATTR`.
+
+## Configuration
+
+cmux-linux reads your Ghostty config (`~/.config/ghostty/config`) for fonts, colours,
+opacity and split options such as `unfocused-split-opacity` and `split-divider-color`.
+
+Keyboard shortcuts live in `~/.config/cmux-linux/config.toml`. The defaults are cmux's,
+with ⌘ as Super. Override any action under `[keybindings]`:
+
+```toml
+[keybindings]
+splitRight = "ctrl+shift+d"           # one chord
+nextSurface = ["super+shift+]", "ctrl+tab"]  # several chords, any of them works
+closeOtherTabsInPane = "none"         # "" or "none" unbinds
+selectSurfaceByNumber = "alt+1"       # binds alt+1 … alt+9 (9 = last tab)
+```
+
+- Keys are cmux's action names: `copy`, `paste`, `splitRight`, `splitDown`,
+  `toggleSplitZoom`, `equalizeSplits`, `resizePaneLeft/Right/Up/Down`,
+  `focusLeft/Right/Up/Down`, `focusPreviousPane`, `focusNextPane`, `newSurface`,
+  `closeTab`, `closeOtherTabsInPane`, `nextSurface`, `prevSurface`,
+  `selectSurfaceByNumber`, `moveSurfaceLeft`, `moveSurfaceRight`.
+- A chord is modifiers and a key joined by `+`. Modifiers: `super` (or `cmd`), `shift`,
+  `alt` (or `opt`), `ctrl`. Keys: letters, digits, symbols, `left`/`right`/`up`/`down`,
+  `return`, `tab`, `space`, `escape`, `f1`–`f20`. An array lists alternative chords. It is
+  not cmux's two-stroke chord.
+- Unknown actions and bad chords print a warning on stderr. That action keeps its defaults.
+- The file is read at startup.
+
+**KDE Plasma.** KWin handles some Super shortcuts before any app sees them. In a default
+Plasma 6 setup these include Super+D (show desktop), Super+W (overview), Super+T (edit
+tiles) and Super+Alt+Arrows (switch window). That blocks `splitRight`, `closeTab`,
+`newSurface` and `focusLeft/Right/Up/Down`. Either free them in System Settings →
+Keyboard → Shortcuts, or remap them here, for example:
+
+```toml
+[keybindings]
+splitRight = "super+shift+backslash"
+newSurface = "ctrl+shift+t"
+closeTab = "ctrl+shift+w"
+focusLeft = "ctrl+alt+shift+left"
+focusRight = "ctrl+alt+shift+right"
+focusUp = "ctrl+alt+shift+up"
+focusDown = "ctrl+alt+shift+down"
+```
 
 ## Contributing
 
