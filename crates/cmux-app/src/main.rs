@@ -1,8 +1,10 @@
 use std::rc::Rc;
 
+use cmux_app::actions;
 use cmux_app::style::{TermStyle, installed_families, load_bundled_fonts};
-use cmux_app::terminal_view::TerminalView;
+use cmux_app::terminal_view::{TerminalEvent, TerminalView};
 use cmux_config::ghostty::{Env, load};
+use cmux_config::keybindings;
 use gpui::{
     App, AppContext, Application, Bounds, Focusable, WindowAppearance, WindowBackgroundAppearance,
     WindowBounds, WindowOptions, px, size,
@@ -14,11 +16,20 @@ fn main() {
             cx.window_appearance(),
             WindowAppearance::Dark | WindowAppearance::VibrantDark
         );
-        let loaded = Env::from_system(dark)
-            .map(|env| load(&env))
-            .unwrap_or_default();
-        // shortcut: warnings go to stderr; an in-window warning line comes with the M2 config work.
-        for warning in &loaded.warnings {
+        let env = Env::from_system(dark);
+        let loaded = env.as_ref().map(load).unwrap_or_default();
+        let keys = match &env {
+            Some(env) => keybindings::load(&env.cmux_config_file()),
+            None => keybindings::keybindings(None, "config.toml"),
+        };
+        let bind_warnings = actions::bind(cx, &keys);
+        // shortcut: warnings go to stderr; an in-window warning line is not planned before M6.
+        for warning in loaded
+            .warnings
+            .iter()
+            .chain(&keys.warnings)
+            .chain(&bind_warnings)
+        {
             eprintln!("cmux-linux: config: {warning}");
         }
         // Order matters: gpui caches failed font lookups, so the bundled font is registered and
@@ -42,9 +53,16 @@ fn main() {
                 ..Default::default()
             },
             |window, cx| {
-                let view = cx.new(|cx| TerminalView::new(style, window, cx));
+                let view = cx.new(|cx| TerminalView::new(style, None, window, cx));
                 let focus = view.read(cx).focus_handle(cx);
                 window.focus(&focus);
+                // M1 behaviour until the workspace (Task 7) owns terminals: shell exit quits.
+                cx.subscribe(&view, |_, ev: &TerminalEvent, cx| {
+                    if *ev == TerminalEvent::Exited {
+                        cx.quit();
+                    }
+                })
+                .detach();
                 view
             },
         )
