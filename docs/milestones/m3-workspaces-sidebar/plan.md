@@ -1080,8 +1080,8 @@ impl WindowBlur {
   - With 8 workspaces in repos, hold a key down in a terminal for 10 s while `gh` is slow (block it: `PATH=$(mktemp -d):$PATH` with a `gh` script that `sleep 30`s).
   - Typing must not stall. Record it, plus a `CMUX_TRACE_LATENCY=1` sample if M1's trace exists by then.
 - [ ] **Step 4: Journal entry.** Append "M3 complete": the decisions, every deviation (gh instead of REST, inline rename for Super+Shift+R, no dirty marker, polling instead of watchers, blur whole-window and only with `background-blur`, sidebar band instead of titlebar controls, no persistence), and every Task 11/12 result.
-- [ ] **Step 5: design.md.** In the `cmux-meta` row, change "Depends on" to `serde_json` and "git branch (watch `.git/HEAD`)" to "git branch (`.git/HEAD`)". The `cmux-app` row is unchanged.
-- [ ] **Step 6: STATUS.** Archive, then rewrite: M3 done (PR #n), next M4 notifications, a code map for `cmux-meta`/`window_view`/`blur`, the carry list (M4 owns sidebar notification text; M5 owns shell-integration kicks; M6 owns macOS ports/cwd/blur), and remove the closed M2 carry items. Run `scripts/check-status-lines.sh`.
+- [x] **Step 5: design.md.** In the `cmux-meta` row, change "Depends on" to `serde_json` and "git branch (watch `.git/HEAD`)" to "git branch (`.git/HEAD`)". The `cmux-app` row is unchanged.
+- [x] **Step 6: STATUS.** Archive, then rewrite: M3 done (PR #n), next M4 notifications, a code map for `cmux-meta`/`window_view`/`blur`, the carry list (M4 owns sidebar notification text; M5 owns shell-integration kicks; M6 owns macOS ports/cwd/blur), and remove the closed M2 carry items. Run `scripts/check-status-lines.sh`.
 - [ ] **Step 7: PR.** Push, open the PR against `master` (body ends with the session's PR attribution line), `gh pr checks --watch`, then merge. Commit `docs: record M3 PR number` on master if needed.
 
 ---
