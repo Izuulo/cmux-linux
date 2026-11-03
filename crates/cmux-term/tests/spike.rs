@@ -15,7 +15,10 @@ fn bytes_to_cells_styles_cursor_and_events() {
         events,
         vec![
             OscEvent::Cwd("/tmp/my dir".into()),
-            OscEvent::Notify { title: Some("Claude".into()), body: "Waiting".into() },
+            OscEvent::Notify {
+                title: Some("Claude".into()),
+                body: "Waiting".into()
+            },
         ]
     );
     assert_eq!(term.title().as_deref(), Some("spike"));
@@ -24,10 +27,16 @@ fn bytes_to_cells_styles_cursor_and_events() {
     assert_eq!(snap.lines[0], "hello world");
     assert_eq!(snap.lines[1], "ab");
 
-    let w = snap.rows[0].iter().find(|c| c.text == "w").expect("cell for 'w'");
+    let w = snap.rows[0]
+        .iter()
+        .find(|c| c.text == "w")
+        .expect("cell for 'w'");
     assert!(w.bold);
     assert!(matches!(w.fg, ColorSpec::Palette(2)), "fg was {:?}", w.fg);
-    let h = snap.rows[0].iter().find(|c| c.text == "h").expect("cell for 'h'");
+    let h = snap.rows[0]
+        .iter()
+        .find(|c| c.text == "h")
+        .expect("cell for 'h'");
     assert!(!h.bold);
 
     let cursor = snap.cursor.expect("cursor visible");

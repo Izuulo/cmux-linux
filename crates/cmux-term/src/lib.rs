@@ -48,7 +48,12 @@ impl Term {
         let lines = self.render.text_lines()?;
         let cursor = self.render.cursor();
         let mut rows = Vec::new();
-        self.render.walk_rows(|_, _, cells| rows.push(cells.to_vec()))?;
-        Ok(Snapshot { lines, rows, cursor })
+        self.render
+            .walk_rows(|_, _, cells| rows.push(cells.to_vec()))?;
+        Ok(Snapshot {
+            lines,
+            rows,
+            cursor,
+        })
     }
 }

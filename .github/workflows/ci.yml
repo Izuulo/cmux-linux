@@ -22,15 +22,20 @@ jobs:
             clang libclang-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
             libvulkan-dev libfontconfig-dev libfreetype-dev libx11-xcb-dev libxcb1-dev \
             libssl-dev libzstd-dev
-      - uses: dtolnay/rust-toolchain@stable
+      # Must match rust-toolchain.toml.
+      - uses: dtolnay/rust-toolchain@master
         with:
-          components: clippy
+          toolchain: "1.99.0"
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - name: Zig 0.16.0
         # Ghostty's build.zig runs a bare `zig env`, so zig must be on PATH (ZIG alone isn't enough).
         run: |
           scripts/install-zig.sh
           echo "$PWD/.tools/zig" >> "$GITHUB_PATH"
+      - name: Format (our crates; vendored code is left as upstream wrote it)
+        run: cargo fmt --check -p cmux-app -p cmux-config -p cmux-core -p cmux-ipc -p cmux-meta -p cmux-term
       - run: cargo build --workspace --locked
       - run: cargo test --workspace --locked
-      - run: cargo clippy --workspace --locked --no-deps --exclude ghostty-vt --exclude ghostty-vt-sys -- -D warnings
+      # Vendored ghostty-vt fails clippy::chunks_exact_to_as_chunks on 1.99 (kitty.rs); we don't edit vendored code.
+      - run: cargo clippy --workspace --all-targets --locked --no-deps --exclude ghostty-vt --exclude ghostty-vt-sys -- -D warnings
