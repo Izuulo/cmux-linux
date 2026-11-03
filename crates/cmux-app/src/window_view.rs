@@ -194,6 +194,7 @@ impl WindowView {
     }
 
     fn close_now(&mut self, id: WorkspaceId, window: &mut Window, cx: &mut Context<Self>) {
+        let was_selected = id == self.workspaces.selected();
         match self.workspaces.close(id) {
             WorkspaceClosed::Last => cx.quit(),
             WorkspaceClosed::Closed => {
@@ -203,8 +204,13 @@ impl WindowView {
                 self.subs.remove(&id);
                 self.views.remove(&id);
                 self.titles.remove(&id);
-                let sel = self.workspaces.selected();
-                self.select(sel, window, cx);
+                if was_selected {
+                    let sel = self.workspaces.selected();
+                    self.select(sel, window, cx);
+                } else {
+                    // Selecting would refocus the terminal and blur an open rename.
+                    cx.notify();
+                }
             }
             WorkspaceClosed::NotFound => {}
         }
