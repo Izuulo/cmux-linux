@@ -841,9 +841,9 @@ Rules:
 - `close_now`: model `close`. `Last` → `cx.quit()`. `Closed` → drop the view entity (its terminals drop with it) and `select(new selected)`.
 - Render: `div().flex().flex_row().size_full()` with the selected workspace's view in a `flex_1().min_w(px(0.))` child. Call `set_left_inset(0.)` (Task 9 passes the sidebar width). Actions go on the root div: NewWorkspace, CloseWorkspace (selected), NextWorkspace/PrevWorkspace (`cycle`), SelectWorkspaceByNumber, MoveWorkspaceUp/Down (`move_selected` + notify). ToggleSidebar and RenameWorkspace are no-ops until Task 9/10.
 
-- [ ] **Step 1: Implement** as above. All rules here are covered by Task 1's model tests; this task is wiring.
-- [ ] **Step 2: Run tests and lints.** `cargo test -p cmux-app --locked` and the clippy line. Expected: pass.
-- [ ] **Step 3: Commit.** `git commit -m "feat(cmux-app): WindowView with workspaces, switching and close confirmation"`.
+- [x] **Step 1: Implement** as above. All rules here are covered by Task 1's model tests; this task is wiring.
+- [x] **Step 2: Run tests and lints.** `cargo test -p cmux-app --locked` and the clippy line. Expected: pass.
+- [x] **Step 3: Commit.** `git commit -m "feat(cmux-app): WindowView with workspaces, switching and close confirmation"`.
 - [ ] **Step 4: Run it** at the desktop and check each item:
   - Super+N opens a new workspace in the same cwd.
   - Super+1 / Super+9 / Super+Ctrl+] / [ switch, and the hidden workspace's shells keep running (`sleep 5; echo done` in one, switch away and back).
