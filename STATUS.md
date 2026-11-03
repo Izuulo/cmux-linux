@@ -40,7 +40,7 @@
 ## Open risks
 - gpui is pre-1.0; API churn. Pin the version.
 - libghostty-vt Rust bindings may not expose enough (cells, styles, OSC events).
-- KWin blur via gpui unverified on this machine.
+- KWin blur via gpui not yet verified on KDE Plasma Wayland.
 
 ## Blockers
 None.

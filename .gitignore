@@ -1,0 +1,6 @@
+# Local Claude Code session state
+.claude/checklists/
+.claude/settings.local.json
+
+# Rust
+/target/

@@ -1,0 +1,23 @@
+cmux-linux
+Copyright (C) 2026 cmux-linux contributors
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See LICENSE.
+
+Third-party material
+--------------------
+
+cmux (https://github.com/manaflow-ai/cmux)
+  Copyright (c) 2024-present Manaflow, Inc. and contributors.
+  GPL-3.0-or-later. cmux-linux is a port of cmux's application code; files
+  derived from cmux keep their original copyright. Nothing is taken from cmux's
+  BUSL-1.1 directories.
+
+REA reverse-engineer-anything skill (https://github.com/morluto/rea)
+  .claude/skills/reverse-engineer-anything/
+  Copyright (c) 2026 morluto. MIT License; see that directory's LICENSE.
+
+Further components (Ghostty, gpui, Rust crates) are listed here as they are
+added, with their licences.
