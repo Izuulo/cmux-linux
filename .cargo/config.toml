@@ -1,0 +1,4 @@
+[env]
+# Used by vendor/ghostty-vt-sys/build.rs. An exported ZIG / CMUX_GHOSTTY_SRC overrides these.
+ZIG = { value = ".tools/zig/zig", relative = true }
+CMUX_GHOSTTY_SRC = { value = "vendor/ghostty", relative = true }
