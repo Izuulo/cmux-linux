@@ -174,10 +174,10 @@ impl WindowView {
 
     /// Commits the open rename, if any, without refocusing.
     pub(super) fn commit_rename(&mut self, cx: &mut Context<Self>) {
-        if let Some(r) = self.rename.take() {
-            if let (id, Some(text)) = r.read(cx).snapshot() {
-                self.workspaces.rename(id, &text);
-            }
+        if let Some(r) = self.rename.take()
+            && let (id, Some(text)) = r.read(cx).snapshot()
+        {
+            self.workspaces.rename(id, &text);
         }
     }
 
