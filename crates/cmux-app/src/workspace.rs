@@ -113,6 +113,10 @@ impl WorkspaceView {
 
     pub fn set_active(&mut self, active: bool) {
         self.active = active;
+        if active {
+            // Another workspace may have set the window title meanwhile; force a resend.
+            self.window_title.clear();
+        }
     }
 
     /// The focused surface's OSC title.
