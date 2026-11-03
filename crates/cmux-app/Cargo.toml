@@ -11,4 +11,5 @@ workspace = true
 
 [dependencies]
 cmux-term.workspace = true
+cmux-config.workspace = true
 gpui.workspace = true

@@ -35,5 +35,9 @@ gpui (https://github.com/zed-industries/zed, crates.io gpui 0.2.2)
 portable-pty (crates.io 0.9, https://github.com/wezterm/wezterm)
   Copyright (c) 2018 Wez Furlong. MIT.
 
+JetBrains Mono 2.304 (crates/cmux-app/assets/fonts/, https://github.com/JetBrains/JetBrainsMono)
+  Copyright 2020 The JetBrains Mono Project Authors. SIL Open Font License 1.1;
+  see crates/cmux-app/assets/fonts/OFL.txt. Bundled unmodified as Ghostty's default font.
+
 Further components (Rust crates) are listed here as they are added,
 with their licences.

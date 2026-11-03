@@ -18,6 +18,7 @@ bindgen = "0.72"
 ghostty-vt-sys = { path = "vendor/ghostty-vt-sys" }
 ghostty-vt = { path = "vendor/ghostty-vt" }
 cmux-term = { path = "crates/cmux-term" }
+cmux-config = { path = "crates/cmux-config" }
 gpui = "=0.2.2"
 portable-pty = "0.9"
 libc = "0.2"
