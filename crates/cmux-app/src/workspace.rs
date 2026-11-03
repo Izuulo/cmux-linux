@@ -318,7 +318,8 @@ impl Render for WorkspaceView {
             .id("workspace")
             .relative()
             .size_full()
-            .bg(self.style.window_background())
+            // No background here: each terminal paints its own (with opacity); a second layer
+            // would make panes more opaque than the divider gaps.
             .key_context("Workspace")
             .track_focus(&self.focus)
             .on_drag_move(cx.listener(Self::on_divider_drag))

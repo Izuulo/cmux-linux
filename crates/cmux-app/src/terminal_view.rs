@@ -413,6 +413,15 @@ impl Render for TerminalView {
             .on_mouse_down(MouseButton::Middle, cx.listener(Self::mouse_down))
             .on_mouse_down(MouseButton::Right, cx.listener(Self::mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
+            // A selection drag released over another pane or a divider still has to end here.
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, ev, w, cx| {
+                    if this.dragging {
+                        this.mouse_up(ev, w, cx);
+                    }
+                }),
+            )
             .on_mouse_up(MouseButton::Middle, cx.listener(Self::mouse_up))
             .on_mouse_up(MouseButton::Right, cx.listener(Self::mouse_up))
             .on_mouse_move(cx.listener(Self::mouse_move))
