@@ -118,6 +118,10 @@ pub fn fetch(
     branch: &str,
     deadline: Duration,
 ) -> Result<Vec<PrItem>, FetchError> {
+    // A missing cwd makes spawn fail with ENOENT, which would read as "gh not installed".
+    if !dir.is_dir() {
+        return Err(FetchError::Failed("no such directory".into()));
+    }
     let mut cmd = Command::new(program);
     cmd.args(GH_ARGS).arg(branch).current_dir(dir);
     let out = run_with_deadline(cmd, deadline)?;
@@ -142,7 +146,6 @@ fn run_with_deadline(mut cmd: Command, deadline: Duration) -> Result<Output, Fet
         std::io::ErrorKind::NotFound => FetchError::NotFound,
         _ => FetchError::Failed(e.to_string()),
     })?;
-    // Drain pipes on threads so a chatty child can't block on a full pipe.
     // Drain pipes on threads so a chatty child can't block on a full pipe.
     let (so, se) = (drain(child.stdout.take()), drain(child.stderr.take()));
     let start = Instant::now();
@@ -321,6 +324,17 @@ mod tests {
             Duration::from_secs(1),
         );
         assert_eq!(r, Err(FetchError::NotFound));
+    }
+
+    #[test]
+    fn fetch_in_a_missing_dir_fails_without_disabling() {
+        let r = fetch(
+            "sh",
+            Path::new("/nonexistent-cmux"),
+            "feat",
+            Duration::from_secs(1),
+        );
+        assert_eq!(r, Err(FetchError::Failed("no such directory".into())));
     }
 
     #[test]
