@@ -1,1 +1,3 @@
-//! cmux-config: Ghostty config and keybindings (filled in M1/M2).
+//! cmux-config: Ghostty config (M1) and keybindings (M2).
+
+pub mod ghostty;
