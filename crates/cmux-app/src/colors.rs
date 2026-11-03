@@ -28,16 +28,30 @@ pub struct CellColors {
     pub fg: Rgb,
     /// `None` = the default background: no quad, so window opacity shows through.
     pub bg: Option<Rgb>,
+    /// Alpha of the `bg` quad (generic.zig ~3414: selected and inverse cells are opaque).
+    pub bg_alpha: f32,
+    /// Glyph alpha. 0.0 for invisible text, which hides only the glyph: the painter must still
+    /// draw underline, strikethrough and the other decorations, as Ghostty does.
     pub fg_alpha: f32,
 }
 
-pub fn resolve(cell: &Cell, default_fg: Rgb, default_bg: Rgb, faint_opacity: f32) -> CellColors {
+/// `explicit_bg_alpha`: alpha for cells with an explicit background, i.e. `background-opacity`
+/// when `background-opacity-cells` is on (generic.zig ~3426), else 1.0.
+pub fn resolve(
+    cell: &Cell,
+    default_fg: Rgb,
+    default_bg: Rgb,
+    faint_opacity: f32,
+    explicit_bg_alpha: f32,
+) -> CellColors {
     let mut fg = cell.resolved_fg.unwrap_or(default_fg);
     let mut bg = cell.resolved_bg;
+    let mut bg_alpha = explicit_bg_alpha;
     if cell.inverse {
         let old_fg = fg;
         fg = bg.unwrap_or(default_bg);
         bg = Some(old_fg);
+        bg_alpha = 1.0;
     }
     let fg_alpha = if cell.invisible {
         0.0
@@ -46,7 +60,12 @@ pub fn resolve(cell: &Cell, default_fg: Rgb, default_bg: Rgb, faint_opacity: f32
     } else {
         1.0
     };
-    CellColors { fg, bg, fg_alpha }
+    CellColors {
+        fg,
+        bg,
+        bg_alpha,
+        fg_alpha,
+    }
 }
 
 fn pick(c: DynColor, cell: CellColors, default_bg: Rgb) -> Rgb {
@@ -57,25 +76,29 @@ fn pick(c: DynColor, cell: CellColors, default_bg: Rgb) -> Rgb {
     }
 }
 
-/// Ghostty's selection colours: unset swaps the cell's fg and bg.
+/// Ghostty's selection colours (generic.zig ~3342, ~3391): unset uses the default foreground
+/// as the background and the default background as the foreground.
 pub fn selected(
     c: CellColors,
+    default_fg: Rgb,
     default_bg: Rgb,
     fg: Option<DynColor>,
     bg: Option<DynColor>,
 ) -> CellColors {
-    let cell_bg = c.bg.unwrap_or(default_bg);
     CellColors {
-        fg: fg.map_or(cell_bg, |d| pick(d, c, default_bg)),
-        bg: Some(bg.map_or(c.fg, |d| pick(d, c, default_bg))),
+        fg: fg.map_or(default_bg, |d| pick(d, c, default_bg)),
+        bg: Some(bg.map_or(default_fg, |d| pick(d, c, default_bg))),
+        bg_alpha: 1.0,
         fg_alpha: c.fg_alpha,
     }
 }
 
-/// (cursor fill, glyph colour under a block cursor). An OSC 12 colour beats the config;
-/// unset config uses the cell's foreground for the fill and its background for the glyph.
+/// (cursor fill, glyph colour under a block cursor). An OSC 12 colour beats the config; unset
+/// config uses the default foreground for the fill (generic.zig ~3034) and the default
+/// background for the glyph (~3101), also when OSC 12 sets the fill.
 pub fn cursor(
     c: CellColors,
+    default_fg: Rgb,
     default_bg: Rgb,
     osc: Option<Rgb>,
     color: Option<DynColor>,
@@ -83,8 +106,8 @@ pub fn cursor(
 ) -> (Rgb, Rgb) {
     let fill = osc
         .or(color.map(|d| pick(d, c, default_bg)))
-        .unwrap_or(c.fg);
-    let glyph = text.map_or(c.bg.unwrap_or(default_bg), |d| pick(d, c, default_bg));
+        .unwrap_or(default_fg);
+    let glyph = text.map_or(default_bg, |d| pick(d, c, default_bg));
     (fill, glyph)
 }
 
@@ -106,7 +129,7 @@ mod tests {
     const BLUE: Rgb = Rgb { r: 0, g: 0, b: 255 };
 
     fn colors(cell: Cell) -> CellColors {
-        resolve(&cell, FG, BG, 0.5)
+        resolve(&cell, FG, BG, 0.5, 1.0)
     }
 
     #[test]
@@ -116,6 +139,7 @@ mod tests {
             CellColors {
                 fg: FG,
                 bg: None,
+                bg_alpha: 1.0,
                 fg_alpha: 1.0
             }
         );
@@ -168,10 +192,19 @@ mod tests {
         );
     }
 
+    fn red_on_blue() -> CellColors {
+        colors(Cell {
+            resolved_fg: Some(RED),
+            resolved_bg: Some(BLUE),
+            ..Default::default()
+        })
+    }
+
     #[test]
-    fn selection_defaults_to_swapping() {
-        let c = selected(colors(Cell::default()), BG, None, None);
+    fn unset_selection_uses_default_fg_as_bg_and_default_bg_as_fg() {
+        let c = selected(red_on_blue(), FG, BG, None, None);
         assert_eq!((c.fg, c.bg), (BG, Some(FG)));
+        assert_eq!(c.bg_alpha, 1.0);
     }
 
     #[test]
@@ -181,23 +214,72 @@ mod tests {
             resolved_fg: Some(BLUE),
             ..Default::default()
         });
-        let c = selected(base, BG, Some(DynColor::CellForeground), Some(red));
+        let c = selected(base, FG, BG, Some(DynColor::CellForeground), Some(red));
+        assert_eq!((c.fg, c.bg), (BLUE, Some(RED)));
+        let c = selected(
+            red_on_blue(),
+            FG,
+            BG,
+            Some(DynColor::CellBackground),
+            Some(DynColor::CellForeground),
+        );
         assert_eq!((c.fg, c.bg), (BLUE, Some(RED)));
     }
 
     #[test]
-    fn cursor_colours() {
-        let base = colors(Cell::default());
-        assert_eq!(cursor(base, BG, None, None, None), (FG, BG));
-        let red = DynColor::Rgb(config::Rgb { r: 255, g: 0, b: 0 });
+    fn unset_cursor_uses_default_fg_fill_and_default_bg_glyph() {
+        let base = red_on_blue();
+        assert_eq!(cursor(base, FG, BG, None, None, None), (FG, BG));
+        let osc = Rgb { r: 1, g: 2, b: 3 };
         assert_eq!(
-            cursor(base, BG, None, Some(red), Some(DynColor::CellForeground)),
-            (RED, FG)
+            cursor(base, FG, BG, Some(osc), None, None),
+            (osc, BG),
+            "OSC 12 leaves the glyph at the default bg"
+        );
+    }
+
+    #[test]
+    fn configured_cursor_colours() {
+        let base = red_on_blue();
+        let green = DynColor::Rgb(config::Rgb { r: 0, g: 255, b: 0 });
+        let green_vt = Rgb { r: 0, g: 255, b: 0 };
+        assert_eq!(
+            cursor(
+                base,
+                FG,
+                BG,
+                None,
+                Some(green),
+                Some(DynColor::CellForeground)
+            ),
+            (green_vt, RED)
         );
         assert_eq!(
-            cursor(base, BG, Some(BLUE), Some(red), None),
+            cursor(base, FG, BG, Some(BLUE), Some(green), None),
             (BLUE, BG),
             "OSC 12 wins"
+        );
+    }
+
+    #[test]
+    fn opacity_cells_applies_to_explicit_backgrounds_only() {
+        let cell = |bg, inverse| Cell {
+            resolved_bg: bg,
+            inverse,
+            ..Default::default()
+        };
+        let at = |cell: Cell| resolve(&cell, FG, BG, 0.5, 0.25);
+        assert_eq!(at(cell(Some(BLUE), false)).bg_alpha, 0.25);
+        assert_eq!(at(cell(None, false)).bg, None);
+        assert_eq!(
+            at(cell(Some(BLUE), true)).bg_alpha,
+            1.0,
+            "inverse is opaque"
+        );
+        assert_eq!(
+            colors(cell(Some(BLUE), false)).bg_alpha,
+            1.0,
+            "off = opaque"
         );
     }
 

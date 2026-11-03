@@ -25,20 +25,24 @@ pub struct TermStyle {
 }
 
 impl TermStyle {
-    pub fn new(cfg: &Config) -> Self {
-        let mut families = cfg.font_family.clone();
-        let primary = if families.is_empty() {
-            DEFAULT_FONT_FAMILY.to_string()
-        } else {
-            families.remove(0)
-        };
-        // Like Ghostty, fall back to the bundled font after the user's own fallbacks.
-        families.push(DEFAULT_FONT_FAMILY.to_string());
+    /// `installed`: the loadable family names, from [`installed_families`] (call that after
+    /// [`load_bundled_fonts`]).
+    pub fn new(cfg: &Config, installed: &[String]) -> Self {
+        let primary = pick_family(&cfg.font_family, installed);
+        // gpui's Linux text system ignores `fallbacks` (text_system.rs "TODO: Remove this when
+        // Linux have implemented setting fallbacks"), so `pick_family` does the real work there.
+        let mut fallbacks: Vec<String> = cfg
+            .font_family
+            .iter()
+            .filter(|f| **f != primary)
+            .cloned()
+            .collect();
+        fallbacks.push(DEFAULT_FONT_FAMILY.to_string());
         let font = Font {
             family: primary.into(),
             // Ligatures stay off: force_width snaps glyphs, so a ligature would shift the grid.
             features: FontFeatures::disable_ligatures(),
-            fallbacks: Some(FontFallbacks::from_fonts(families)),
+            fallbacks: Some(FontFallbacks::from_fonts(fallbacks)),
             weight: FontWeight::NORMAL,
             style: FontStyle::Normal,
         };
@@ -81,25 +85,47 @@ impl TermStyle {
     }
 }
 
+/// The first configured family that is installed, else the bundled [`DEFAULT_FONT_FAMILY`].
+/// gpui's Linux `resolve_font` would otherwise walk its own `.ZedMono/Helvetica/...` stack
+/// and never reach the bundled font.
+pub fn pick_family(configured: &[String], installed: &[String]) -> String {
+    configured
+        .iter()
+        .find(|f| installed.contains(f))
+        .map_or_else(|| DEFAULT_FONT_FAMILY.to_string(), Clone::clone)
+}
+
+/// Every family name gpui's text system knows. Call after [`load_bundled_fonts`], which must
+/// itself run before the first `font_id` lookup because gpui caches failed lookups
+/// (text_system.rs `font_id`), so an early "JetBrains Mono" lookup would stay failed.
+// shortcut: gpui also lists its own fallback stack (Helvetica, Ubuntu, ...) whether or not it is
+// installed, so configuring one of those uninstalled picks it; probe `resolve_font` if that bites.
+pub fn installed_families(cx: &App) -> Vec<String> {
+    cx.text_system().all_font_names()
+}
+
 /// Cell size in logical pixels, snapped to whole device pixels the way Ghostty rounds
 /// (font/Metrics.zig: `cell_width = @round(face_width)`, `cell_height = @round(ascent - descent + line_gap)`).
-/// gpui hides `line_gap` (0 for JetBrains Mono) and negates `descent` on Linux, hence `abs`.
+/// gpui's Linux `font_metrics` negates swash's descent (platform/linux/text_system.rs), so it is
+/// <= 0 as in Ghostty; `abs` also accepts the positive convention. `line_gap` is
+/// `FontMetrics::line_gap(font_size)`, the font's leading.
 pub fn cell_size(
     advance: f32,
     ascent: f32,
     descent: f32,
+    line_gap: f32,
     scale: f32,
     adjust: Option<MetricModifier>,
 ) -> (f32, f32) {
     let w = (advance * scale).round().max(1.0);
-    let mut h = ((ascent + descent.abs()) * scale).round();
+    let mut h = ((ascent + descent.abs() + line_gap) * scale).round();
     if let Some(m) = adjust {
         h = m.apply(h);
     }
     (w / scale, h.max(1.0) / scale)
 }
 
-/// Registers the bundled JetBrains Mono faces with gpui.
+/// Registers the bundled JetBrains Mono faces with gpui. Call before any `font_id` lookup.
 pub fn load_bundled_fonts(cx: &App) {
     let fonts: Vec<Cow<'static, [u8]>> = vec![
         Cow::Borrowed(include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf").as_slice()),
@@ -129,7 +155,7 @@ mod tests {
 
     #[test]
     fn default_font_is_bundled_jetbrains_mono_at_12pt() {
-        let style = TermStyle::new(&Config::default());
+        let style = TermStyle::new(&Config::default(), &[]);
         assert_eq!(style.font.family.as_ref(), DEFAULT_FONT_FAMILY);
         assert_eq!(style.font.features.is_calt_enabled(), Some(false));
         assert_eq!(style.font_px, 16.0);
@@ -141,7 +167,7 @@ mod tests {
             font_family: vec!["Fira Code".into(), "Noto Emoji".into()],
             ..Default::default()
         };
-        let style = TermStyle::new(&cfg);
+        let style = TermStyle::new(&cfg, &names(&["Fira Code"]));
         assert_eq!(style.font.family.as_ref(), "Fira Code");
         let fallbacks = style.font.fallbacks.unwrap();
         assert_eq!(
@@ -155,7 +181,7 @@ mod tests {
         let mut cfg = Config::default();
         cfg.palette[1] = Some(Rgb { r: 255, g: 0, b: 0 });
         let (mut t, rx) = term();
-        TermStyle::new(&cfg).apply_to(&mut t);
+        TermStyle::new(&cfg, &[]).apply_to(&mut t);
         assert!(reply(&mut t, &rx, b"\x1b]11;?\x07").contains("rgb:2828/2c2c/3434"));
         assert!(reply(&mut t, &rx, b"\x1b]10;?\x07").contains("rgb:ffff/ffff/ffff"));
         assert!(reply(&mut t, &rx, b"\x1b]4;1;?\x07").contains("rgb:ffff/0000/0000"));
@@ -168,7 +194,7 @@ mod tests {
             ..Default::default()
         };
         let (mut t, _rx) = term();
-        TermStyle::new(&cfg).apply_to(&mut t);
+        TermStyle::new(&cfg, &[]).apply_to(&mut t);
         assert_eq!(
             t.update_frame().unwrap().cursor.unwrap().shape,
             CursorShape::Bar
@@ -177,15 +203,74 @@ mod tests {
 
     #[test]
     fn cell_size_snaps_to_device_pixels() {
-        assert_eq!(cell_size(9.6, 13.0, -3.0, 1.0, None), (10.0, 16.0));
-        assert_eq!(cell_size(9.6, 13.0, 3.0, 2.0, None), (9.5, 16.0));
+        assert_eq!(cell_size(9.6, 13.0, -3.0, 0.0, 1.0, None), (10.0, 16.0));
+        assert_eq!(cell_size(9.6, 13.0, 3.0, 0.0, 2.0, None), (9.5, 16.0));
         assert_eq!(
-            cell_size(9.6, 13.0, -3.0, 1.0, Some(MetricModifier::Absolute(2))),
+            cell_size(9.6, 13.0, -3.0, 0.0, 1.0, Some(MetricModifier::Absolute(2))),
             (10.0, 18.0)
         );
         assert_eq!(
-            cell_size(9.6, 13.0, -3.0, 1.0, Some(MetricModifier::Percent(1.25))),
+            cell_size(
+                9.6,
+                13.0,
+                -3.0,
+                0.0,
+                1.0,
+                Some(MetricModifier::Percent(1.25))
+            ),
             (10.0, 20.0)
         );
+    }
+
+    #[test]
+    fn cell_size_rounds_to_nearest() {
+        assert_eq!(cell_size(9.4, 13.0, -3.0, 0.0, 1.0, None).0, 9.0);
+        assert_eq!(cell_size(9.5, 13.0, -3.0, 0.0, 1.0, None).0, 10.0);
+        assert_eq!(cell_size(9.6, 13.4, -3.0, 0.0, 1.0, None).1, 16.0);
+        assert_eq!(cell_size(9.6, 13.5, -3.0, 0.0, 1.0, None).1, 17.0);
+    }
+
+    #[test]
+    fn cell_size_clamps_a_collapsing_modifier_to_one_pixel() {
+        assert_eq!(
+            cell_size(
+                9.6,
+                13.0,
+                -3.0,
+                0.0,
+                1.0,
+                Some(MetricModifier::Absolute(-40))
+            ),
+            (10.0, 1.0)
+        );
+    }
+
+    #[test]
+    fn cell_height_includes_the_line_gap() {
+        // 13 + 3 + 2.6 = 18.6 -> 19; gpui's Linux descent is negative.
+        assert_eq!(cell_size(9.6, 13.0, -3.0, 2.6, 1.0, None), (10.0, 19.0));
+    }
+
+    fn names(n: &[&str]) -> Vec<String> {
+        n.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn pick_family_takes_the_first_installed_configured_family() {
+        let available = names(&["Noto Sans", "Fira Code", DEFAULT_FONT_FAMILY]);
+        assert_eq!(
+            pick_family(&names(&["Missing", "Fira Code", "Noto Sans"]), &available),
+            "Fira Code"
+        );
+    }
+
+    #[test]
+    fn pick_family_falls_back_to_the_bundled_font() {
+        let available = names(&[DEFAULT_FONT_FAMILY]);
+        assert_eq!(
+            pick_family(&names(&["Missing"]), &available),
+            DEFAULT_FONT_FAMILY
+        );
+        assert_eq!(pick_family(&[], &available), DEFAULT_FONT_FAMILY);
     }
 }
