@@ -17,7 +17,7 @@
 | ID | State |
 |---|---|
 | M0 foundations | done (PR #1) |
-| M1 terminal | done (single-window Ghostty-fidelity terminal; see its journal) |
+| M1 terminal | done; exit criterion 1 confirmed by user, 2–3 (Ghostty screenshot pair, latency trace) not yet measured |
 | M2 splits-tabs | not started |
 | M3 workspaces-sidebar | not started |
 | M4 notifications | not started |
@@ -50,10 +50,14 @@
 - Real IME (fcitx/ibus) unverified.
 
 ## Carry to M2+
+- **Put early in the M2 plan:** PTY reader blocks until EOF, so a `setsid` grandchild holding the slave leaves a stuck pane (fix: poll plus wake pipe). Callbacks hold weak handles. Split prepaint before adding panes.
+- **Also M2:** bindings become config-remappable, an explicit exit item (`keys.rs` BINDINGS is hard-coded). Ctrl+Shift+C with no selection should pass through to the app (Ghostty `performable`). Add an unsafe multi-line paste prompt (Ghostty `clipboard-paste-protection`).
+- **M6:** a panic in `feed` kills the reader without `Exited`; add catch_unwind or a drop guard.
+- **M1 exit criteria 2–3:** take the screenshot pair and run `CMUX_TRACE_LATENCY=1` next time the user is at the desktop.
 - Mouse: touchpad may scroll ~3× Ghostty's rate; no drag threshold, shift-click extend, autoscroll, horizontal wheel; mouse glue untested.
 - Render: underline styles simplified; per-cell Font clone in prepaint; blink task always wakes; prepaint is long — split before adding panes.
 - IME: preedit has no background and isn't clamped; `bounds_for_range` approximate.
-- PTY: reader blocks until EOF (poll + wake pipe later); `resize` locks on GUI thread.
+- PTY: `resize` locks on GUI thread.
 - Term: epoch over-invalidates on any ESC[3J; title/bell coalesced per feed.
 - Config: quoted `?` path handling; theme files' own `theme`/`config-file` lines ignored.
 - CI: fmt `-p` list hand-maintained; clippy excludes vendored crates (`--no-deps`).

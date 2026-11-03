@@ -48,5 +48,8 @@ Zed terminal view (https://github.com/zed-industries/zed @ 69e2130295c2649963eb6
 futures (crates.io 0.3, https://github.com/rust-lang/futures-rs)
   MIT OR Apache-2.0.
 
+libc (crates.io 0.2, https://github.com/rust-lang/libc)
+  MIT OR Apache-2.0.
+
 Further components (Rust crates) are listed here as they are added,
 with their licences.

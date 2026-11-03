@@ -317,7 +317,9 @@ impl TerminalView {
         let Some(selection) = &self.selection else {
             return;
         };
-        if let Some(text) = selection.text(&mut self.session.term.lock().unwrap()) {
+        // Bind first so the Term lock is released before the clipboard call.
+        let text = selection.text(&mut self.session.term.lock().unwrap());
+        if let Some(text) = text {
             cx.write_to_clipboard(ClipboardItem::new_string(text));
         }
     }

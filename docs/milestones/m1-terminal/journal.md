@@ -29,3 +29,18 @@ Append-only, newest last. One entry per session: date, what was tried, what was 
 - No drag threshold, shift-click extend or autoscroll.
 - The IME was tested only through gpui's text-input path, not with fcitx/ibus.
 - The full list of minor findings carries in STATUS.md under "Carry to M2+".
+
+## 2026-11-03 — Final branch review
+- **Verdict.** Opus whole-branch review returned Ready after fixes, with no critical issues.
+- **Fixed before merge:**
+  - `libc` added to NOTICE.
+  - `copy` now releases the Term lock before writing the clipboard.
+- **Exit criteria.** Criterion 1 is met by the user's desktop check. Criteria 2 (Ghostty screenshot pair) and 3 (latency trace) are not yet measured. They are carried in STATUS and must not be reported as verified until they are recorded here.
+- **Promoted to M2:**
+  - PTY reader wake pipe (`setsid` grandchild → stuck pane).
+  - Weak-handle callbacks.
+  - Split prepaint.
+  - Remappable bindings.
+  - Ctrl+Shift+C passthrough when nothing is selected.
+  - Paste protection.
+- **Carried to M6:** `feed` panic guard.
