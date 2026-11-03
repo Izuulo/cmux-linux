@@ -2922,7 +2922,7 @@ D3, D8. rc §3 (table and remapping syntax); cmux `Sources/KeyboardShortcutSetti
   - `Env::cmux_config_file(&self) -> PathBuf` (`$XDG_CONFIG_HOME/cmux-linux/config.toml`)
   - module `cmux_config::keybindings`: `struct Binding { pub action: &'static str, pub keystroke: String, pub number: Option<u8> }`, `struct Keybindings { pub bindings: Vec<Binding>, pub warnings: Vec<String> }`, `const DEFAULTS: &[(&str, &[&str])]`, `fn chord_to_gpui(&str) -> Result<String, String>`, `fn keybindings(user: Option<&str>, origin: &str) -> Keybindings`, `fn load(&Path) -> Keybindings`
 
-- [ ] **Step 1: Add the dependency.** In the root `Cargo.toml` `[workspace.dependencies]`, add after `futures = "0.3"`:
+- [x] **Step 1: Add the dependency.** In the root `Cargo.toml` `[workspace.dependencies]`, add after `futures = "0.3"`:
 
 ```toml
 # Already in Cargo.lock (cbindgen); `parse` only, no serde derive.
@@ -2949,7 +2949,7 @@ toml (crates.io 0.8, https://github.com/toml-rs/toml), used by cmux-config, with
 
 Run once without `--locked` so cargo records the dependency: `cargo build -p cmux-config`. Then `git diff Cargo.lock`. Expected: only `dependencies = [ "toml 0.8.23" ]` added under `cmux-config`; `grep -A1 'name = "libc"' Cargo.lock` still says `0.2.189`.
 
-- [ ] **Step 2: Write the failing tests.** Create `crates/cmux-config/src/keybindings.rs` with its header and tests module only:
+- [x] **Step 2: Write the failing tests.** Create `crates/cmux-config/src/keybindings.rs` with its header and tests module only:
 
 ```rust
 //! Key bindings: cmux's default shortcut table with ⌘ as Super, overridable from the
@@ -3147,9 +3147,9 @@ index 4173ba2..da88b0a 100644
          let (cfg, _) = parse("font-family = A\nfont-family = \"\"\nfont-family = B\n");
 ```
 
-- [ ] **Step 3: Run tests to verify they fail.** Run: `cargo test -p cmux-config`. Expected: compile errors (`cannot find function keybindings`, `no field unfocused_split_opacity`, `no method named cmux_config_file`).
+- [x] **Step 3: Run tests to verify they fail.** Run: `cargo test -p cmux-config`. Expected: compile errors (`cannot find function keybindings`, `no field unfocused_split_opacity`, `no method named cmux_config_file`).
 
-- [ ] **Step 4: Implement the Ghostty keys.** Apply:
+- [x] **Step 4: Implement the Ghostty keys.** Apply:
 
 ```diff
 diff --git a/crates/cmux-config/src/ghostty/load.rs b/crates/cmux-config/src/ghostty/load.rs
@@ -3239,7 +3239,7 @@ index 4173ba2..da88b0a 100644
      s.parse()
 ```
 
-- [ ] **Step 5: Implement the keybindings.** Insert above the tests module in `keybindings.rs`:
+- [x] **Step 5: Implement the keybindings.** Insert above the tests module in `keybindings.rs`:
 
 ```rust
 use std::path::Path;
@@ -3502,9 +3502,9 @@ pub fn load(path: &Path) -> Keybindings {
 }
 ```
 
-- [ ] **Step 6: Run tests to verify they pass.** Run: `cargo test -p cmux-config --locked`. Expected: `test result: ok. 41 passed`.
+- [x] **Step 6: Run tests to verify they pass.** Run: `cargo test -p cmux-config --locked`. Expected: `test result: ok. 41 passed`.
 
-- [ ] **Step 7: Format, lint, commit.**
+- [x] **Step 7: Format, lint, commit.**
 
 ```bash
 cargo fmt -p cmux-config
