@@ -30,9 +30,12 @@ pub struct CellColors {
     pub bg: Option<Rgb>,
     /// Alpha of the `bg` quad (generic.zig ~3414: selected and inverse cells are opaque).
     pub bg_alpha: f32,
-    /// Glyph alpha. 0.0 for invisible text, which hides only the glyph: the painter must still
-    /// draw underline, strikethrough and the other decorations, as Ghostty does.
+    /// Glyph and decoration alpha (faint uses `faint-opacity`).
     pub fg_alpha: f32,
+    /// Invisible (SGR 8): the painter skips the glyph AND underline, overline and strikethrough,
+    /// like Ghostty and xterm (generic.zig ~3445-3458). Separate from `fg_alpha`, because faint
+    /// with `faint-opacity = 0` is also alpha 0 but still draws decorations.
+    pub invisible: bool,
 }
 
 /// `explicit_bg_alpha`: alpha for cells with an explicit background, i.e. `background-opacity`
@@ -53,18 +56,13 @@ pub fn resolve(
         bg = Some(old_fg);
         bg_alpha = 1.0;
     }
-    let fg_alpha = if cell.invisible {
-        0.0
-    } else if cell.faint {
-        faint_opacity
-    } else {
-        1.0
-    };
+    let fg_alpha = if cell.faint { faint_opacity } else { 1.0 };
     CellColors {
         fg,
         bg,
         bg_alpha,
         fg_alpha,
+        invisible: cell.invisible,
     }
 }
 
@@ -90,12 +88,14 @@ pub fn selected(
         bg: Some(bg.map_or(default_fg, |d| pick(d, c, default_bg))),
         bg_alpha: 1.0,
         fg_alpha: c.fg_alpha,
+        invisible: c.invisible,
     }
 }
 
 /// (cursor fill, glyph colour under a block cursor). An OSC 12 colour beats the config; unset
 /// config uses the default foreground for the fill (generic.zig ~3034) and the default
 /// background for the glyph (~3101), also when OSC 12 sets the fill.
+/// Pass the cursor cell's colours from `resolve`, before any `selected` override.
 pub fn cursor(
     c: CellColors,
     default_fg: Rgb,
@@ -140,7 +140,8 @@ mod tests {
                 fg: FG,
                 bg: None,
                 bg_alpha: 1.0,
-                fg_alpha: 1.0
+                fg_alpha: 1.0,
+                invisible: false,
             }
         );
     }
@@ -181,15 +182,14 @@ mod tests {
             .fg_alpha,
             0.5
         );
-        assert_eq!(
-            colors(Cell {
-                invisible: true,
-                faint: true,
-                ..Default::default()
-            })
-            .fg_alpha,
-            0.0
-        );
+        let hidden = colors(Cell {
+            invisible: true,
+            faint: true,
+            ..Default::default()
+        });
+        assert!(hidden.invisible);
+        assert_eq!(hidden.fg_alpha, 0.5);
+        assert!(!colors(Cell::default()).invisible);
     }
 
     fn red_on_blue() -> CellColors {
