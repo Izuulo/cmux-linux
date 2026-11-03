@@ -800,10 +800,10 @@ Behaviour changes:
 - `container(window)` becomes a method `self.container(window)` returning `(viewport_w − left_inset, viewport_h, scale)`.
 
 - [ ] **Step 1: Failing test.** M2's `every_config_action_has_a_gpui_action` in `actions.rs` already keeps `action_for` in sync with `DEFAULTS`. Run it: `cargo test -p cmux-app --lib actions`. Expected: it fails on `newTab` (Task 2 added the defaults). `the_default_table_parses_in_gpui` covers the new chords once they bind.
-- [ ] **Step 2: Implement** the actions, then the TerminalView and WorkspaceView items above. `main.rs` passes `None` for `cwd` for now.
-- [ ] **Step 3: Run.** `cargo test -p cmux-app --locked`, then the clippy line. Expected: pass.
+- [x] **Step 2: Implement** the actions, then the TerminalView and WorkspaceView items above. `main.rs` passes `None` for `cwd` for now.
+- [x] **Step 3: Run.** `cargo test -p cmux-app --locked`, then the clippy line. Expected: pass.
 - [ ] **Step 4: Run it.** `cargo run -p cmux-app`. Expected: same as M2. Closing the last tab now leaves an empty window (Task 8 wires `Empty`); note it, it isn't a bug yet.
-- [ ] **Step 5: Commit.** `git commit -m "feat(cmux-app): WorkspaceView reports empty/changed, takes an inset and cwd; workspace actions"`.
+- [x] **Step 5: Commit.** `git commit -m "feat(cmux-app): WorkspaceView reports empty/changed, takes an inset and cwd; workspace actions"`.
 
 ---
 
