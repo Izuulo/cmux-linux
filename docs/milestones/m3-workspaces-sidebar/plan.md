@@ -371,7 +371,7 @@ pub fn display_dir(dir: &str, home: Option<&str>) -> String;
 
 Test fixtures: a helper `fn scratch(name: &str) -> PathBuf` that creates `std::env::temp_dir()/cmux-meta-<pid>-<name>` fresh (removing any old one). Tests clean up after themselves. No new dev-dependency.
 
-- [ ] **Step 1: Failing tests.**
+- [x] **Step 1: Failing tests.**
 
 ```rust
 // git.rs tests
@@ -428,10 +428,10 @@ fn display_dir_home_prefix_only_on_component_boundary() {
 }
 ```
 
-- [ ] **Step 2: Run.** `cargo test -p cmux-meta`. Expected: compile errors.
-- [ ] **Step 3: Implement.** `find_git_dir` checks `dir.join(".git")`: `is_dir()` → return it; `is_file()` → read it, strip the `gitdir:` prefix, trim, and resolve relative to the file's parent. Then go to the parent, stopping at the root. `branch` = `find_git_dir` → read `HEAD` (an error gives None) → `parse_head`. `display_dir` trims trailing `/` from both, except a bare `/`.
-- [ ] **Step 4: Run.** Expected: 5 tests pass.
-- [ ] **Step 5: Commit.** `git commit -m "feat(cmux-meta): git branch from .git/HEAD (worktrees, detached) and ~ display paths"`.
+- [x] **Step 2: Run.** `cargo test -p cmux-meta`. Expected: compile errors.
+- [x] **Step 3: Implement.** `find_git_dir` checks `dir.join(".git")`: `is_dir()` → return it; `is_file()` → read it, strip the `gitdir:` prefix, trim, and resolve relative to the file's parent. Then go to the parent, stopping at the root. `branch` = `find_git_dir` → read `HEAD` (an error gives None) → `parse_head`. `display_dir` trims trailing `/` from both, except a bare `/`.
+- [x] **Step 4: Run.** Expected: 5 tests pass.
+- [x] **Step 5: Commit.** `git commit -m "feat(cmux-meta): git branch from .git/HEAD (worktrees, detached) and ~ display paths"`.
 
 ---
 
