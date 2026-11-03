@@ -694,7 +694,7 @@ pub fn collect(inputs: &[WorkspaceInput], proc_root: &Path, home: Option<&str>) 
 impl Session { pub fn foreground_busy(&self) -> bool; } // tcgetpgrp(master) is Some and != shell pid
 ```
 
-- [ ] **Step 1: Failing tests.**
+- [x] **Step 1: Failing tests.**
 
 ```rust
 // cmux-meta lib.rs
@@ -749,12 +749,12 @@ fn foreground_busy_tracks_a_running_job() {
 
 Match the `Session::spawn` closure signatures used by the existing tests in this file.
 
-- [ ] **Step 2: Run.** `cargo test -p cmux-meta && cargo test -p cmux-term --test pty foreground`. Expected: compile errors.
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run.** `cargo test -p cmux-meta && cargo test -p cmux-term --test pty foreground`. Expected: compile errors.
+- [x] **Step 3: Implement.**
   - `collect` takes the ttys of all panel pids via `ports::tty_of`, then runs one `listening_ports` scan for all inputs and unions per workspace. `display` = `path::display_dir`; `branch`/`git_dir` = `git::branch`.
   - `foreground_busy`: use portable-pty's `MasterPty::process_group_leader()` if 0.9 has it (check `~/.cargo/registry/src/*/portable-pty-0.9*/src/lib.rs`). Otherwise use `libc::tcgetpgrp` on `master.as_raw_fd()`. Compare with `process_id()`; None on either side → false.
-- [ ] **Step 4: Run.** Expected: pass.
-- [ ] **Step 5: Commit.** Use two commits: `feat(cmux-meta): collect per-workspace directories, branches and ports` (cmux-meta), then `feat(cmux-term): foreground_busy from the PTY's foreground process group` (cmux-term).
+- [x] **Step 4: Run.** Expected: pass.
+- [x] **Step 5: Commit.** Use two commits: `feat(cmux-meta): collect per-workspace directories, branches and ports` (cmux-meta), then `feat(cmux-term): foreground_busy from the PTY's foreground process group` (cmux-term).
 
 ---
 
