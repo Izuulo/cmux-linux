@@ -66,5 +66,12 @@ Bonsplit (https://github.com/manaflow-ai/bonsplit @ 58b73fd), cmux's split/tab l
   Copyright (c) 2026 Alasdair Monk. MIT. crates/cmux-core and crates/cmux-app/src/workspace*
   follow its split, focus, tab and tab-bar behaviour and metrics; no code is copied.
 
+wayland-client, wayland-backend, wayland-protocols (crates.io 0.31 / 0.3 / 0.32,
+  https://github.com/Smithay/wayland-rs), used by crates/cmux-app/src/blur.rs on Linux
+  MIT.
+
+raw-window-handle (crates.io 0.6, https://github.com/rust-windowing/raw-window-handle)
+  MIT OR Apache-2.0 OR Zlib.
+
 Further components (Rust crates) are listed here as they are added,
 with their licences.
