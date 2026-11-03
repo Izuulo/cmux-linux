@@ -870,6 +870,7 @@ name = "cmux-app"
 version = "0.1.0"
 dependencies = [
  "cmux-config",
+ "cmux-core",
  "cmux-term",
  "futures",
  "gpui",

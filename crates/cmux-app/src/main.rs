@@ -2,11 +2,11 @@ use std::rc::Rc;
 
 use cmux_app::actions;
 use cmux_app::style::{TermStyle, installed_families, load_bundled_fonts};
-use cmux_app::terminal_view::{TerminalEvent, TerminalView};
+use cmux_app::workspace::WorkspaceView;
 use cmux_config::ghostty::{Env, load};
 use cmux_config::keybindings;
 use gpui::{
-    App, AppContext, Application, Bounds, Focusable, WindowAppearance, WindowBackgroundAppearance,
+    App, AppContext, Application, Bounds, WindowAppearance, WindowBackgroundAppearance,
     WindowBounds, WindowOptions, px, size,
 };
 
@@ -52,19 +52,7 @@ fn main() {
                 app_id: Some("cmux-linux".into()),
                 ..Default::default()
             },
-            |window, cx| {
-                let view = cx.new(|cx| TerminalView::new(style, None, window, cx));
-                let focus = view.read(cx).focus_handle(cx);
-                window.focus(&focus);
-                // M1 behaviour until the workspace (Task 7) owns terminals: shell exit quits.
-                cx.subscribe(&view, |_, ev: &TerminalEvent, cx| {
-                    if *ev == TerminalEvent::Exited {
-                        cx.quit();
-                    }
-                })
-                .detach();
-                view
-            },
+            |window, cx| cx.new(|cx| WorkspaceView::new(style, window, cx)),
         )
         .expect("open window");
         cx.activate(true);
