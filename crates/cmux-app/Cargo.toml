@@ -10,4 +10,5 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+cmux-term.workspace = true
 gpui.workspace = true
