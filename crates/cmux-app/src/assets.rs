@@ -23,6 +23,23 @@ const FILES: &[(&str, &[u8])] = &[
         "icons/rows-2.svg",
         include_bytes!("../assets/icons/rows-2.svg"),
     ),
+    ("icons/plus.svg", include_bytes!("../assets/icons/plus.svg")),
+    (
+        "icons/panel-left.svg",
+        include_bytes!("../assets/icons/panel-left.svg"),
+    ),
+    (
+        "icons/git-pull-request.svg",
+        include_bytes!("../assets/icons/git-pull-request.svg"),
+    ),
+    (
+        "icons/git-merge.svg",
+        include_bytes!("../assets/icons/git-merge.svg"),
+    ),
+    (
+        "icons/circle-x.svg",
+        include_bytes!("../assets/icons/circle-x.svg"),
+    ),
 ];
 
 pub struct Assets;

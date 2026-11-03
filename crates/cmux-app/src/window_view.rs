@@ -11,14 +11,14 @@ use cmux_meta::pr::{self, PrKey, PrPoller};
 use cmux_meta::{WorkspaceInput, WorkspaceMeta};
 use gpui::{
     App, AppContext, Context, Entity, FocusHandle, Focusable, InteractiveElement, IntoElement,
-    ParentElement, PromptLevel, Render, Styled, Subscription, Task, Window, div, px,
+    ParentElement, PromptLevel, Render, ScrollHandle, Styled, Subscription, Task, Window, div,
+    prelude::*, px,
 };
 
 use crate::actions::*;
 use crate::style::TermStyle;
 use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
-#[allow(dead_code)] // The sidebar render (next commits) uses the row model.
 mod sidebar;
 
 pub const SIDEBAR_DEFAULT: f32 = 240.0;
@@ -30,11 +30,10 @@ pub struct WindowView {
     workspaces: Workspaces,
     views: HashMap<WorkspaceId, Entity<WorkspaceView>>,
     style: Rc<TermStyle>,
-    // Task 9 draws the sidebar from these.
-    #[allow(dead_code)]
     sidebar_visible: bool,
-    #[allow(dead_code)]
+    /// The requested width; drawn clamped to the window (`sidebar::clamp_width`).
     sidebar_width: f32,
+    sidebar_scroll: ScrollHandle,
     focus: FocusHandle,
     subs: HashMap<WorkspaceId, Subscription>,
     meta: HashMap<WorkspaceId, WorkspaceMeta>,
@@ -58,6 +57,7 @@ impl WindowView {
             style,
             sidebar_visible: true,
             sidebar_width: SIDEBAR_DEFAULT,
+            sidebar_scroll: ScrollHandle::new(),
             focus: cx.focus_handle(),
             subs: HashMap::new(),
             meta: HashMap::new(),
@@ -127,6 +127,9 @@ impl WindowView {
         if let Some(view) = self.views.get(&id) {
             view.update(cx, |v, cx| v.focus_active(window, cx));
         }
+        if let Some(ix) = self.workspaces.index_of(id) {
+            self.sidebar_scroll.scroll_to_item(ix);
+        }
         cx.notify();
     }
 
@@ -163,7 +166,6 @@ impl WindowView {
         }
     }
 
-    #[allow(dead_code)] // Task 9 (sidebar rows) uses it.
     /// Custom title, else the OSC title, else "Terminal".
     pub(crate) fn title_of(&self, id: WorkspaceId, cx: &App) -> String {
         self.workspaces
@@ -304,15 +306,18 @@ impl Focusable for WindowView {
 }
 
 impl Render for WindowView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let selected = self.views.get(&self.workspaces.selected()).cloned();
-        if let Some(v) = &selected {
-            v.update(cx, |v, _| v.set_left_inset(0.));
+        let width = self.sidebar_px(window);
+        for v in self.views.values() {
+            v.update(cx, |v, _| v.set_left_inset(width.unwrap_or(0.)));
         }
         div()
+            .relative()
             .flex()
             .flex_row()
             .size_full()
+            .on_drag_move(cx.listener(Self::on_sidebar_drag))
             .on_action(
                 cx.listener(|this, _: &NewWorkspace, w, cx| this.new_workspace(false, w, cx)),
             )
@@ -338,9 +343,11 @@ impl Render for WindowView {
                     cx.notify();
                 }
             }))
-            .on_action(cx.listener(|_, _: &ToggleSidebar, _, _| {}))
+            .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| this.toggle_sidebar(cx)))
             .on_action(cx.listener(|_, _: &RenameWorkspace, _, _| {}))
+            .when_some(width, |d, w| d.child(self.render_sidebar(w, cx)))
             .child(div().flex_1().min_w(px(0.)).h_full().children(selected))
+            .when_some(width, |d, w| d.child(self.render_resize_band(w)))
     }
 }
 
