@@ -2,6 +2,7 @@
 //! each pane showing its selected tab's terminal. All geometry comes from `Layout::rects`, so
 //! layout, focus and divider drag share one maths source (plan D2).
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -9,8 +10,8 @@ use cmux_core::{
     Closed, Direction, DividerRect, Layout, Orientation, PaneId, RESIZE_STEP, Rect, SurfaceId,
 };
 use gpui::{
-    AppContext, ClickEvent, Context, CursorStyle, DragMoveEvent, EmptyView, Entity, FocusHandle,
-    Focusable, InteractiveElement, IntoElement, ParentElement, Render, Rgba,
+    AppContext, Bounds, ClickEvent, Context, CursorStyle, DragMoveEvent, EmptyView, Entity,
+    FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Pixels, Render, Rgba,
     StatefulInteractiveElement, Styled, Subscription, Window, div, px,
 };
 
@@ -42,6 +43,10 @@ pub struct WorkspaceView {
     style: Rc<TermStyle>,
     focus: FocusHandle,
     window_title: String,
+    /// Each pane's tab bounds from the last prepaint (window coordinates).
+    tab_bounds: Rc<RefCell<HashMap<PaneId, Vec<Bounds<Pixels>>>>>,
+    /// Where a dragged tab would land: pane and insertion index.
+    drop_target: Option<(PaneId, usize)>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -56,6 +61,8 @@ impl WorkspaceView {
             style,
             focus: cx.focus_handle(),
             window_title: String::new(),
+            tab_bounds: Rc::default(),
+            drop_target: None,
             _subscriptions: vec![lost],
         };
         let first = this.layout.active_surface();
@@ -238,7 +245,7 @@ impl WorkspaceView {
             .flex_col()
             .overflow_hidden()
             .key_context("Pane")
-            .child(self.render_tab_strip(pane, focused, cx))
+            .child(self.render_tab_strip(pane, focused, r.x, cx))
             .child(
                 div()
                     .relative()
@@ -316,6 +323,10 @@ impl Focusable for WorkspaceView {
 impl Render for WorkspaceView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.update_window_title(window, cx);
+        // A drag released outside every strip leaves no drop target behind.
+        if !cx.has_active_drag() {
+            self.drop_target = None;
+        }
         let (w, h, scale) = Self::container(window);
         let rects = self.layout.rects(w, h, scale);
         let focused = self.layout.focused();

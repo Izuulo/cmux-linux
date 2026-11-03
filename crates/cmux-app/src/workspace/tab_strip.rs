@@ -1,11 +1,11 @@
 //! A pane's tab strip, sized and coloured like Bonsplit's tab bar as cmux configures it
 //! (research-cmux.md §4 "Pane tab strip"; numbers from `TabBarMetrics.swift`, logical px).
 
-use cmux_core::{Orientation, Pane, PaneId};
+use cmux_core::{Orientation, Pane, PaneId, SurfaceId};
 use gpui::{
-    ClickEvent, Context, InteractiveElement, IntoElement, MouseButton, MouseDownEvent,
-    ParentElement, SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*, px,
-    svg,
+    ClickEvent, Context, DragMoveEvent, InteractiveElement, IntoElement, MouseButton,
+    MouseDownEvent, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
+    Window, div, prelude::*, px, svg,
 };
 
 use super::WorkspaceView;
@@ -29,6 +29,42 @@ const LANE_TRAIL: f32 = 8.0;
 const BUTTON_W: f32 = 22.0;
 const BUTTON_GAP: f32 = 4.0;
 const BUTTON_GLYPH: f32 = 12.0;
+/// Tab drop insertion bar (`TabBarMetrics.dropIndicatorWidth/Height`).
+const DROP_BAR_W: f32 = 2.0;
+const DROP_BAR_H: f32 = 20.0;
+
+/// A tab being dragged; also the ghost drawn under the pointer. Ids only, so a drag never
+/// keeps a closed pane or terminal alive.
+#[derive(Clone)]
+pub(super) struct DraggedTab {
+    surface: SurfaceId,
+    title: SharedString,
+    palette: TabPalette,
+}
+
+impl Render for DraggedTab {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .flex()
+            .items_center()
+            .h(px(TAB_BAR_HEIGHT))
+            .max_w(px(TAB_MAX_W))
+            .px(px(TAB_PAD))
+            .bg(self.palette.active_fill)
+            .text_size(px(TITLE_PX))
+            .text_color(self.palette.active_text)
+            .whitespace_nowrap()
+            .overflow_hidden()
+            .text_ellipsis()
+            .child(self.title.clone())
+    }
+}
+
+/// Bonsplit `TabDropIndexResolver`: before the first tab whose midpoint is right of `x`,
+/// else after the last.
+pub fn insertion_index(mid_xs: &[f32], x: f32) -> usize {
+    mid_xs.iter().position(|m| *m > x).unwrap_or(mid_xs.len())
+}
 
 /// The right-hand split-action buttons (cmux's default set minus the browser).
 #[derive(Debug, Clone, Copy)]
@@ -47,7 +83,7 @@ impl WorkspaceView {
         )
     }
 
-    fn tab_title(&self, surface: cmux_core::SurfaceId, cx: &Context<Self>) -> SharedString {
+    fn tab_title(&self, surface: SurfaceId, cx: &Context<Self>) -> SharedString {
         self.surfaces
             .get(&surface)
             .and_then(|s| {
@@ -64,10 +100,21 @@ impl WorkspaceView {
         &self,
         pane: &Pane,
         focused: bool,
+        strip_x: f32,
         cx: &Context<Self>,
     ) -> impl IntoElement + use<> {
         let p = self.palette(focused);
         let pane_id = pane.id;
+        let bounds = self.tab_bounds.clone();
+        let drop_bar = self.drop_bar_x(pane_id, strip_x).map(|x| {
+            div()
+                .absolute()
+                .left(px(x - DROP_BAR_W / 2.0))
+                .top(px((TAB_BAR_HEIGHT - DROP_BAR_H) / 2.0))
+                .w(px(DROP_BAR_W))
+                .h(px(DROP_BAR_H))
+                .bg(p.accent)
+        });
         let tabs: Vec<_> = pane
             .tabs
             .iter()
@@ -99,14 +146,27 @@ impl WorkspaceView {
                 }))
         });
         div()
+            .relative()
             .flex()
             .flex_row()
             .flex_none()
             .w_full()
             .h(px(TAB_BAR_HEIGHT))
             .bg(p.bar)
+            .on_drag_move(
+                cx.listener(move |this, ev: &DragMoveEvent<DraggedTab>, _, cx| {
+                    this.tab_drag_moved(pane_id, ev, cx)
+                }),
+            )
+            .on_drop(cx.listener(move |this, d: &DraggedTab, window, cx| {
+                this.drop_tab(pane_id, d.surface, window, cx)
+            }))
             .child(
                 div()
+                    // Tab bounds for drop-index maths (they are content-sized).
+                    .on_children_prepainted(move |b, _, _| {
+                        bounds.borrow_mut().insert(pane_id, b);
+                    })
                     .id(SharedString::from(format!("tabs-{}", pane_id.0)))
                     .flex()
                     .flex_row()
@@ -147,11 +207,69 @@ impl WorkspaceView {
                     .border_color(p.separator)
                     .children(buttons),
             )
+            .children(drop_bar)
+    }
+
+    /// Where the insertion bar goes while a tab is dragged over this strip (strip-relative x).
+    fn drop_bar_x(&self, pane: PaneId, strip_x: f32) -> Option<f32> {
+        let (target, index) = self.drop_target?;
+        if target != pane {
+            return None;
+        }
+        let bounds = self.tab_bounds.borrow();
+        let tabs = bounds.get(&pane)?;
+        let x = match tabs.get(index) {
+            Some(b) => b.origin.x,
+            None => tabs.last()?.right(),
+        };
+        Some(f32::from(x) - strip_x)
+    }
+
+    fn tab_drag_moved(
+        &mut self,
+        pane: PaneId,
+        ev: &DragMoveEvent<DraggedTab>,
+        cx: &mut Context<Self>,
+    ) {
+        // Every strip hears every move; only the one under the pointer claims the drop.
+        let inside = ev.bounds.contains(&ev.event.position);
+        let target = if inside {
+            let mids: Vec<f32> = self
+                .tab_bounds
+                .borrow()
+                .get(&pane)
+                .map(|b| b.iter().map(|b| f32::from(b.center().x)).collect())
+                .unwrap_or_default();
+            Some((pane, insertion_index(&mids, f32::from(ev.event.position.x))))
+        } else if self.drop_target.is_some_and(|(p, _)| p == pane) {
+            None
+        } else {
+            return;
+        };
+        if self.drop_target != target {
+            self.drop_target = target;
+            cx.notify();
+        }
+    }
+
+    fn drop_tab(
+        &mut self,
+        pane: PaneId,
+        surface: SurfaceId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let index = match self.drop_target.take() {
+            Some((p, ix)) if p == pane => ix,
+            _ => self.layout.pane(pane).map_or(0, |p| p.tabs.len()),
+        };
+        self.layout.move_surface(surface, pane, index);
+        self.focus_active(window, cx);
     }
 
     fn render_tab(
         &self,
-        surface: cmux_core::SurfaceId,
+        surface: SurfaceId,
         selected: bool,
         p: TabPalette,
         cx: &Context<Self>,
@@ -161,6 +279,11 @@ impl WorkspaceView {
             p.active_text
         } else {
             p.inactive_text
+        };
+        let ghost = DraggedTab {
+            surface,
+            title: self.tab_title(surface, cx),
+            palette: p,
         };
         let close_group = SharedString::from(format!("tab-close-{}", surface.0));
         // gpui's svg paints only its own text colour (it does not inherit), so the button is
@@ -254,6 +377,7 @@ impl WorkspaceView {
                 }
                 this.focus_active(window, cx);
             }))
+            .on_drag(ghost, |tab, _, _, cx| cx.new(|_| tab.clone()))
             .on_mouse_down(
                 MouseButton::Middle,
                 cx.listener(move |this, _: &MouseDownEvent, window, cx| {
@@ -275,5 +399,20 @@ impl WorkspaceView {
             StripButton::SplitRight => self.split(Orientation::Horizontal, window, cx),
             StripButton::SplitDown => self.split(Orientation::Vertical, window, cx),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn drop_index_is_before_the_first_tab_whose_middle_is_right_of_the_pointer() {
+        let mids = [30.0, 90.0, 150.0];
+        assert_eq!(insertion_index(&mids, 0.0), 0);
+        assert_eq!(insertion_index(&mids, 31.0), 1);
+        assert_eq!(insertion_index(&mids, 120.0), 2);
+        assert_eq!(insertion_index(&mids, 400.0), 3);
+        assert_eq!(insertion_index(&[], 10.0), 0);
     }
 }
