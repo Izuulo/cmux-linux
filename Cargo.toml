@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "vendor/ghostty-vt", "vendor/ghostty-vt-sys"]
 
 [workspace.package]
 edition = "2024"
@@ -12,3 +12,8 @@ publish = false
 [workspace.lints.clippy]
 
 [workspace.dependencies]
+base64 = "0.22"
+png = "0.17"
+bindgen = "0.72"
+ghostty-vt-sys = { path = "vendor/ghostty-vt-sys" }
+ghostty-vt = { path = "vendor/ghostty-vt" }
