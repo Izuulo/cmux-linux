@@ -215,7 +215,12 @@ impl WorkspaceView {
 
     /// Focuses the active surface's terminal (after any change to focus or tabs).
     pub fn focus_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(s) = self.surfaces.get(&self.layout.active_surface()) {
+        // A hidden workspace must never take keyboard focus.
+        if let Some(s) = self
+            .surfaces
+            .get(&self.layout.active_surface())
+            .filter(|_| self.active)
+        {
             let handle = s.view.read(cx).focus_handle(cx);
             window.focus(&handle);
         }
@@ -231,7 +236,7 @@ impl WorkspaceView {
     fn container(&self, window: &Window) -> (f32, f32, f32) {
         let size = window.viewport_size();
         (
-            f32::from(size.width) - self.left_inset,
+            (f32::from(size.width) - self.left_inset).max(0.0),
             f32::from(size.height),
             window.scale_factor(),
         )
