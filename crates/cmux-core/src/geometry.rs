@@ -45,22 +45,39 @@ enum Verdict {
     NoSpace,
 }
 
+/// A usable device scale: non-finite or non-positive scales fall back to 1.
+fn sane(scale: f32) -> f32 {
+    if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    }
+}
+
 fn snap(v: f32, scale: f32) -> f32 {
+    let scale = sane(scale);
     (v * scale).round() / scale
+}
+
+/// The divider's thickness: whole device pixels (at least one), never more than `len`.
+fn divider_len(len: f32, scale: f32) -> f32 {
+    let scale = sane(scale);
+    ((DIVIDER * scale).round().max(1.0) / scale).min(len.max(0.0))
 }
 
 fn clamp_ratio(r: f32) -> f32 {
     r.clamp(MIN_RATIO, MAX_RATIO)
 }
 
-/// Splits `r` along `o`: `first` gets `ratio` of the space left after the divider, snapped
-/// to a device pixel. Returns (first, divider, second).
+/// Splits `r` along `o`: `first` gets `ratio` of the space left after the divider. The
+/// divider's absolute position is snapped to a device pixel, so nested splits and fractional
+/// scales stay aligned when `r` is. Returns (first, divider, second).
 fn divide(r: Rect, o: Orientation, ratio: f32, scale: f32) -> (Rect, Rect, Rect) {
-    let (_, len) = r.along(o);
-    let avail = (len - DIVIDER).max(0.0);
-    let first = snap(avail * ratio, scale).clamp(0.0, avail);
+    let (start, len) = r.along(o);
+    let line = divider_len(len, scale);
+    let avail = (len - line).max(0.0);
+    let first = (snap(start + avail * ratio, scale) - start).clamp(0.0, avail);
     let second = avail - first;
-    let line = DIVIDER.min(len);
     match o {
         Orientation::Horizontal => (
             Rect { w: first, ..r },
@@ -379,8 +396,9 @@ impl Layout {
             .find_split_mut(split)
             .expect("split_rect found it");
         let (start, len) = rect.along(s.orientation);
-        let avail = len - DIVIDER;
-        if avail <= 0.0 {
+        let avail = len - divider_len(len, scale);
+        // NaN would panic in `clamp` or poison the ratio.
+        if avail.is_nan() || avail <= 0.0 || !pos.is_finite() {
             return false;
         }
         let min_side = MIN_DRAG_SIZE.min(avail / 2.0);
@@ -403,6 +421,9 @@ impl Layout {
         height: f32,
         scale: f32,
     ) -> bool {
+        if !step.is_finite() {
+            return false;
+        }
         let o = dir.orientation();
         let Some(path) = self.root.path_to_pane(self.focused()) else {
             return false;
@@ -674,5 +695,47 @@ mod tests {
         assert_eq!(l.pane_count(), 3);
         // A fourth column would be 124 px: refused.
         assert_eq!(l.try_split(Horizontal, 501.0, 500.0, 1.0), Err(NoSpace));
+    }
+
+    #[test]
+    fn fractional_scale_keeps_every_edge_on_a_device_pixel() {
+        let mut l = Layout::new();
+        l.split(Orientation::Horizontal);
+        l.split(Orientation::Vertical);
+        l.split(Orientation::Horizontal);
+        let scale = 1.5;
+        // A window is a whole number of device pixels: 451 x 299 at 1.5.
+        let (w, h) = (451.0 / scale, 299.0 / scale);
+        let r = l.rects(w, h, scale);
+        let on_px = |v: f32| ((v * scale) - (v * scale).round()).abs() < 1e-3;
+        for rect in r
+            .panes
+            .iter()
+            .map(|(_, r)| *r)
+            .chain(r.dividers.iter().map(|d| d.rect))
+        {
+            for v in [rect.x, rect.y, rect.x + rect.w, rect.y + rect.h] {
+                assert!(on_px(v), "{rect:?} is off the device grid");
+            }
+        }
+        let area: f32 = r
+            .panes
+            .iter()
+            .map(|(_, r)| r.w * r.h)
+            .chain(r.dividers.iter().map(|d| d.rect.w * d.rect.h))
+            .sum();
+        assert!((area - w * h).abs() < 1e-2, "rects must tile the container");
+    }
+
+    #[test]
+    fn non_finite_input_is_ignored() {
+        let mut l = Layout::new();
+        l.split(Orientation::Horizontal);
+        let split = l.rects(800.0, 600.0, 1.0).dividers[0].split;
+        assert!(!l.drag_divider(split, f32::NAN, 800.0, 600.0, 1.0));
+        assert!(!l.drag_divider(split, 300.0, f32::NAN, 600.0, 1.0));
+        assert!(!l.resize_pane(Direction::Left, f32::NAN, 800.0, 600.0, 1.0));
+        let r = l.rects(800.0, 600.0, 1.0);
+        assert!(r.panes.iter().all(|(_, r)| r.w.is_finite()));
     }
 }
