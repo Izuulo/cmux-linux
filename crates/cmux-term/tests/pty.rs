@@ -1,11 +1,20 @@
 //! Real PTYs running `sh`. Unix only, like the rest of M1.
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
 use cmux_term::pty::{CommandBuilder, PtyEvent, Session};
 
 /// Runs `script` under `sh -c`, optionally typing `input`, and returns the screen text after exit.
 fn run(script: &str, input: Option<&[u8]>) -> String {
+    run_with(script, |session| {
+        if let Some(input) = input {
+            session.write(input.to_vec());
+        }
+    })
+}
+
+/// Like [`run`], but `before` gets the live session first (to write, resize, ...).
+fn run_with(script: &str, before: impl FnOnce(&Session)) -> String {
     let (tx, rx) = mpsc::channel();
     let mut cmd = CommandBuilder::new("sh");
     cmd.args(["-c", script]);
@@ -19,9 +28,7 @@ fn run(script: &str, input: Option<&[u8]>) -> String {
         },
     )
     .unwrap();
-    if let Some(input) = input {
-        session.write(input.to_vec());
-    }
+    before(&session);
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
@@ -66,4 +73,76 @@ fn shell_command_sets_term_and_colorterm() {
         cmd.get_env("COLORTERM").and_then(|v| v.to_str()),
         Some("truecolor")
     );
+}
+
+#[test]
+fn resize_reaches_the_child() {
+    let out = run_with("read x; stty size", |s| {
+        s.resize(100, 40, 8, 16).unwrap();
+        s.write(b"\n".to_vec());
+    });
+    assert!(out.contains("40 100"), "{out}");
+}
+
+fn alive(pid: u32) -> bool {
+    // SAFETY: signal 0 only probes for existence.
+    unsafe { libc::kill(pid as i32, 0) == 0 }
+}
+
+#[test]
+fn drop_returns_promptly_even_when_the_child_ignores_sighup() {
+    let mut cmd = CommandBuilder::new("sh");
+    cmd.args(["-c", "trap '' HUP; sleep 30"]);
+    let session = Session::spawn(cmd, 80, 24, |_| {}, |_| {}).unwrap();
+    let pid = session.process_id().unwrap();
+    std::thread::sleep(Duration::from_millis(100)); // let sh install the trap
+    let t = Instant::now();
+    drop(session);
+    let took = t.elapsed();
+    eprintln!("drop took {took:?}");
+    assert!(took < Duration::from_millis(50), "drop took {took:?}");
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while alive(pid) {
+        assert!(Instant::now() < deadline, "child {pid} still alive");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn no_events_after_drop() {
+    use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
+    let count = Arc::new(AtomicUsize::new(0));
+    let c = count.clone();
+    let mut cmd = CommandBuilder::new("sh");
+    // The subshell keeps printing (and ignores SIGHUP) for a while after the drop.
+    cmd.args([
+        "-c",
+        "trap '' HUP; (while true; do echo hi; sleep 0.01; done) & wait",
+    ]);
+    let session = Session::spawn(
+        cmd,
+        80,
+        24,
+        |_| {},
+        move |_| {
+            c.fetch_add(1, SeqCst);
+        },
+    )
+    .unwrap();
+    let pid = session.process_id().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while count.load(SeqCst) == 0 {
+        assert!(Instant::now() < deadline, "no output");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    drop(session);
+    std::thread::sleep(Duration::from_millis(50)); // one in-flight event may land
+    let settled = count.load(SeqCst);
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(count.load(SeqCst), settled, "events after drop");
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while alive(pid) {
+        assert!(Instant::now() < deadline, "child {pid} still alive");
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }

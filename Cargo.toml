@@ -19,3 +19,4 @@ ghostty-vt-sys = { path = "vendor/ghostty-vt-sys" }
 ghostty-vt = { path = "vendor/ghostty-vt" }
 gpui = "=0.2.2"
 portable-pty = "0.9"
+libc = "0.2"

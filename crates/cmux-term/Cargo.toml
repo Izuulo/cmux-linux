@@ -12,3 +12,4 @@ workspace = true
 [dependencies]
 ghostty-vt.workspace = true
 portable-pty.workspace = true
+libc.workspace = true

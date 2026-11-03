@@ -893,6 +893,7 @@ name = "cmux-term"
 version = "0.1.0"
 dependencies = [
  "ghostty-vt",
+ "libc",
  "portable-pty",
 ]
 

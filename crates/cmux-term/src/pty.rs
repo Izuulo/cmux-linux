@@ -5,8 +5,10 @@
 //! terminal's own replies, so nothing ever writes from inside `Term::feed`.
 
 use std::io::{self, Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
+use std::time::{Duration, Instant};
 
 pub use portable_pty::CommandBuilder;
 use portable_pty::{Child, MasterPty, PtySize, native_pty_system};
@@ -25,7 +27,50 @@ pub struct Session {
     pub term: Arc<Mutex<Term>>,
     writer: mpsc::Sender<Vec<u8>>,
     master: Box<dyn MasterPty + Send>,
-    child: Box<dyn Child + Send + Sync>,
+    child: ChildGuard,
+    /// Set on drop so the reader stops reporting events.
+    closed: Arc<AtomicBool>,
+}
+
+/// Owns the child; dropping it tears the child down without blocking the caller.
+struct ChildGuard(Option<Box<dyn Child + Send + Sync>>);
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        let Some(mut child) = self.0.take() else {
+            return;
+        };
+        #[cfg(unix)]
+        let pgid = child.process_id().and_then(|p| i32::try_from(p).ok());
+        // Like a terminal closing: hang up the shell's whole process group (the shell is the
+        // session leader, so pgid == pid). portable-pty's own `kill` would sleep ~200 ms
+        // before escalating, which would stall the GUI thread.
+        #[cfg(unix)]
+        if let Some(pgid) = pgid {
+            // SAFETY: plain signal syscall; a stale pgid at worst gives ESRCH.
+            unsafe { libc::killpg(pgid, libc::SIGHUP) };
+        }
+        // Escalate and reap off-thread so a child that ignores SIGHUP can't block us.
+        let _ = thread::Builder::new()
+            .name("pty-reaper".into())
+            .spawn(move || {
+                let deadline = Instant::now() + Duration::from_millis(500);
+                while Instant::now() < deadline {
+                    if !matches!(child.try_wait(), Ok(None)) {
+                        return; // exited and reaped (or unwaitable)
+                    }
+                    thread::sleep(Duration::from_millis(5));
+                }
+                #[cfg(unix)]
+                if let Some(pgid) = pgid {
+                    // SAFETY: as above; the child is unreaped, so the pgid cannot have been reused.
+                    unsafe { libc::killpg(pgid, libc::SIGKILL) };
+                }
+                #[cfg(not(unix))]
+                let _ = child.kill();
+                let _ = child.wait();
+            });
+    }
 }
 
 impl Session {
@@ -44,7 +89,8 @@ impl Session {
 
     /// Spawns `cmd`. `init` runs on the new `Term` before any output is read (set default
     /// colours there so the first OSC 10/11 query already answers). `on_event` runs on the
-    /// reader thread.
+    /// reader thread. Once the returned `Session` is dropped `on_event` is not called again,
+    /// except for at most one event already in flight.
     pub fn spawn(
         cmd: CommandBuilder,
         cols: u16,
@@ -61,7 +107,10 @@ impl Session {
         let pair = native_pty_system()
             .openpty(size)
             .map_err(io::Error::other)?;
-        let child = pair.slave.spawn_command(cmd).map_err(io::Error::other)?;
+        // Declared first so any `?` below kills and reaps the child.
+        let child = ChildGuard(Some(
+            pair.slave.spawn_command(cmd).map_err(io::Error::other)?,
+        ));
         // Our copy of the slave must close, or the reader never sees EOF when the child exits.
         drop(pair.slave);
         let master = pair.master;
@@ -88,6 +137,8 @@ impl Session {
             })?;
 
         let shared = term.clone();
+        let closed = Arc::new(AtomicBool::new(false));
+        let reader_closed = closed.clone();
         thread::Builder::new()
             .name("pty-reader".into())
             .spawn(move || {
@@ -96,14 +147,22 @@ impl Session {
                     match reader.read(&mut buf) {
                         Ok(0) => break,
                         Ok(n) => {
-                            let events = shared.lock().unwrap().feed(&buf[..n]);
+                            let events = shared
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .feed(&buf[..n]);
+                            if reader_closed.load(Ordering::Acquire) {
+                                return;
+                            }
                             on_event(PtyEvent::Output(events));
                         }
                         Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                         Err(_) => break,
                     }
                 }
-                on_event(PtyEvent::Exited);
+                if !reader_closed.load(Ordering::Acquire) {
+                    on_event(PtyEvent::Exited);
+                }
             })?;
 
         Ok(Session {
@@ -111,7 +170,13 @@ impl Session {
             writer: tx,
             master,
             child,
+            closed,
         })
+    }
+
+    /// The child's pid, if the platform reports one.
+    pub fn process_id(&self) -> Option<u32> {
+        self.child.0.as_ref().and_then(|c| c.process_id())
     }
 
     /// Queues bytes for the child. Never blocks.
@@ -139,8 +204,8 @@ impl Session {
 
 impl Drop for Session {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        // Reap it so no zombie outlives the session; SIGKILL makes this return promptly.
-        let _ = self.child.wait();
+        self.closed.store(true, Ordering::Release);
+        // Fields drop after this: `writer` closing ends the writer thread, and `child`
+        // hangs up the process group and reaps it in the background.
     }
 }
