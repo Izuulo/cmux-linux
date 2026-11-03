@@ -21,7 +21,8 @@ pub struct WindowBlur {
     effect: ExtBackgroundEffectSurfaceV1,
 }
 
-/// Our queue is never dispatched after setup: nothing here needs events.
+/// Our queue is never dispatched after setup; the registry's global add/remove events pile up
+/// on it unread (bounded by global churn, negligible).
 struct State;
 
 impl Dispatch<WlRegistry, GlobalListContents> for State {
@@ -65,9 +66,9 @@ impl WindowBlur {
         else {
             return None;
         };
-        // SAFETY: the pointer is gpui's live wl_display, which gpui keeps open for the whole
-        // app; our Backend is a guest that never closes it, and WindowBlur is dropped with
-        // WindowView, before the window.
+        // SAFETY: the pointer is gpui's live wl_display. Our guest Backend never disconnects it,
+        // and it outlives every entity (WindowView is released during App::shutdown while the
+        // platform is alive); a surface gone first just leaves the effect inert (see Drop).
         let backend = unsafe { Backend::from_foreign_display(display.display.as_ptr().cast()) };
         let conn = Connection::from_backend(backend);
         let (globals, queue) = registry_queue_init::<State>(&conn)

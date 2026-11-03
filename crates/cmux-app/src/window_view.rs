@@ -49,7 +49,8 @@ pub struct WindowView {
     prs: PrPoller,
     pr_in_flight: bool,
     _tasks: Vec<Task<()>>,
-    /// Whole-window KWin blur; dropped with the view, before the window.
+    /// Whole-window KWin blur, dropped with the view. gpui may destroy the surface first; the
+    /// effect is then inert and its destroy is still allowed (blur.rs).
     #[cfg(target_os = "linux")]
     _blur: Option<crate::blur::WindowBlur>,
 }
