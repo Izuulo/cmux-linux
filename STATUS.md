@@ -4,7 +4,7 @@
      current version to docs/status-archive.md. -->
 
 **Updated:** 2026-11-02
-**Current milestone:** M1 terminal — not started
+**Current milestone:** M1 terminal — planning
 **Next action:** write docs/milestones/m1-terminal/plan.md
 
 ## Where things are
@@ -16,7 +16,7 @@
 ## Milestones
 | ID | State |
 |---|---|
-| M0 foundations | done (pending CI on master) |
+| M0 foundations | done (PR #1, CI green on master) |
 | M1 terminal | not started |
 | M2 splits-tabs | not started |
 | M3 workspaces-sidebar | not started |
