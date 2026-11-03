@@ -117,7 +117,7 @@ Covers STATUS "Carry to M2+": the reader blocks until EOF (a `setsid` grandchild
 - Consumes: `Term::feed` (M1).
 - Produces: no API change. `Session::spawn` now also opens a pidfd and a wake socket; `Drop for Session` wakes the reader; `PtyEvent::Exited` is sent when the shell exits (Linux), on EOF/EIO, or after a `feed` panic. Private: `fn guarded<T, R>(m: &Mutex<T>, f: impl FnOnce(&mut T) -> R) -> Option<R>`.
 
-- [ ] **Step 1: Write the failing tests.** Append to `crates/cmux-term/tests/pty.rs`:
+- [x] **Step 1: Write the failing tests.** Append to `crates/cmux-term/tests/pty.rs`:
 
 ```rust
 #[cfg(target_os = "linux")]
@@ -161,9 +161,9 @@ fn drop_releases_the_reader_even_if_a_setsid_grandchild_holds_the_pty() {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail.** Run: `cargo test -p cmux-term --test pty setsid`. Expected: both FAIL after ~2 s and 5 s (`took 5.0…s` and `reader thread still running`). `setsid -f` (util-linux) forks, so `sleep` is a grandchild in its own session holding the slave.
+- [x] **Step 2: Run tests to verify they fail.** Run: `cargo test -p cmux-term --test pty setsid`. Expected: both FAIL after ~2 s and 5 s (`took 5.0…s` and `reader thread still running`). `setsid -f` (util-linux) forks, so `sleep` is a grandchild in its own session holding the slave.
 
-- [ ] **Step 3: Implement.** Replace `crates/cmux-term/src/pty.rs` with:
+- [x] **Step 3: Implement.** Replace `crates/cmux-term/src/pty.rs` with:
 
 ```rust
 //! Runs a command on a PTY and pumps bytes between it and a [`Term`].
@@ -499,9 +499,9 @@ mod tests {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass.** Run: `cargo test -p cmux-term`. Expected: lib `test result: ok. 35 passed` (includes `a_panic_under_the_lock_is_caught_and_unpoisoned`), `pty` `test result: ok. 9 passed` in well under a second each.
+- [x] **Step 4: Run tests to verify they pass.** Run: `cargo test -p cmux-term`. Expected: lib `test result: ok. 35 passed` (includes `a_panic_under_the_lock_is_caught_and_unpoisoned`), `pty` `test result: ok. 9 passed` in well under a second each.
 
-- [ ] **Step 5: Format, lint, commit.**
+- [x] **Step 5: Format, lint, commit.**
 
 ```bash
 cargo fmt -p cmux-term
