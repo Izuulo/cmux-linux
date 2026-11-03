@@ -8,7 +8,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use cmux_term::TermEvent;
-use cmux_term::ghostty_vt::{KeyAction, KeyEncoder};
+use cmux_term::ghostty_vt::{KeyAction, KeyEncoder, MouseEncoders};
 use cmux_term::input::{encode_focus, encode_paste};
 use cmux_term::pty::{PtyEvent, Session};
 use cmux_term::selection::Selection;
@@ -16,8 +16,8 @@ use futures::StreamExt;
 use futures::channel::mpsc;
 use gpui::{
     App, ClipboardItem, Context, FocusHandle, Focusable, IntoElement, KeyDownEvent, KeyUpEvent,
-    Keystroke, ParentElement, Pixels, Point, Render, Styled, Subscription, Task, Window, div,
-    prelude::*, px,
+    Keystroke, MouseButton, ParentElement, Pixels, Point, Render, Styled, Subscription, Task,
+    Window, div, prelude::*, px,
 };
 
 use crate::keys::{self, AppAction};
@@ -83,6 +83,11 @@ pub struct TerminalView {
     pub(crate) cursor_blinks: bool,
     pub(crate) blink_on: bool,
     key_encoder: KeyEncoder,
+    pub(crate) mouse: MouseEncoders,
+    /// A local selection drag is in progress.
+    pub(crate) dragging: bool,
+    /// Wheel pixels not yet turned into whole lines.
+    pub(crate) scroll_px: f32,
     /// `Keystroke.key` of presses consumed by an app binding, whose release must not reach the PTY.
     bound_keys: HashSet<String>,
     title: Option<String>,
@@ -165,6 +170,9 @@ impl TerminalView {
             cursor_blinks: false,
             blink_on: true,
             key_encoder: KeyEncoder::new().expect("libghostty-vt key encoder"),
+            mouse: MouseEncoders::new().expect("libghostty-vt mouse encoders"),
+            dragging: false,
+            scroll_px: 0.0,
             bound_keys: HashSet::new(),
             title: None,
             title_dirty: false,
@@ -340,6 +348,14 @@ impl Render for TerminalView {
             .key_context("Terminal")
             .on_key_down(cx.listener(Self::key_down))
             .on_key_up(cx.listener(Self::key_up))
+            .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
+            .on_mouse_down(MouseButton::Middle, cx.listener(Self::mouse_down))
+            .on_mouse_down(MouseButton::Right, cx.listener(Self::mouse_down))
+            .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
+            .on_mouse_up(MouseButton::Middle, cx.listener(Self::mouse_up))
+            .on_mouse_up(MouseButton::Right, cx.listener(Self::mouse_up))
+            .on_mouse_move(cx.listener(Self::mouse_move))
+            .on_scroll_wheel(cx.listener(Self::scroll_wheel))
             .child(TerminalElement::new(cx.entity()))
     }
 }
