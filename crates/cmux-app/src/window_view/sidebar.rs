@@ -43,6 +43,7 @@ pub(super) struct SidebarDrag;
 pub(super) struct DraggedWorkspace {
     pub id: WorkspaceId,
     pub title: SharedString,
+    pub accent: gpui::Rgba,
 }
 
 impl Render for DraggedWorkspace {
@@ -51,7 +52,7 @@ impl Render for DraggedWorkspace {
             .px(px(ROW_PAD_X))
             .py(px(ROW_PAD_Y))
             .rounded(px(RADIUS))
-            .bg(chrome::cmux_accent(false))
+            .bg(self.accent)
             .text_size(px(TITLE_PX))
             .font_weight(FontWeight::SEMIBOLD)
             .text_color(gpui::white())
@@ -194,7 +195,6 @@ impl WindowView {
             p.title
         };
         let style = RenameStyle {
-            family: self.style.font.family.clone(),
             size: TITLE_PX,
             text,
             hint: p.detail,
@@ -411,6 +411,7 @@ impl WindowView {
         let ghost = DraggedWorkspace {
             id,
             title: m.title.clone().into(),
+            accent: p.accent,
         };
         let title = div()
             .flex()

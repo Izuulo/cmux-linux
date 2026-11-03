@@ -3,8 +3,8 @@
 use cmux_core::WorkspaceId;
 use gpui::{
     Context, EventEmitter, FocusHandle, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
-    ParentElement, Render, Rgba, SharedString, StatefulInteractiveElement, Styled, Subscription,
-    Window, div, prelude::*, px,
+    ParentElement, Render, Rgba, StatefulInteractiveElement, Styled, Subscription, Window, div,
+    prelude::*, px,
 };
 
 use crate::actions::*;
@@ -69,7 +69,6 @@ pub(crate) enum RenameEvent {
 
 /// Look of the title slot the input replaces.
 pub(crate) struct RenameStyle {
-    pub family: SharedString,
     pub size: f32,
     pub text: Rgba,
     pub hint: Rgba,
@@ -96,7 +95,11 @@ impl RenameInput {
     ) -> Self {
         let focus = cx.focus_handle();
         window.focus(&focus);
-        let _blur = cx.on_blur(&focus, window, |this, _, cx| {
+        let _blur = cx.on_blur(&focus, window, |this, window, cx| {
+            // Alt-tab clears focus too; a half-typed name must survive a window switch.
+            if !window.is_window_active() {
+                return;
+            }
             let text = this.state.text.clone();
             this.finish(Some(text), cx);
         });
@@ -174,7 +177,6 @@ impl Render for RenameInput {
             .min_w(px(0.))
             .overflow_hidden()
             .text_size(px(st.size))
-            .font_family(st.family.clone())
             .font_weight(FontWeight::SEMIBOLD)
             .text_color(st.text)
             .whitespace_nowrap()
