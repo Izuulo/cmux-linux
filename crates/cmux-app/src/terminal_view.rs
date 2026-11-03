@@ -9,15 +9,15 @@ use std::time::{Duration, Instant};
 
 use cmux_term::TermEvent;
 use cmux_term::ghostty_vt::{KeyAction, KeyEncoder, MouseEncoders};
-use cmux_term::input::{encode_focus, encode_paste};
+use cmux_term::input::{encode_focus, encode_paste, paste_needs_confirmation};
 use cmux_term::pty::{PtyEvent, Session};
 use cmux_term::selection::Selection;
 use futures::StreamExt;
 use futures::channel::mpsc;
 use gpui::{
     App, ClipboardItem, Context, EventEmitter, FocusHandle, Focusable, IntoElement, KeyDownEvent,
-    KeyUpEvent, Keystroke, MouseButton, ParentElement, Pixels, Point, Render, Styled, Subscription,
-    Task, Window, div, prelude::*, px,
+    KeyUpEvent, Keystroke, MouseButton, ParentElement, Pixels, Point, PromptLevel, Render, Styled,
+    Subscription, Task, Window, div, prelude::*, px,
 };
 
 use crate::actions::{Copy, Paste};
@@ -362,8 +362,10 @@ impl TerminalView {
         self.copy(cx);
     }
 
-    fn paste_action(&mut self, _: &Paste, _: &mut Window, cx: &mut Context<Self>) {
-        self.paste(cx);
+    fn paste_action(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
+            self.paste_text(text, window, cx);
+        }
     }
 
     pub(crate) fn copy(&mut self, cx: &mut Context<Self>) {
@@ -377,15 +379,31 @@ impl TerminalView {
         }
     }
 
-    fn paste(&mut self, cx: &mut Context<Self>) {
-        if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-            self.paste_text(&text);
-        }
-    }
-
-    pub(crate) fn paste_text(&mut self, text: &str) {
+    /// Pastes `text`, first asking when Ghostty's paste protection says it is unsafe.
+    pub(crate) fn paste_text(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {
         let bracketed = self.session.term.lock().unwrap().vt().mode(2004, false);
-        self.send_input(encode_paste(text, bracketed));
+        if !self.style.cfg.clipboard_paste_protection || !paste_needs_confirmation(&text, bracketed)
+        {
+            return self.send_input(encode_paste(&text, bracketed));
+        }
+        // gpui draws its own prompt on Linux (platform prompt is None, window/prompts.rs).
+        let answer = window.prompt(
+            PromptLevel::Warning,
+            "Paste text that may run commands?",
+            Some("The text contains a newline, so pasting it may run commands in the shell."),
+            &["Paste", "Cancel"],
+            cx,
+        );
+        cx.spawn_in(window, async move |this, cx| {
+            if answer.await == Ok(0) {
+                let _ = this.update(cx, |view, _| {
+                    // Bracketed paste may have changed while the prompt was up.
+                    let bracketed = view.session.term.lock().unwrap().vt().mode(2004, false);
+                    view.send_input(encode_paste(&text, bracketed));
+                });
+            }
+        })
+        .detach();
     }
 }
 

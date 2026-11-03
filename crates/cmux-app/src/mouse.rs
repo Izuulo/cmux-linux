@@ -155,7 +155,7 @@ impl TerminalView {
             #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             MouseButton::Middle => {
                 if let Some(text) = cx.read_from_primary().and_then(|item| item.text()) {
-                    self.paste_text(&text);
+                    self.paste_text(text, window, cx);
                 }
             }
             _ => {}
