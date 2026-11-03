@@ -19,6 +19,7 @@ use crate::actions::*;
 use crate::style::TermStyle;
 use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
+mod rename;
 mod sidebar;
 
 pub const SIDEBAR_DEFAULT: f32 = 240.0;

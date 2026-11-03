@@ -81,6 +81,14 @@ pub(crate) fn clamp_width(w: f32, window_w: f32) -> f32 {
         .max(SIDEBAR_MIN)
 }
 
+/// The gap (0..=len) a dragged row drops into: before the first row whose midpoint is below `y`.
+pub(crate) fn drop_gap(row_mids: &[f32], y: f32) -> usize {
+    row_mids
+        .iter()
+        .position(|m| *m > y)
+        .unwrap_or(row_mids.len())
+}
+
 impl WindowView {
     /// The drawn sidebar width, or `None` when hidden.
     pub(super) fn sidebar_px(&self, window: &Window) -> Option<f32> {
@@ -389,6 +397,15 @@ mod tests {
             vec![(Some("feat".into()), None), (None, Some("/tmp".into()))]
         );
         assert_eq!(r.ports, vec![3000, 5173]);
+    }
+
+    #[test]
+    fn drop_gap_uses_row_midpoints() {
+        let mids = [20.0, 60.0, 100.0];
+        assert_eq!(drop_gap(&mids, 5.0), 0);
+        assert_eq!(drop_gap(&mids, 59.0), 1);
+        assert_eq!(drop_gap(&mids, 61.0), 2);
+        assert_eq!(drop_gap(&mids, 500.0), 3);
     }
 
     #[test]
