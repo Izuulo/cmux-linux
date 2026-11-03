@@ -1,7 +1,9 @@
 //! cmux-term: PTY + libghostty-vt wrapper.
 
+pub mod input;
 pub mod osc;
 pub mod pty;
+pub mod selection;
 
 pub use ghostty_vt;
 
