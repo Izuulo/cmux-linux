@@ -32,5 +32,8 @@ Ghostty (vendor/ghostty, git submodule of github.com/manaflow-ai/ghostty)
 gpui (https://github.com/zed-industries/zed, crates.io gpui 0.2.2)
   Copyright Zed Industries. Apache-2.0.
 
+portable-pty (crates.io 0.9, https://github.com/wezterm/wezterm)
+  Copyright (c) 2018 Wez Furlong. MIT.
+
 Further components (Rust crates) are listed here as they are added,
 with their licences.
