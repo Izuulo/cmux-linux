@@ -2,6 +2,7 @@
 
 pub mod git;
 pub mod path;
+pub mod pr;
 pub mod ports;
 
 /// Fresh per-test scratch dir under the OS temp dir (shared by all module tests).

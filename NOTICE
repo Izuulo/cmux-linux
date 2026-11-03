@@ -55,6 +55,9 @@ toml (crates.io 0.8, https://github.com/toml-rs/toml), used by cmux-config, with
   toml_edit, toml_datetime, toml_write, serde_spanned and winnow dependencies
   MIT OR Apache-2.0 (winnow: MIT).
 
+serde_json (crates.io 1, https://github.com/serde-rs/json), used by cmux-meta
+  MIT OR Apache-2.0.
+
 Lucide icons (crates/cmux-app/assets/icons/*.svg, https://lucide.dev, lucide-static 0.460.0)
   terminal, square-terminal, x, columns-2, rows-2. Copyright Lucide Contributors and
   Cole Bemis (Feather). ISC License; see crates/cmux-app/assets/icons/LICENSE-lucide.txt.
