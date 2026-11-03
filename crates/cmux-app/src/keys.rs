@@ -94,6 +94,7 @@ fn ascii_key(c: char) -> Option<(sys::GhosttyKey, char)> {
 
 /// gpui's layout-independent key name (gpui platform/linux/platform.rs `from_xkb`) to
 /// Ghostty's physical key and unshifted codepoint.
+// shortcut: US-layout logical keys only, so non-US layouts report the wrong physical key for kitty and Ctrl combos, upgrade when kitty-protocol users report layout bugs (M6)
 pub fn physical_key(key: &str) -> (sys::GhosttyKey, Option<char>) {
     let mut chars = key.chars();
     if let (Some(c), None) = (chars.next(), chars.next())
@@ -127,7 +128,8 @@ pub fn physical_key(key: &str) -> (sys::GhosttyKey, Option<char>) {
 }
 
 /// The encoder input for a gpui keystroke. `utf8` is the typed text (`key_char`), dropped
-/// under Ctrl or when it holds control characters, as the encoder requires.
+/// under Ctrl or when it holds control characters, as the encoder requires. Super
+/// (`platform`) keystrokes must be filtered out by the caller before encoding; the view does this.
 pub fn key_input(ks: &Keystroke, action: KeyAction) -> KeyInput {
     let m = &ks.modifiers;
     let (key, unshifted) = physical_key(&ks.key);
@@ -172,12 +174,15 @@ mod tests {
     }
 
     fn encode(k: &Keystroke) -> Vec<u8> {
+        encode_as(k, KeyAction::Press)
+    }
+
+    fn encode_as(k: &Keystroke, action: KeyAction) -> Vec<u8> {
         let term = Terminal::new(80, 24, 0, Callbacks::default()).unwrap();
         let mut enc = KeyEncoder::new().unwrap();
         enc.sync_from_terminal(&term);
         let mut out = Vec::new();
-        enc.encode(&key_input(k, KeyAction::Press), &mut out)
-            .unwrap();
+        enc.encode(&key_input(k, action), &mut out).unwrap();
         out
     }
 
@@ -189,7 +194,7 @@ mod tests {
             ("c", "c", None, b"\x03"),
             ("a", "b", Some("b"), b"\x1bb"),
             ("", "1", Some("1"), b"1"),
-            ("s", "!", Some("!"), b"!"),
+            ("", "!", Some("!"), b"!"),
             ("", "space", Some(" "), b" "),
             ("c", "space", None, b"\x00"),
             ("", "enter", Some("\r"), b"\r"),
@@ -225,6 +230,77 @@ mod tests {
         assert_eq!(physical_key("f"), (sys::GHOSTTY_KEY_F, Some('f')));
         assert_eq!(physical_key("pagedown"), (sys::GHOSTTY_KEY_PAGE_DOWN, None));
         assert_eq!(physical_key("é"), (sys::GHOSTTY_KEY_UNIDENTIFIED, None));
+    }
+
+    #[test]
+    fn shifted_symbol_with_shift_still_set() {
+        // Robustness only: gpui clears shift for symbols, so this shape is not emitted.
+        // shift stays in consumed_mods, and the text is still written as-is.
+        assert_eq!(encode(&ks("s", "!", Some("!"))), b"!");
+    }
+
+    #[test]
+    fn composed_text_without_key_entry_passes_through() {
+        // gpui delivers dead-key/compose results as an unknown key name with key_char set;
+        // no key entry matches, so the encoder writes the utf8 (key_encode.zig ~228-231).
+        assert_eq!(encode(&ks("", "eacute", Some("é"))), "é".as_bytes());
+    }
+
+    #[test]
+    fn ime_commit_single_char() {
+        assert_eq!(encode(&ks("", "a", Some("a"))), b"a");
+    }
+
+    #[test]
+    fn ctrl_symbols_produce_c0_bytes() {
+        // key_input drops utf8 under Ctrl, so ctrlSeq (key_encode.zig ~710-800) uses the
+        // physical key's codepoint. Ghostty does NOT map Ctrl+[ to ESC: the fixterms rule
+        // (key_encode.zig:852) leaves '[' out of the C0 table, and with no utf8 the CSI-u
+        // fallback is skipped too. So Ctrl+[ currently sends nothing; xterm sends \x1b.
+        assert_eq!(encode(&ks("c", "[", None)), b"");
+        assert_eq!(encode(&ks("c", "\\", None)), b"\x1c");
+        assert_eq!(encode(&ks("c", "]", None)), b"\x1d");
+        assert_eq!(encode(&ks("c", "space", None)), b"\x00");
+    }
+
+    #[test]
+    fn alt_shift_letter_prefixes_esc() {
+        // gpui: key "b", shift set, key_char "B". Alt prefix applies to the utf8 text.
+        assert_eq!(encode(&ks("as", "b", Some("B"))), b"\x1bB");
+    }
+
+    #[test]
+    fn keypad_names_fall_through_to_text() {
+        // gpui platform/linux/platform.rs (~line 883) strips "kp_" from keypad keysym names,
+        // so KP_Decimal arrives as "decimal", which physical_key does not know. With key_char
+        // set, the encoder writes the text. Digit keypad keys reuse the normal digit names.
+        assert_eq!(encode(&ks("", "decimal", Some("."))), b".");
+    }
+
+    #[test]
+    fn legacy_release_encodes_nothing() {
+        assert_eq!(
+            encode_as(&ks("", "a", Some("a")), KeyAction::Release),
+            Vec::<u8>::new()
+        );
+    }
+
+    #[test]
+    fn letters_and_digits_map_to_contiguous_physical_keys() {
+        for (i, c) in ('a'..='z').enumerate() {
+            assert_eq!(
+                physical_key(&c.to_string()).0,
+                sys::GHOSTTY_KEY_A + i as u32,
+                "letter {c}"
+            );
+        }
+        for (i, c) in ('0'..='9').enumerate() {
+            assert_eq!(
+                physical_key(&c.to_string()).0,
+                sys::GHOSTTY_KEY_DIGIT_0 + i as u32,
+                "digit {c}"
+            );
+        }
     }
 
     #[test]
