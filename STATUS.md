@@ -4,8 +4,8 @@
      current version to docs/status-archive.md. -->
 
 **Updated:** 2026-11-02
-**Current milestone:** M0 foundations — not started
-**Next action:** write `docs/milestones/m0-foundations/plan.md` (writing-plans), then execute it.
+**Current milestone:** M0 foundations — plan written, not started
+**Next action:** execute `docs/milestones/m0-foundations/plan.md` task by task (Task 1 first).
 
 ## Where things are
 - Project design and milestone table: `docs/design.md`
