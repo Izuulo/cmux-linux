@@ -118,7 +118,17 @@ impl TerminalView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A divider or tab drag owns the pointer (research-gpui.md §1.2 route B).
+        if cx.has_active_drag() {
+            return;
+        }
+        let was_focused = self.focus.is_focused(window);
         window.focus(&self.focus);
+        // The click that focuses another pane is not terminal input, unless the app tracks the
+        // mouse (cmux TerminalPointerFocusActivationPolicy).
+        if !was_focused && !self.tracking() {
+            return;
+        }
         if self.reporting(&ev.modifiers) {
             if let Some(b) = vt_button(ev.button) {
                 self.report(MouseAction::Press, Some(b), ev.position, &ev.modifiers);
@@ -145,7 +155,7 @@ impl TerminalView {
             #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             MouseButton::Middle => {
                 if let Some(text) = cx.read_from_primary().and_then(|item| item.text()) {
-                    self.paste_text(&text);
+                    self.paste_text(text, window, cx);
                 }
             }
             _ => {}
@@ -158,6 +168,9 @@ impl TerminalView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if cx.has_active_drag() {
+            return;
+        }
         if self.reporting(&ev.modifiers) {
             let button = ev.pressed_button.and_then(vt_button);
             self.report(MouseAction::Motion, button, ev.position, &ev.modifiers);
@@ -174,6 +187,9 @@ impl TerminalView {
     }
 
     pub(crate) fn mouse_up(&mut self, ev: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
+        if cx.has_active_drag() {
+            return;
+        }
         if self.reporting(&ev.modifiers) {
             if let Some(b) = vt_button(ev.button) {
                 self.report(MouseAction::Release, Some(b), ev.position, &ev.modifiers);

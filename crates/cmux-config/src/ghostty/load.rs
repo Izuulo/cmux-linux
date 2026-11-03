@@ -30,6 +30,12 @@ impl Env {
         Some(Env { dark, ..env })
     }
 
+    /// `$XDG_CONFIG_HOME/cmux-linux/config.toml`: cmux-linux's own settings (key bindings).
+    pub fn cmux_config_file(&self) -> PathBuf {
+        let config_home = self.config_dir.parent().unwrap_or(&self.config_dir);
+        config_home.join("cmux-linux").join("config.toml")
+    }
+
     /// Takes the variables as values so tests can cover the rules without the process env.
     /// `None` when neither a usable `XDG_CONFIG_HOME` nor `HOME` exists.
     fn from_vars(
@@ -466,6 +472,10 @@ mod tests {
         let env = Env::from_vars(Some("/x".into()), Some("/h".into()), None).unwrap();
         assert_eq!(env.config_dir, PathBuf::from("/x/ghostty"));
         assert_eq!(env.home, Some(PathBuf::from("/h")));
+        assert_eq!(
+            env.cmux_config_file(),
+            PathBuf::from("/x/cmux-linux/config.toml")
+        );
     }
 
     #[test]

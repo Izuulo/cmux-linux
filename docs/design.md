@@ -50,7 +50,7 @@ One Cargo workspace. Each crate has one job and is testable alone.
 | `cmux-core` | Model: workspaces, split tree, panes, tabs (surfaces), notification store. No UI. | — |
 | `cmux-term` | PTY + libghostty-vt wrapper; emits title, cwd (OSC 7), bell, notification (OSC 9/99/777) events. | `ghostty-vt` (vendored) |
 | `cmux-meta` | Sidebar metadata: git branch (watch `.git/HEAD`), listening ports (`/proc`, by process tree), PR via `gh`. | `cmux-core` |
-| `cmux-config` | Ghostty config parser + keybinding config. | — |
+| `cmux-config` | Ghostty config parser + keybinding config. | `toml` |
 | `cmux-ipc` | Socket server + the `cmux` CLI binary. | `cmux-core` |
 | `cmux-app` | gpui app: window, sidebar, split view, terminal element, shortcuts. | all |
 

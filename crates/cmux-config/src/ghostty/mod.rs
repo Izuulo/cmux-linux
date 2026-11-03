@@ -88,6 +88,17 @@ pub struct Config {
     pub selection_background: Option<DynColor>,
     pub selection_foreground: Option<DynColor>,
     pub faint_opacity: f32,
+    /// Clamped to 0.15..=1 as Ghostty does; the dim overlay alpha is `1 - this`.
+    pub unfocused_split_opacity: f32,
+    /// `None` dims with the background colour.
+    pub unfocused_split_fill: Option<Rgb>,
+    /// `None` uses the chrome separator colour (cmux).
+    pub split_divider_color: Option<Rgb>,
+    pub split_inherit_working_directory: bool,
+    pub tab_inherit_working_directory: bool,
+    /// Confirm before pasting text with a newline (or a bracketed-paste end) unless the
+    /// program enabled bracketed paste.
+    pub clipboard_paste_protection: bool,
 }
 
 impl Default for Config {
@@ -116,6 +127,12 @@ impl Default for Config {
             selection_background: None,
             selection_foreground: None,
             faint_opacity: 0.5,
+            unfocused_split_opacity: 0.7,
+            unfocused_split_fill: None,
+            split_divider_color: None,
+            split_inherit_working_directory: true,
+            tab_inherit_working_directory: true,
+            clipboard_paste_protection: true,
         }
     }
 }
@@ -161,6 +178,16 @@ impl Config {
             "selection-background" => self.selection_background = dyn_color(value)?,
             "selection-foreground" => self.selection_foreground = dyn_color(value)?,
             "faint-opacity" => self.faint_opacity = number(value)?.clamp(0.0, 1.0),
+            "unfocused-split-opacity" => {
+                self.unfocused_split_opacity = number(value)?.clamp(0.15, 1.0)
+            }
+            "unfocused-split-fill" => self.unfocused_split_fill = optional_rgb(value)?,
+            "split-divider-color" => self.split_divider_color = optional_rgb(value)?,
+            "split-inherit-working-directory" => {
+                self.split_inherit_working_directory = boolean(value)?
+            }
+            "tab-inherit-working-directory" => self.tab_inherit_working_directory = boolean(value)?,
+            "clipboard-paste-protection" => self.clipboard_paste_protection = boolean(value)?,
             _ => {}
         }
         Ok(())
@@ -244,6 +271,15 @@ fn dyn_color(s: &str) -> Result<Option<DynColor>, String> {
         "cell-background" => DynColor::CellBackground,
         _ => DynColor::Rgb(parse_rgb(s)?),
     }))
+}
+
+/// An optional colour; an empty value resets it to unset.
+fn optional_rgb(s: &str) -> Result<Option<Rgb>, String> {
+    if s.is_empty() {
+        Ok(None)
+    } else {
+        parse_rgb(s).map(Some)
+    }
 }
 
 /// `f32::from_str` also accepts `nan` and `inf`, which no config value means.
@@ -388,6 +424,49 @@ mod tests {
         );
         assert_eq!(cfg.selection_foreground, Some(DynColor::CellForeground));
         assert_eq!(cfg.faint_opacity, 0.4);
+    }
+
+    #[test]
+    fn split_keys_apply() {
+        let (cfg, warnings) = parse(
+            "unfocused-split-opacity = 0.05\nunfocused-split-fill = #102030\n\
+             split-divider-color = 445566\nsplit-inherit-working-directory = false\n\
+             tab-inherit-working-directory = false\nclipboard-paste-protection = false\n",
+        );
+        assert_eq!(warnings, Vec::<String>::new());
+        assert_eq!(cfg.unfocused_split_opacity, 0.15, "clamped like Ghostty");
+        assert_eq!(
+            cfg.unfocused_split_fill,
+            Some(Rgb {
+                r: 0x10,
+                g: 0x20,
+                b: 0x30
+            })
+        );
+        assert_eq!(
+            cfg.split_divider_color,
+            Some(Rgb {
+                r: 0x44,
+                g: 0x55,
+                b: 0x66
+            })
+        );
+        assert!(!cfg.split_inherit_working_directory);
+        assert!(!cfg.tab_inherit_working_directory);
+        assert!(!cfg.clipboard_paste_protection);
+        let (cfg, _) = parse("split-divider-color = #445566\nsplit-divider-color =\n");
+        assert_eq!(cfg.split_divider_color, None, "empty resets");
+    }
+
+    #[test]
+    fn split_key_defaults_match_ghostty() {
+        let cfg = Config::default();
+        assert_eq!(cfg.unfocused_split_opacity, 0.7);
+        assert_eq!(cfg.unfocused_split_fill, None);
+        assert_eq!(cfg.split_divider_color, None);
+        assert!(cfg.split_inherit_working_directory);
+        assert!(cfg.tab_inherit_working_directory);
+        assert!(cfg.clipboard_paste_protection);
     }
 
     #[test]

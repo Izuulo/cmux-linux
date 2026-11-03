@@ -146,3 +146,58 @@ fn no_events_after_drop() {
         std::thread::sleep(Duration::from_millis(10));
     }
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn shell_exit_ends_the_session_even_if_a_setsid_grandchild_holds_the_pty() {
+    // Before M2 the reader waited for EOF, which never came while `sleep` kept the slave open.
+    let t = Instant::now();
+    let out = run("setsid -f sleep 5; echo started", None);
+    assert!(out.contains("started"), "{out}");
+    assert!(
+        t.elapsed() < Duration::from_secs(2),
+        "took {:?}",
+        t.elapsed()
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn shell_exit_ends_the_session_even_if_a_setsid_grandchild_keeps_writing() {
+    // The drain after the shell's exit has a deadline; `timeout` stops `yes` after the test.
+    // A bound, not a reproduction: the old zero-timeout drain also stopped at a gap in output.
+    let t = Instant::now();
+    run("setsid -f timeout 3 yes; true", None);
+    assert!(
+        t.elapsed() < Duration::from_secs(2),
+        "took {:?}",
+        t.elapsed()
+    );
+}
+
+// Not Linux-only: this checks the wake path, which needs no pidfd.
+#[test]
+fn drop_releases_the_reader_even_if_a_setsid_grandchild_holds_the_pty() {
+    let token = Arc::new(());
+    let held = token.clone();
+    let mut cmd = CommandBuilder::new("sh");
+    cmd.args(["-c", "setsid -f sleep 5; sleep 30"]);
+    let session = Session::spawn(
+        cmd,
+        80,
+        24,
+        |_| {},
+        move |_| {
+            let _keep = &held;
+        },
+    )
+    .unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    drop(session);
+    // The reader drops its event closure (and the `held` clone) when it returns.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Arc::strong_count(&token) > 1 {
+        assert!(Instant::now() < deadline, "reader thread still running");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}

@@ -870,6 +870,7 @@ name = "cmux-app"
 version = "0.1.0"
 dependencies = [
  "cmux-config",
+ "cmux-core",
  "cmux-term",
  "futures",
  "gpui",
@@ -878,6 +879,9 @@ dependencies = [
 [[package]]
 name = "cmux-config"
 version = "0.1.0"
+dependencies = [
+ "toml 0.8.23",
+]
 
 [[package]]
 name = "cmux-core"

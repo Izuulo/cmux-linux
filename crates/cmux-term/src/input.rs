@@ -72,9 +72,30 @@ pub fn encode_focus(gained: bool) -> Vec<u8> {
     out[..written].to_vec()
 }
 
+/// Whether pasting `text` needs the user's OK under Ghostty's `clipboard-paste-protection`
+/// (Surface.zig `completeClipboardPaste`): a newline or a bracketed-paste end
+/// (`ghostty_paste_is_safe`), except that a bracketed paste without an embedded end marker is
+/// trusted (`clipboard-paste-bracketed-safe`, default true).
+pub fn paste_needs_confirmation(text: &str, bracketed: bool) -> bool {
+    if bracketed && !text.contains("\x1b[201~") {
+        return false;
+    }
+    // SAFETY: `text` is a live &str; pointer and length describe exactly its bytes.
+    !unsafe { sys::ghostty_paste_is_safe(text.as_ptr().cast(), text.len()) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn multi_line_pastes_need_confirmation_unless_bracketed() {
+        assert!(!paste_needs_confirmation("ls -la", false));
+        assert!(paste_needs_confirmation("rm -rf ~\n", false));
+        assert!(!paste_needs_confirmation("line1\nline2", true));
+        assert!(paste_needs_confirmation("a\x1b[201~b", true));
+        assert!(paste_needs_confirmation("a\x1b[201~b", false));
+    }
 
     #[test]
     fn bracketed_paste_wraps_and_keeps_newlines() {

@@ -9,18 +9,19 @@ use std::time::{Duration, Instant};
 
 use cmux_term::TermEvent;
 use cmux_term::ghostty_vt::{KeyAction, KeyEncoder, MouseEncoders};
-use cmux_term::input::{encode_focus, encode_paste};
+use cmux_term::input::{encode_focus, encode_paste, paste_needs_confirmation};
 use cmux_term::pty::{PtyEvent, Session};
 use cmux_term::selection::Selection;
 use futures::StreamExt;
 use futures::channel::mpsc;
 use gpui::{
-    App, ClipboardItem, Context, FocusHandle, Focusable, IntoElement, KeyDownEvent, KeyUpEvent,
-    Keystroke, MouseButton, ParentElement, Pixels, Point, Render, Styled, Subscription, Task,
-    Window, div, prelude::*, px,
+    App, ClipboardItem, Context, EventEmitter, FocusHandle, Focusable, IntoElement, KeyDownEvent,
+    KeyUpEvent, Keystroke, MouseButton, ParentElement, Pixels, Point, PromptLevel, Render, Styled,
+    Subscription, Task, Window, div, prelude::*, px,
 };
 
-use crate::keys::{self, AppAction};
+use crate::actions::{Copy, Paste};
+use crate::keys;
 use crate::style::TermStyle;
 use crate::terminal_element::TerminalElement;
 
@@ -70,6 +71,15 @@ impl Geometry {
     }
 }
 
+/// What the workspace hears from a terminal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerminalEvent {
+    /// The shell exited; the workspace closes this tab.
+    Exited,
+    /// The OSC 0/2 title changed.
+    TitleChanged,
+}
+
 pub struct TerminalView {
     pub(crate) session: Session,
     pub(crate) style: Rc<TermStyle>,
@@ -88,10 +98,14 @@ pub struct TerminalView {
     pub(crate) dragging: bool,
     /// Wheel pixels not yet turned into whole lines.
     pub(crate) scroll_px: f32,
-    /// `Keystroke.key` of presses consumed by an app binding, whose release must not reach the PTY.
-    bound_keys: HashSet<String>,
+    /// `Keystroke.key` of presses that went to the PTY, so their release goes there too even
+    /// when a binding (a Copy with nothing selected) let the press through.
+    forwarded_keys: HashSet<String>,
     title: Option<String>,
-    title_dirty: bool,
+    /// Last OSC 7 directory, for new splits and tabs.
+    cwd: Option<String>,
+    /// Where the shell was started; the last resort when neither OSC 7 nor the OS knows.
+    start_cwd: Option<String>,
     /// `CMUX_TRACE_LATENCY=1`: key press time, waiting for its echo.
     trace_latency: bool,
     key_at: Option<Instant>,
@@ -101,19 +115,36 @@ pub struct TerminalView {
 }
 
 impl TerminalView {
-    pub fn new(style: Rc<TermStyle>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let (tx, mut rx) = mpsc::unbounded::<PtyEvent>();
+    /// Starts the user's shell, in `cwd` when it is an existing directory (else `$HOME`).
+    /// Fallible so the caller can survive a failed spawn; pass the result to [`Self::new`].
+    pub fn start(
+        style: &TermStyle,
+        cwd: Option<&str>,
+    ) -> std::io::Result<(Session, mpsc::UnboundedReceiver<PtyEvent>)> {
+        let (tx, rx) = mpsc::unbounded::<PtyEvent>();
+        let mut cmd = Session::shell_command();
+        if let Some(dir) = cwd.filter(|d| std::path::Path::new(d).is_dir()) {
+            cmd.cwd(dir);
+        }
         let session = Session::spawn(
-            Session::shell_command(),
+            cmd,
             80,
             24,
             |term| style.apply_to(term),
             move |ev| {
                 let _ = tx.unbounded_send(ev);
             },
-        )
-        .expect("cmux-linux: could not start the shell on a PTY");
+        )?;
+        Ok((session, rx))
+    }
 
+    pub fn new(
+        style: Rc<TermStyle>,
+        cwd: Option<String>,
+        (session, mut rx): (Session, mpsc::UnboundedReceiver<PtyEvent>),
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let pty_task = cx.spawn(async move |this, cx| {
             while let Some(first) = rx.next().await {
                 let mut batch = vec![first];
@@ -173,9 +204,10 @@ impl TerminalView {
             mouse: MouseEncoders::new().expect("libghostty-vt mouse encoders"),
             dragging: false,
             scroll_px: 0.0,
-            bound_keys: HashSet::new(),
+            forwarded_keys: HashSet::new(),
             title: None,
-            title_dirty: false,
+            cwd: None,
+            start_cwd: cwd,
             trace_latency: std::env::var_os("CMUX_TRACE_LATENCY").is_some(),
             key_at: None,
             echo_at: None,
@@ -187,8 +219,8 @@ impl TerminalView {
     fn on_pty_events(&mut self, events: Vec<PtyEvent>, cx: &mut Context<Self>) {
         for event in events {
             match event {
-                // Ghostty closes the surface when its shell exits; M1 has one surface.
-                PtyEvent::Exited => return cx.quit(),
+                // Ghostty closes the surface when its shell exits; the workspace does that.
+                PtyEvent::Exited => return cx.emit(TerminalEvent::Exited),
                 PtyEvent::Output(events) => {
                     if let Some(at) = self.key_at.take() {
                         self.echo_at = Some(at);
@@ -197,16 +229,31 @@ impl TerminalView {
                         match e {
                             TermEvent::Title(t) => {
                                 self.title = Some(t);
-                                self.title_dirty = true;
+                                cx.emit(TerminalEvent::TitleChanged);
                             }
-                            // Bell, cwd and notifications feed the sidebar and attention UI (M3/M4).
-                            TermEvent::Bell | TermEvent::Cwd(_) | TermEvent::Notify { .. } => {}
+                            TermEvent::Cwd(dir) => self.cwd = Some(dir),
+                            // Bell and notifications feed the sidebar and attention UI (M3/M4).
+                            TermEvent::Bell | TermEvent::Notify { .. } => {}
                         }
                     }
                 }
             }
         }
         cx.notify();
+    }
+
+    /// The OSC 0/2 title, if the shell or program set one.
+    pub fn title(&self) -> Option<&str> {
+        self.title.as_deref()
+    }
+
+    /// The working directory for new splits and tabs: the last OSC 7 one (what the shell
+    /// reports), else the OS's view of the shell's cwd, else where it was started.
+    pub fn cwd(&self) -> Option<String> {
+        self.cwd
+            .clone()
+            .or_else(|| self.session.cwd())
+            .or_else(|| self.start_cwd.clone())
     }
 
     /// Called by the element after painting: logs key-to-echo-to-paint latency when tracing.
@@ -235,8 +282,8 @@ impl TerminalView {
     }
 
     fn focus_changed(&mut self, focused: bool, cx: &mut Context<Self>) {
-        // A binding key released while unfocused never sends key_up here; forget it.
-        self.bound_keys.clear();
+        // A key released while unfocused never sends key_up here; forget it.
+        self.forwarded_keys.clear();
         // A release lost while unfocused would otherwise keep clicks local on a tracking TUI.
         self.dragging = false;
         // The IME is disabled on leave and never ends the preedit itself.
@@ -269,15 +316,9 @@ impl TerminalView {
         out
     }
 
+    /// Runs only for keys no action consumed: gpui dispatches bound chords to their action
+    /// handlers first (research-gpui.md §1.6).
     fn key_down(&mut self, ev: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if let Some(action) = keys::binding(&ev.keystroke) {
-            self.bound_keys.insert(ev.keystroke.key.clone());
-            match action {
-                AppAction::Copy => self.copy(cx),
-                AppAction::Paste => self.paste(cx),
-            }
-            return cx.stop_propagation();
-        }
         // Super combos are desktop and app shortcuts, never terminal input. gpui's Linux text
         // fallback already skips them (wayland/window.rs:725-727, x11/window.rs:1004 only insert
         // `key_char` for shift-or-no modifiers), but replay_pending_input (window.rs:3969-3978)
@@ -296,20 +337,48 @@ impl TerminalView {
             // ends the dead-key preedit; gpui sends no unmark for it (wayland/client.rs:1320).
             self.selection = None;
             self.marked_text.clear();
+            self.forwarded_keys.insert(ev.keystroke.key.clone());
             self.send_input(bytes);
             cx.stop_propagation();
             cx.notify();
         }
     }
 
-    fn key_up(&mut self, ev: &KeyUpEvent, _: &mut Window, _: &mut Context<Self>) {
-        if self.bound_keys.remove(&ev.keystroke.key) || ev.keystroke.modifiers.platform {
+    fn key_up(&mut self, ev: &KeyUpEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let forwarded = self.forwarded_keys.remove(&ev.keystroke.key);
+        if ev.keystroke.modifiers.platform {
+            return;
+        }
+        // A release whose press ran an app action must not reach the PTY either.
+        let bound = || {
+            !cx.key_bindings()
+                .borrow()
+                .bindings_for_input(std::slice::from_ref(&ev.keystroke), &window.context_stack())
+                .0
+                .is_empty()
+        };
+        if !forwarded && bound() {
             return;
         }
         // Empty unless the app asked for kitty's report-event-types flag.
         let bytes = self.encode_key(&ev.keystroke, KeyAction::Release);
         if !bytes.is_empty() {
             self.session.write(bytes);
+        }
+    }
+
+    /// Copy action. With nothing selected the key falls through to `key_down` (and so to the
+    /// PTY for Ctrl+Shift+C), like Ghostty's `performable:` bindings.
+    fn copy_action(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
+        if self.selection.is_none() {
+            return cx.propagate();
+        }
+        self.copy(cx);
+    }
+
+    fn paste_action(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
+            self.paste_text(text, window, cx);
         }
     }
 
@@ -324,15 +393,31 @@ impl TerminalView {
         }
     }
 
-    fn paste(&mut self, cx: &mut Context<Self>) {
-        if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-            self.paste_text(&text);
-        }
-    }
-
-    pub(crate) fn paste_text(&mut self, text: &str) {
+    /// Pastes `text`, first asking when Ghostty's paste protection says it is unsafe.
+    pub(crate) fn paste_text(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {
         let bracketed = self.session.term.lock().unwrap().vt().mode(2004, false);
-        self.send_input(encode_paste(text, bracketed));
+        if !self.style.cfg.clipboard_paste_protection || !paste_needs_confirmation(&text, bracketed)
+        {
+            return self.send_input(encode_paste(&text, bracketed));
+        }
+        // gpui draws its own prompt on Linux (platform prompt is None, window/prompts.rs).
+        let answer = window.prompt(
+            PromptLevel::Warning,
+            "Paste text that may run commands?",
+            Some("The text contains a newline, so pasting it may run commands in the shell."),
+            &["Paste", "Cancel"],
+            cx,
+        );
+        cx.spawn_in(window, async move |this, cx| {
+            if answer.await == Ok(0) {
+                let _ = this.update(cx, |view, _| {
+                    // Bracketed paste may have changed while the prompt was up.
+                    let bracketed = view.session.term.lock().unwrap().vt().mode(2004, false);
+                    view.send_input(encode_paste(&text, bracketed));
+                });
+            }
+        })
+        .detach();
     }
 }
 
@@ -342,26 +427,33 @@ impl Focusable for TerminalView {
     }
 }
 
+impl EventEmitter<TerminalEvent> for TerminalView {}
+
 impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.title_dirty {
-            self.title_dirty = false;
-            if let Some(title) = &self.title {
-                window.set_window_title(title);
-            }
-        }
         div()
             .size_full()
             .p(px(snap_padding(PADDING_PX, window.scale_factor())))
             .bg(self.style.window_background())
             .track_focus(&self.focus)
             .key_context("Terminal")
+            .on_action(cx.listener(Self::copy_action))
+            .on_action(cx.listener(Self::paste_action))
             .on_key_down(cx.listener(Self::key_down))
             .on_key_up(cx.listener(Self::key_up))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
             .on_mouse_down(MouseButton::Middle, cx.listener(Self::mouse_down))
             .on_mouse_down(MouseButton::Right, cx.listener(Self::mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
+            // A selection drag released over another pane or a divider still has to end here.
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, ev, w, cx| {
+                    if this.dragging {
+                        this.mouse_up(ev, w, cx);
+                    }
+                }),
+            )
             .on_mouse_up(MouseButton::Middle, cx.listener(Self::mouse_up))
             .on_mouse_up(MouseButton::Right, cx.listener(Self::mouse_up))
             .on_mouse_move(cx.listener(Self::mouse_move))

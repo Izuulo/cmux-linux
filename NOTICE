@@ -51,5 +51,17 @@ futures (crates.io 0.3, https://github.com/rust-lang/futures-rs)
 libc (crates.io 0.2, https://github.com/rust-lang/libc)
   MIT OR Apache-2.0.
 
+toml (crates.io 0.8, https://github.com/toml-rs/toml), used by cmux-config, with its
+  toml_edit, toml_datetime, toml_write, serde_spanned and winnow dependencies
+  MIT OR Apache-2.0 (winnow: MIT).
+
+Lucide icons (crates/cmux-app/assets/icons/*.svg, https://lucide.dev, lucide-static 0.460.0)
+  terminal, square-terminal, x, columns-2, rows-2. Copyright Lucide Contributors and
+  Cole Bemis (Feather). ISC License; see crates/cmux-app/assets/icons/LICENSE-lucide.txt.
+
+Bonsplit (https://github.com/manaflow-ai/bonsplit @ 58b73fd), cmux's split/tab library
+  Copyright (c) 2026 Alasdair Monk. MIT. crates/cmux-core and crates/cmux-app/src/workspace*
+  follow its split, focus, tab and tab-bar behaviour and metrics; no code is copied.
+
 Further components (Rust crates) are listed here as they are added,
 with their licences.

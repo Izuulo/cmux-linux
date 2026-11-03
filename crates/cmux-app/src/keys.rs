@@ -1,48 +1,7 @@
-//! gpui keystrokes to libghostty-vt key events, and the app's default key bindings.
+//! gpui keystrokes to libghostty-vt key events. Bindings live in cmux-config and `actions`.
 
 use cmux_term::ghostty_vt::{KeyAction, KeyInput, Mods, sys};
 use gpui::{Keystroke, Modifiers};
-
-/// Things a key can do besides typing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AppAction {
-    Copy,
-    Paste,
-}
-
-/// Default bindings, as `ctrl-alt-shift-super-key` chords (⌘ maps to Super).
-/// Remapping through config arrives in M2; until then this table is the one place to change.
-pub const BINDINGS: &[(&str, AppAction)] = &[
-    ("super-c", AppAction::Copy),
-    ("super-v", AppAction::Paste),
-    ("ctrl-shift-c", AppAction::Copy),
-    ("ctrl-shift-v", AppAction::Paste),
-];
-
-pub fn chord(ks: &Keystroke) -> String {
-    let m = &ks.modifiers;
-    let mut s = String::new();
-    for (on, name) in [
-        (m.control, "ctrl-"),
-        (m.alt, "alt-"),
-        (m.shift, "shift-"),
-        (m.platform, "super-"),
-    ] {
-        if on {
-            s.push_str(name);
-        }
-    }
-    s.push_str(&ks.key);
-    s
-}
-
-pub fn binding(ks: &Keystroke) -> Option<AppAction> {
-    let chord = chord(ks);
-    BINDINGS
-        .iter()
-        .find(|(b, _)| *b == chord)
-        .map(|(_, action)| *action)
-}
 
 pub fn mods(m: &Modifiers) -> Mods {
     let mut out = Mods::default();
@@ -353,15 +312,5 @@ mod tests {
             ("A", Mods::SHIFT)
         );
         assert_eq!(shifted.action, Some(KeyAction::Repeat));
-    }
-
-    #[test]
-    fn default_bindings() {
-        assert_eq!(binding(&ks("p", "c", None)), Some(AppAction::Copy));
-        assert_eq!(binding(&ks("p", "v", None)), Some(AppAction::Paste));
-        assert_eq!(binding(&ks("cs", "c", Some("C"))), Some(AppAction::Copy));
-        assert_eq!(binding(&ks("cs", "v", Some("V"))), Some(AppAction::Paste));
-        assert_eq!(binding(&ks("c", "c", None)), None);
-        assert_eq!(chord(&ks("csap", "x", None)), "ctrl-alt-shift-super-x");
     }
 }
