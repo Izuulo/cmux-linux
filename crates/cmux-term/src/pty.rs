@@ -163,8 +163,13 @@ impl Session {
             .name("pty-reader".into())
             .spawn(move || {
                 let mut buf = vec![0u8; 64 * 1024];
-                let mut child_gone = false;
+                // Set when the shell exits: drain until output stops or the deadline passes.
+                let mut drain_until: Option<Instant> = None;
                 loop {
+                    let child_gone = drain_until.is_some();
+                    if drain_until.is_some_and(|d| Instant::now() >= d) {
+                        break; // a grandchild that keeps writing must not keep the pane open
+                    }
                     let ready = match wait(&master_fd, &wake_peer, exit_fd.as_ref(), child_gone) {
                         Ok(ready) => ready,
                         Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
@@ -175,10 +180,10 @@ impl Session {
                     }
                     if ready.exited {
                         // Drain what is buffered, then end even if a grandchild keeps the slave.
-                        child_gone = true;
+                        drain_until.get_or_insert(Instant::now() + DRAIN_LIMIT);
                     }
                     if !ready.master {
-                        if child_gone {
+                        if drain_until.is_some() {
                             break;
                         }
                         continue;
@@ -261,6 +266,11 @@ fn guarded<T, R>(m: &Mutex<T>, f: impl FnOnce(&mut T) -> R) -> Option<R> {
     result.ok()
 }
 
+/// After the shell exits: stop once the master is quiet this long (ms) ...
+const DRAIN_IDLE_MS: libc::c_int = 30;
+/// ... or this long after the exit, whichever comes first.
+const DRAIN_LIMIT: Duration = Duration::from_millis(200);
+
 struct Ready {
     master: bool,
     wake: bool,
@@ -283,12 +293,15 @@ fn wait(
     // A negative fd is ignored by poll.
     let exit_fd = exit.filter(|_| !child_gone).map_or(-1, AsRawFd::as_raw_fd);
     let mut fds = [fd(master.as_raw_fd()), fd(wake.as_raw_fd()), fd(exit_fd)];
-    let timeout = if child_gone { 0 } else { -1 };
+    // The shell's last bytes can reach the master a moment after its exit, so wait briefly.
+    let timeout = if child_gone { DRAIN_IDLE_MS } else { -1 };
     // SAFETY: `fds` is a valid array of 3 pollfds for the duration of the call.
     if unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, timeout) } < 0 {
         return Err(io::Error::last_os_error());
     }
-    let hit = |p: &libc::pollfd| p.revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0;
+    let hit = |p: &libc::pollfd| {
+        p.revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0
+    };
     Ok(Ready {
         master: hit(&fds[0]),
         wake: hit(&fds[1]),

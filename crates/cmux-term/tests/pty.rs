@@ -161,6 +161,21 @@ fn shell_exit_ends_the_session_even_if_a_setsid_grandchild_holds_the_pty() {
     );
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn shell_exit_ends_the_session_even_if_a_setsid_grandchild_keeps_writing() {
+    // The drain after the shell's exit has a deadline; `timeout` stops `yes` after the test.
+    // A bound, not a reproduction: the old zero-timeout drain also stopped at a gap in output.
+    let t = Instant::now();
+    run("setsid -f timeout 3 yes; true", None);
+    assert!(
+        t.elapsed() < Duration::from_secs(2),
+        "took {:?}",
+        t.elapsed()
+    );
+}
+
+// Not Linux-only: this checks the wake path, which needs no pidfd.
 #[test]
 fn drop_releases_the_reader_even_if_a_setsid_grandchild_holds_the_pty() {
     let token = Arc::new(());
