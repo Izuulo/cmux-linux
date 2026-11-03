@@ -453,7 +453,6 @@ impl Layout {
         if !self.root.contains_pane(to) {
             return false;
         }
-        let last_surface = self.pane_count() == 1 && self.focused_pane().tabs.len() == 1;
         let src = self.root.pane_mut(from).expect("pane_of");
         let at = src
             .tabs
@@ -462,6 +461,9 @@ impl Layout {
             .expect("pane_of");
         if from == to {
             if index == at || index == at + 1 {
+                // Bonsplit still selects the tab and focuses its pane (SplitViewController.swift:735-742).
+                src.selected = at;
+                self.focus_pane(to);
                 return false;
             }
             src.tabs.remove(at);
@@ -470,9 +472,6 @@ impl Layout {
             src.selected = index;
             self.focus_pane(to);
             return true;
-        }
-        if last_surface {
-            return false;
         }
         Self::remove_tab_at(src, at);
         let emptied = src.tabs.is_empty();
@@ -910,16 +909,23 @@ mod tests {
         let b = l.focused();
         l.split(Vertical);
         let c = l.focused();
-        // Make b larger than c and forget both focus histories.
-        if let Node::Split(root) = &mut l.root
-            && let Node::Split(right) = &mut *root.second
-        {
-            right.ratio = 0.7;
-        }
-        l.focus_seq.retain(|id, _| *id == a);
-        l.focus_pane(a);
-        assert_eq!(l.neighbor(Right), Some(b));
-        let _ = c;
+        // b (top) is first in layout order; forget both focus histories each time.
+        let mut probe = |ratio: f32| {
+            if let Node::Split(root) = &mut l.root
+                && let Node::Split(right) = &mut *root.second
+            {
+                right.ratio = ratio;
+            }
+            l.focus_seq.retain(|id, _| *id == a);
+            l.focus_pane(a);
+            l.neighbor(Right)
+        };
+        assert_eq!(probe(0.3), Some(c), "larger overlap beats layout order");
+        assert_eq!(
+            probe(0.5),
+            Some(b),
+            "equal overlap falls back to layout order"
+        );
     }
 
     #[test]
