@@ -148,6 +148,8 @@ pub fn chord_to_gpui(chord: &str) -> Result<String, String> {
     if shift && let Some(s) = shifted(&key) {
         key = s.to_string();
         shift = false;
+    } else if shift && key.chars().count() == 1 && "!@#$%^&*()_+{}|:\"<>?~".contains(key.as_str()) {
+        shift = false; // already the shifted symbol, which gpui reports without Shift
     }
     let mut out = String::new();
     for (on, name) in [
@@ -169,9 +171,10 @@ pub fn chord_to_gpui(chord: &str) -> Result<String, String> {
 fn expand(action: &'static str, chords: &[String]) -> Result<Vec<Binding>, String> {
     let mut out = Vec::new();
     for chord in chords {
+        let chord = chord.trim();
         if action == NUMBERED {
-            let last = chord.rsplit('+').next().unwrap_or_default().trim();
-            if !last.chars().all(|c| c.is_ascii_digit()) || last.is_empty() {
+            let last = chord.rsplit('+').next().unwrap_or_default();
+            if last.len() != 1 || !last.chars().all(|c| c.is_ascii_digit()) {
                 return Err(format!("`{chord}` must end in a digit (it binds 1-9)"));
             }
             let mods = &chord[..chord.len() - last.len()];
@@ -217,7 +220,7 @@ pub fn keybindings(user: Option<&str>, origin: &str) -> Keybindings {
     if let Some(text) = user {
         match text.parse::<toml::Table>() {
             Ok(t) => table = t,
-            Err(e) => warnings.push(format!("{origin}: {}", e.message())),
+            Err(e) => warnings.push(format!("{origin}: {e}")),
         }
     }
     let user = match table.get("keybindings") {
@@ -374,5 +377,17 @@ mod tests {
         let k = load(Path::new("/nonexistent/cmux-linux/config.toml"));
         assert_eq!(k.warnings, Vec::<String>::new());
         assert!(!k.bindings.is_empty());
+    }
+
+    #[test]
+    fn already_shifted_symbols_drop_shift() {
+        assert_eq!(chord_to_gpui("super+shift+}").unwrap(), "super-}");
+    }
+
+    #[test]
+    fn numbered_chords_are_trimmed_and_take_one_digit() {
+        let ok = expand(NUMBERED, &["ctrl+1\u{a0}".to_string()]).unwrap();
+        assert_eq!(ok[8].keystroke, "ctrl-9");
+        assert!(expand(NUMBERED, &["ctrl+12".to_string()]).is_err());
     }
 }
