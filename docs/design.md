@@ -36,7 +36,7 @@ alternatives.
 | Decision | Choice | Why |
 |---|---|---|
 | UI toolkit | **gpui** (Zed's), pinned version | Draws everything itself on the GPU → identical look on Linux and macOS; Wayland + KWin blur; Zed's GPL-3 terminal view is a reference. |
-| Terminal engine | **libghostty-vt** via cmux's `ghostty-vt` crates | Same engine as cmux/Ghostty. Fallback: `alacritty_terminal` if the bindings are too thin (decided in M0). |
+| Terminal engine | **libghostty-vt** via vendored cmux crates (decided M0, see journal) | Same engine as cmux/Ghostty. |
 | Terminal rendering | Own gpui element drawing the cell grid | Ghostty's full embedding API is macOS/iOS-only, so on Linux we render ourselves. |
 | Agent integration | `cmux` CLI + Unix socket, same command names, flags, env vars as cmux | Existing Claude Code hooks work unchanged. |
 | Config | Read `~/.config/ghostty/config` (fonts, theme, colours) + `~/.config/cmux-linux/config.toml` (shortcuts) | Matches cmux's "Ghostty compatible" behaviour. |
