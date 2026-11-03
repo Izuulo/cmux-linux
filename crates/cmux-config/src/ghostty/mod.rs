@@ -43,6 +43,9 @@ impl MetricModifier {
                 .trim()
                 .parse()
                 .map_err(|_| format!("not a percentage: {s}"))?;
+            if !p.is_finite() {
+                return Err(format!("not a finite percentage: {s}"));
+            }
             return Ok(Self::Percent((1.0 + p / 100.0).max(0.0)));
         }
         s.parse()
@@ -51,11 +54,13 @@ impl MetricModifier {
     }
 
     /// Applies the modifier to a height in device pixels, rounding like Ghostty.
+    /// Clamped to one pixel so a large negative modifier cannot zero the cell height.
     pub fn apply(self, px: f32) -> f32 {
-        match self {
+        let h = match self {
             Self::Absolute(d) => px + d as f32,
             Self::Percent(f) => (px * f).round(),
-        }
+        };
+        h.max(1.0)
     }
 }
 
@@ -112,7 +117,7 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Applies one `key = value` entry. `theme` and `config-file` are handled by [`load`].
+    /// Applies one `key = value` entry. `theme` and `config-file` are handled by load.
     pub fn apply(&mut self, key: &str, value: &str) -> Result<(), String> {
         match key {
             "font-family" if value.is_empty() => self.font_family.clear(),
@@ -161,6 +166,8 @@ impl Config {
 /// `key = value` entries of one file as (1-based line, key, value). Ghostty has no inline
 /// comments; only lines starting with `#` are comments. A bare `key` has an empty value.
 pub fn entries(text: &str) -> impl Iterator<Item = (usize, &str, &str)> {
+    // A UTF-8 BOM is not whitespace, so trim() would leave it on the first key.
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     text.lines().enumerate().filter_map(|(i, line)| {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -182,9 +189,11 @@ pub fn parse_rgb(s: &str) -> Result<Rgb, String> {
     let hex = s.strip_prefix('#').unwrap_or(s);
     let digit = |i: usize| u8::from_str_radix(&hex[i..i + 1], 16);
     let pair = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16);
+    // from_str_radix accepts a leading `+`, so check the characters first.
+    let all_hex = hex.bytes().all(|b| b.is_ascii_hexdigit());
     let rgb = match hex.len() {
-        6 if hex.is_ascii() => (pair(0), pair(2), pair(4)),
-        3 if hex.is_ascii() => {
+        6 if all_hex => (pair(0), pair(2), pair(4)),
+        3 if all_hex => {
             let d = |i| digit(i).map(|v| v * 17);
             (d(0), d(1), d(2))
         }
@@ -203,16 +212,25 @@ fn parse_palette(s: &str) -> Result<(u8, Rgb), String> {
         .ok_or_else(|| format!("expected N=COLOR: {s}"))?;
     let index = index.trim();
     let parsed = if let Some(h) = index.strip_prefix("0x") {
-        u8::from_str_radix(h, 16)
+        digits(h, 16)
     } else if let Some(o) = index.strip_prefix("0o") {
-        u8::from_str_radix(o, 8)
+        digits(o, 8)
     } else if let Some(b) = index.strip_prefix("0b") {
-        u8::from_str_radix(b, 2)
+        digits(b, 2)
     } else {
-        index.parse()
+        digits(index, 10)
     };
-    let index = parsed.map_err(|_| format!("palette index must be 0-255: {index}"))?;
+    let index = parsed.ok_or_else(|| format!("palette index must be 0-255: {index}"))?;
     Ok((index, parse_rgb(color.trim())?))
+}
+
+/// `from_str_radix` accepts a leading `+`, so every character is checked first.
+fn digits(s: &str, radix: u32) -> Option<u8> {
+    if s.chars().all(|c| c.is_digit(radix)) {
+        u8::from_str_radix(s, radix).ok()
+    } else {
+        None
+    }
 }
 
 fn dyn_color(s: &str) -> Result<Option<DynColor>, String> {
@@ -224,15 +242,19 @@ fn dyn_color(s: &str) -> Result<Option<DynColor>, String> {
     }))
 }
 
+/// `f32::from_str` also accepts `nan` and `inf`, which no config value means.
 fn number(s: &str) -> Result<f32, String> {
-    s.parse().map_err(|_| format!("not a number: {s}"))
+    s.parse()
+        .ok()
+        .filter(|v: &f32| v.is_finite())
+        .ok_or_else(|| format!("not a finite number: {s}"))
 }
 
-/// A bare key (`background-opacity-cells`) means true, as in Ghostty.
+/// Spellings from Ghostty's `parseBool` (`vendor/ghostty/src/cli/args.zig`). A bare key means true.
 fn boolean(s: &str) -> Result<bool, String> {
     match s {
-        "" | "true" => Ok(true),
-        "false" => Ok(false),
+        "" | "1" | "t" | "T" | "true" => Ok(true),
+        "0" | "f" | "F" | "false" => Ok(false),
         _ => Err(format!("expected true or false: {s}")),
     }
 }
@@ -400,5 +422,57 @@ mod tests {
         assert_eq!(cfg.palette, defaults.palette);
         assert_eq!(cfg.cursor_style, defaults.cursor_style);
         assert_eq!(cfg.background_opacity, 1.0, "clamped, not rejected");
+    }
+
+    #[test]
+    fn non_finite_numbers_warn_and_keep_defaults() {
+        let (cfg, warnings) =
+            parse("background-opacity = nan\nfont-size = inf\nfaint-opacity = infinity\n");
+        assert_eq!(warnings.len(), 3, "{warnings:?}");
+        let defaults = Config::default();
+        assert_eq!(cfg.background_opacity, defaults.background_opacity);
+        assert_eq!(cfg.font_size, defaults.font_size);
+        assert_eq!(cfg.faint_opacity, defaults.faint_opacity);
+    }
+
+    #[test]
+    fn plus_sign_is_not_hex() {
+        assert!(parse_rgb("#+f0000").is_err());
+        let (cfg, warnings) = parse("palette = 0x+f=#000000\n");
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert_eq!(cfg.palette[15], None);
+    }
+
+    #[test]
+    fn leading_bom_is_ignored() {
+        let (cfg, warnings) = parse("\u{feff}font-family = X\n");
+        assert_eq!(warnings, Vec::<String>::new());
+        assert_eq!(cfg.font_family, vec!["X"]);
+    }
+
+    #[test]
+    fn ghostty_boolean_spellings() {
+        for (text, want) in [
+            ("1", true),
+            ("t", true),
+            ("T", true),
+            ("true", true),
+            ("0", false),
+            ("f", false),
+            ("F", false),
+            ("false", false),
+        ] {
+            let (cfg, warnings) = parse(&format!("background-opacity-cells = {text}\n"));
+            assert_eq!(warnings, Vec::<String>::new(), "{text}");
+            assert_eq!(cfg.background_opacity_cells, want, "{text}");
+        }
+    }
+
+    #[test]
+    fn metric_modifier_never_drops_below_one_pixel() {
+        assert_eq!(MetricModifier::Absolute(-1000).apply(17.0), 1.0);
+        assert_eq!(MetricModifier::Percent(-100.0).apply(17.0), 1.0);
+        assert!(MetricModifier::parse("inf%").is_err());
+        assert!(MetricModifier::parse("nan%").is_err());
     }
 }
