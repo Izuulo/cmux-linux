@@ -1046,7 +1046,8 @@ pub struct WindowBlur { /* conn, queue, effect */ }
 impl WindowBlur {
     /// Binds ext_background_effect_manager_v1 on gpui's own display and blurs the whole surface.
     /// None on X11, without the protocol, or if any step fails (logged once to stderr).
-    pub fn enable(window: &gpui::Window) -> Option<Self>;
+    /// `cx` guards with `cx.compositor_name()`: gpui 0.2.2's X11 window panics on raw handles.
+    pub fn enable(window: &gpui::Window, cx: &gpui::App) -> Option<Self>;
 }
 ```
 
