@@ -878,7 +878,7 @@ pub(crate) fn row_model(title: &str, meta: &WorkspaceMeta, prs: &[(Pr, bool)]) -
 pub(crate) fn clamp_width(w: f32, window_w: f32) -> f32; // [MIN, MAX] and ≤ window_w − CONTENT_MIN, never < MIN
 ```
 
-- [ ] **Step 1: Failing tests.**
+- [x] **Step 1: Failing tests.**
 
 ```rust
 // chrome.rs
@@ -918,14 +918,14 @@ fn clamp_width_keeps_content_room() {
 }
 ```
 
-- [ ] **Step 2: Run.** Expected: compile errors.
-- [ ] **Step 3: Implement the pure parts** (`cmux_accent`, `sidebar_palette`, `row_model`, `clamp_width`). Run: pass. Commit `feat(cmux-app): sidebar palette and row model`.
-- [ ] **Step 4: Implement the metadata loops** in `window_view.rs`, using the rg §3 poll pattern:
+- [x] **Step 2: Run.** Expected: compile errors.
+- [x] **Step 3: Implement the pure parts** (`cmux_accent`, `sidebar_palette`, `row_model`, `clamp_width`). Run: pass. Commit `feat(cmux-app): sidebar palette and row model`.
+- [x] **Step 4: Implement the metadata loops** in `window_view.rs`, using the rg §3 poll pattern:
   - **Fields:** `meta: HashMap<WorkspaceId, WorkspaceMeta>`, `prs: PrPoller`, `pr_in_flight: bool`, and `_tasks: Vec<Task<()>>`.
   - **Metadata loop (every 1500 ms):** read `[(id, WorkspaceInput { panels: view.panels(cx) })]`, then run `collect(&inputs, Path::new("/proc"), home.as_deref())` on `background_executor`. `home` is `std::env::var("HOME").ok()`, read once. Store the result and call `cx.notify()` only if it changed.
   - **PR loop (every 2000 ms):** if `!prs.disabled()` and nothing is in flight, gather every `(git_dir, branch)` from `meta` where `!skip_branch`, and mark one `focused` if its workspace is selected. Fetch up to 3 due keys one after another in a single background task, using `fetch("gh", dir, branch, 15 s)` with `dir` = the `DirLine.path`. Map each result to `select_pr(&items, branch, today)`, where `today` = `SystemTime::now()` / 86400. `record` it, then notify.
   - Commit `feat(cmux-app): background metadata and PR polling`.
-- [ ] **Step 5: Implement the sidebar render** in `sidebar.rs` as `impl WindowView { pub(crate) fn render_sidebar(&self, window, cx) -> impl IntoElement }`. Use the D3 numbers: band 28 with buttons, the list from y 30 (`overflow_y_scroll` + `ScrollHandle`, `scroll_to_item` on selection change), and rows as in D3. Wire these interactions:
+- [x] **Step 5: Implement the sidebar render** in `sidebar.rs` as `impl WindowView { pub(crate) fn render_sidebar(&self, window, cx) -> impl IntoElement }`. Use the D3 numbers: band 28 with buttons, the list from y 30 (`overflow_y_scroll` + `ScrollHandle`, `scroll_to_item` on selection change), and rows as in D3. Wire these interactions:
   - click → `select`;
   - × (group hover, only when `len > 1`) → `request_close`;
   - PR → `cx.open_url(&pr.url)`; port → `cx.open_url(&format!("http://localhost:{p}"))`;
