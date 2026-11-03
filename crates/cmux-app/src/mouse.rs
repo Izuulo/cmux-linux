@@ -25,11 +25,11 @@ fn vt_button(b: MouseButton) -> Option<VtButton> {
     }
 }
 
-/// Clicks cycle cell, word, line, cell... like Ghostty's click counter (gpui's count grows
-/// without bound).
+/// Ghostty caps the click counter at 3 (SelectionGesture.zig ~664: `@min(count + 1, 3)`),
+/// so a fourth rapid click stays on Line. gpui's count grows without bound.
 fn select_mode(click_count: usize) -> SelectMode {
-    match click_count.max(1) % 3 {
-        1 => SelectMode::Cell,
+    match click_count {
+        0 | 1 => SelectMode::Cell,
         2 => SelectMode::Word,
         _ => SelectMode::Line,
     }
@@ -123,6 +123,10 @@ impl TerminalView {
             if let Some(b) = vt_button(ev.button) {
                 self.report(MouseAction::Press, Some(b), ev.position, &ev.modifiers);
             }
+            // Ghostty drops the selection when a click goes to the app (Surface.zig ~5940).
+            if self.selection.take().is_some() {
+                cx.notify();
+            }
             return;
         }
         match ev.button {
@@ -188,12 +192,16 @@ impl TerminalView {
         {
             self.selection = None;
         }
-        // Ghostty's copy-on-select default on Linux: the selection goes to PRIMARY.
+        let text = self.selection.as_ref().and_then(|s| s.text(&mut term));
+        drop(term);
+        // Ghostty's copy-on-select default on Linux: the selection goes to PRIMARY. Never with
+        // the Term lock held, and never an empty string over the previous PRIMARY.
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-        if let Some(text) = self.selection.as_ref().and_then(|s| s.text(&mut term)) {
+        if let Some(text) = text.filter(|t| !t.is_empty()) {
             cx.write_to_primary(ClipboardItem::new_string(text));
         }
-        drop(term);
+        #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+        let _ = text;
         cx.notify();
     }
 
@@ -261,10 +269,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn clicks_cycle_cell_word_line() {
-        let modes: Vec<_> = (0..=7).map(select_mode).collect();
+    fn clicks_cap_at_line_like_ghostty() {
+        let modes: Vec<_> = (0..=5).map(select_mode).collect();
         use SelectMode::*;
-        assert_eq!(modes, [Cell, Cell, Word, Line, Cell, Word, Line, Cell]);
+        assert_eq!(modes, [Cell, Cell, Word, Line, Line, Line]);
     }
 
     #[test]
