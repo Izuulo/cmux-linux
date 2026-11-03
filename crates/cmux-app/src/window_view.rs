@@ -49,6 +49,9 @@ pub struct WindowView {
     prs: PrPoller,
     pr_in_flight: bool,
     _tasks: Vec<Task<()>>,
+    /// Whole-window KWin blur; dropped with the view, before the window.
+    #[cfg(target_os = "linux")]
+    _blur: Option<crate::blur::WindowBlur>,
 }
 
 /// Metadata rescan period (plan D2) and PR loop tick (D5).
@@ -60,6 +63,11 @@ const GH_DEADLINE: Duration = Duration::from_secs(15);
 impl WindowView {
     /// Quits if the first shell fails to start.
     pub fn new(style: Rc<TermStyle>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        // Blur only when Ghostty asks for it and there is something to see through (plan D4).
+        #[cfg(target_os = "linux")]
+        let blur = (style.cfg.background_blur && style.cfg.background_opacity < 1.0)
+            .then(|| crate::blur::WindowBlur::enable(window))
+            .flatten();
         let mut this = Self {
             workspaces: Workspaces::new(),
             views: HashMap::new(),
@@ -77,6 +85,8 @@ impl WindowView {
             prs: PrPoller::new(),
             pr_in_flight: false,
             _tasks: Vec::new(),
+            #[cfg(target_os = "linux")]
+            _blur: blur,
         };
         this._tasks = vec![Self::meta_loop(cx), Self::pr_loop(cx)];
         let id = this.workspaces.selected();
