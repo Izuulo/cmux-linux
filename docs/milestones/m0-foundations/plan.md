@@ -13,6 +13,7 @@
 - License GPL-3.0-or-later for our crates. Vendored cmux crates stay `MIT` (their Cargo metadata), Ghostty is MIT. Every vendored component goes in `NOTICE`.
 - Never copy from cmux's BUSL-1.1 directories (`web/`, `workers/ci-artifacts/`, `workers/iroh-v2/`, `workers/presence/`, `services/iroh-relay-minter/`, `cmux-tui/relays/cloudflare-do/`).
 - Zig must be exactly 0.16.0 (Ghostty's `minimum_zig_version`). Arch ships 0.17, so use `scripts/install-zig.sh`.
+- Ghostty's build runs a bare `zig`, so every cargo command needs `export PATH="$PWD/.tools/zig:$PATH"` (repo root) first.
 - gpui pinned with `=0.2.2`.
 - No personal info (names, emails, home paths, machine details) in tracked files.
 - `STATUS.md` max 100 lines; archive it to `docs/status-archive.md` before replacing it.
@@ -747,7 +748,10 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - name: Zig 0.16.0
-        run: scripts/install-zig.sh
+        # Ghostty's build.zig runs a bare `zig env`, so zig must be on PATH (ZIG alone isn't enough).
+        run: |
+          scripts/install-zig.sh
+          echo "$PWD/.tools/zig" >> "$GITHUB_PATH"
       - run: cargo build --workspace --locked
       - run: cargo test --workspace --locked
       - run: cargo clippy --workspace --locked -- -D warnings
