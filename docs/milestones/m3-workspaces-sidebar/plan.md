@@ -566,7 +566,7 @@ The cadence rules: never fetched → due. Otherwise the interval is:
 
 `record(Err(Failed))` keeps the previous PR and marks it stale. `record(Err(NotFound))` sets `disabled`. `record(Ok(None))` clears the PR.
 
-- [ ] **Step 1: Failing tests.**
+- [x] **Step 1: Failing tests.**
 
 ```rust
 const JSON: &str = r#"[
@@ -657,14 +657,14 @@ fn failures_back_off_and_keep_the_last_pr_stale() {
 
 `fetch` builds `Command::new(program).args(GH_ARGS).arg(branch).current_dir(dir)` with stdin null and stdout/stderr piped, then calls the private `fn run_with_deadline(cmd: Command, deadline: Duration) -> Result<std::process::Output, FetchError>`. That helper is what the hanging-command test exercises.
 
-- [ ] **Step 2: Run.** Expected: compile errors.
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run.** Expected: compile errors.
+- [x] **Step 3: Implement.**
   - `parse_gh_pr_list` uses `serde_json::Value`. State strings are `OPEN`/`MERGED`/`CLOSED`; anything else skips the item. An empty-string or null `mergedAt` becomes None.
   - `days_from_iso` parses `YYYY-MM-DD` and uses the civil-from-days algorithm (Howard Hinnant's `days_from_civil`, public domain; cite it in a comment).
   - `select_pr`: filter on head, drop merged items whose `days_from_iso(merged_at) < today − 14`, then take the max by `(state, updated_at, number)`.
   - `run_with_deadline`: `spawn` (an `ErrorKind::NotFound` → `FetchError::NotFound`), then `try_wait` every 50 ms. Past the deadline it calls `kill` and `wait` and returns `Failed("timed out")`. A non-zero exit gives `Failed(<first stderr line>)`.
-- [ ] **Step 4: Run.** Expected: 7 tests pass. Check libc: `grep -A1 'name = "libc"' Cargo.lock` still shows 0.2.189.
-- [ ] **Step 5: Commit.** `git add Cargo.toml Cargo.lock NOTICE crates/cmux-meta && git commit -m "feat(cmux-meta): PR badge via gh pr list with cmux selection, cadence and backoff"`.
+- [x] **Step 4: Run.** Expected: 7 tests pass. Check libc: `grep -A1 'name = "libc"' Cargo.lock` still shows 0.2.189.
+- [x] **Step 5: Commit.** `git add Cargo.toml Cargo.lock NOTICE crates/cmux-meta && git commit -m "feat(cmux-meta): PR badge via gh pr list with cmux selection, cadence and backoff"`.
 
 ---
 
