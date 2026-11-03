@@ -66,8 +66,12 @@ impl WorkspaceView {
             _subscriptions: vec![lost],
         };
         let first = this.layout.active_surface();
-        this.add_terminal(first, None, window, cx);
-        this.focus_active(window, cx);
+        if this.add_terminal(first, None, window, cx) {
+            this.focus_active(window, cx);
+        } else {
+            // Nothing to show without a shell.
+            cx.quit();
+        }
         this
     }
 
@@ -85,9 +89,16 @@ impl WorkspaceView {
         cwd: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> bool {
+        let started = match TerminalView::start(&self.style, cwd.as_deref()) {
+            Ok(started) => started,
+            Err(e) => {
+                eprintln!("cmux-linux: could not start a shell: {e}");
+                return false;
+            }
+        };
         let style = self.style.clone();
-        let view = cx.new(|cx| TerminalView::new(style, cwd, window, cx));
+        let view = cx.new(|cx| TerminalView::new(style, cwd, started, window, cx));
         let events = cx.subscribe_in(&view, window, move |this, _, ev, window, cx| match ev {
             TerminalEvent::Exited => this.close_surface(surface, window, cx),
             TerminalEvent::TitleChanged => cx.notify(),
@@ -106,6 +117,22 @@ impl WorkspaceView {
                 _subscriptions: [events, focused],
             },
         );
+        true
+    }
+
+    /// Starts a shell for a surface the layout just added; on failure removes the surface
+    /// again so focus stays where it was.
+    fn add_terminal_or_undo(
+        &mut self,
+        surface: SurfaceId,
+        cwd: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.add_terminal(surface, cwd, window, cx) {
+            self.layout.close_surface(surface);
+        }
+        self.focus_active(window, cx);
     }
 
     /// Focuses the active surface's terminal (after any change to focus or tabs).
@@ -120,9 +147,7 @@ impl WorkspaceView {
     /// The directory a new terminal starts in: the active terminal's OSC 7 cwd, if allowed.
     fn inherited_cwd(&self, inherit: bool, cx: &Context<Self>) -> Option<String> {
         let s = self.surfaces.get(&self.layout.active_surface())?;
-        inherit
-            .then(|| s.view.read(cx).cwd().map(str::to_string))
-            .flatten()
+        inherit.then(|| s.view.read(cx).cwd()).flatten()
     }
 
     fn container(window: &Window) -> (f32, f32, f32) {
@@ -156,16 +181,14 @@ impl WorkspaceView {
         let cwd = self.inherited_cwd(self.style.cfg.split_inherit_working_directory, cx);
         // shortcut: cmux beeps on a refused split; gpui 0.2.2 has no beep API, so nothing happens.
         if let Ok(surface) = self.layout.try_split(o, w, h, scale) {
-            self.add_terminal(surface, cwd, window, cx);
-            self.focus_active(window, cx);
+            self.add_terminal_or_undo(surface, cwd, window, cx);
         }
     }
 
     fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let cwd = self.inherited_cwd(self.style.cfg.tab_inherit_working_directory, cx);
         let surface = self.layout.new_tab();
-        self.add_terminal(surface, cwd, window, cx);
-        self.focus_active(window, cx);
+        self.add_terminal_or_undo(surface, cwd, window, cx);
     }
 
     fn focus_dir(&mut self, dir: Direction, window: &mut Window, cx: &mut Context<Self>) {

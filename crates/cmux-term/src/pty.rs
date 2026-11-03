@@ -224,6 +224,11 @@ impl Session {
         self.child.0.as_ref().and_then(|c| c.process_id())
     }
 
+    /// The child's current working directory as the OS reports it (see [`process_cwd`]).
+    pub fn cwd(&self) -> Option<String> {
+        process_cwd(self.process_id()?)
+    }
+
     /// Queues bytes for the child. Never blocks.
     pub fn write(&self, bytes: Vec<u8>) {
         let _ = self.writer.send(bytes);
@@ -328,6 +333,19 @@ fn pidfd(pid: u32) -> Option<OwnedFd> {
     }
 }
 
+/// A process's working directory, read from `/proc/<pid>/cwd`.
+#[cfg(target_os = "linux")]
+pub fn process_cwd(pid: u32) -> Option<String> {
+    let dir = std::fs::read_link(format!("/proc/{pid}/cwd")).ok()?;
+    dir.into_os_string().into_string().ok()
+}
+
+// shortcut: no cwd fallback off Linux, so macOS splits rely on OSC 7; use proc_pidinfo in M6.
+#[cfg(not(target_os = "linux"))]
+pub fn process_cwd(_pid: u32) -> Option<String> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -340,5 +358,13 @@ mod tests {
         assert_eq!(r, None);
         assert!(!m.is_poisoned());
         assert_eq!(*m.lock().unwrap(), 1);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn process_cwd_reads_proc() {
+        let here = std::env::current_dir().unwrap();
+        assert_eq!(process_cwd(std::process::id()).as_deref(), here.to_str());
+        assert_eq!(process_cwd(u32::MAX), None);
     }
 }

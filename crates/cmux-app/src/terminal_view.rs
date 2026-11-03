@@ -104,6 +104,8 @@ pub struct TerminalView {
     title: Option<String>,
     /// Last OSC 7 directory, for new splits and tabs.
     cwd: Option<String>,
+    /// Where the shell was started; the last resort when neither OSC 7 nor the OS knows.
+    start_cwd: Option<String>,
     /// `CMUX_TRACE_LATENCY=1`: key press time, waiting for its echo.
     trace_latency: bool,
     key_at: Option<Instant>,
@@ -114,15 +116,14 @@ pub struct TerminalView {
 
 impl TerminalView {
     /// Starts the user's shell, in `cwd` when it is an existing directory (else `$HOME`).
-    pub fn new(
-        style: Rc<TermStyle>,
-        cwd: Option<String>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        let (tx, mut rx) = mpsc::unbounded::<PtyEvent>();
+    /// Fallible so the caller can survive a failed spawn; pass the result to [`Self::new`].
+    pub fn start(
+        style: &TermStyle,
+        cwd: Option<&str>,
+    ) -> std::io::Result<(Session, mpsc::UnboundedReceiver<PtyEvent>)> {
+        let (tx, rx) = mpsc::unbounded::<PtyEvent>();
         let mut cmd = Session::shell_command();
-        if let Some(dir) = cwd.as_deref().filter(|d| std::path::Path::new(d).is_dir()) {
+        if let Some(dir) = cwd.filter(|d| std::path::Path::new(d).is_dir()) {
             cmd.cwd(dir);
         }
         let session = Session::spawn(
@@ -133,9 +134,17 @@ impl TerminalView {
             move |ev| {
                 let _ = tx.unbounded_send(ev);
             },
-        )
-        .expect("cmux-linux: could not start the shell on a PTY");
+        )?;
+        Ok((session, rx))
+    }
 
+    pub fn new(
+        style: Rc<TermStyle>,
+        cwd: Option<String>,
+        (session, mut rx): (Session, mpsc::UnboundedReceiver<PtyEvent>),
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let pty_task = cx.spawn(async move |this, cx| {
             while let Some(first) = rx.next().await {
                 let mut batch = vec![first];
@@ -197,7 +206,8 @@ impl TerminalView {
             scroll_px: 0.0,
             forwarded_keys: HashSet::new(),
             title: None,
-            cwd,
+            cwd: None,
+            start_cwd: cwd,
             trace_latency: std::env::var_os("CMUX_TRACE_LATENCY").is_some(),
             key_at: None,
             echo_at: None,
@@ -237,9 +247,13 @@ impl TerminalView {
         self.title.as_deref()
     }
 
-    /// The last OSC 7 working directory.
-    pub fn cwd(&self) -> Option<&str> {
-        self.cwd.as_deref()
+    /// The working directory for new splits and tabs: the last OSC 7 one (what the shell
+    /// reports), else the OS's view of the shell's cwd, else where it was started.
+    pub fn cwd(&self) -> Option<String> {
+        self.cwd
+            .clone()
+            .or_else(|| self.session.cwd())
+            .or_else(|| self.start_cwd.clone())
     }
 
     /// Called by the element after painting: logs key-to-echo-to-paint latency when tracing.

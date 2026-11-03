@@ -310,8 +310,13 @@ impl WorkspaceView {
                     .text_color(p.inactive_text)
                     .group_hover(close_group, |s| s.text_color(p.active_text)),
             )
-            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+            .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
                 cx.stop_propagation();
+                // A fast double-click must not close this tab and then hit the next one
+                // sliding under the cursor.
+                if ev.click_count() > 1 {
+                    return;
+                }
                 this.close_surface(surface, window, cx);
             }));
         div()
