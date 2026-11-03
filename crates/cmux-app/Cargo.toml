@@ -13,3 +13,4 @@ workspace = true
 cmux-term.workspace = true
 cmux-config.workspace = true
 gpui.workspace = true
+futures.workspace = true

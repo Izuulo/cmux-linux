@@ -22,3 +22,4 @@ cmux-config = { path = "crates/cmux-config" }
 gpui = "=0.2.2"
 portable-pty = "0.9"
 libc = "0.2"
+futures = "0.3"

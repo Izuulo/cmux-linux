@@ -39,5 +39,14 @@ JetBrains Mono 2.304 (crates/cmux-app/assets/fonts/, https://github.com/JetBrain
   Copyright 2020 The JetBrains Mono Project Authors. SIL Open Font License 1.1;
   see crates/cmux-app/assets/fonts/OFL.txt. Bundled unmodified as Ghostty's default font.
 
+Zed terminal view (https://github.com/zed-industries/zed @ 69e2130295c2649963eb639fc70b4f2ee8ea1624,
+  crates/terminal_view and crates/terminal)
+  Copyright Zed Industries. GPL-3.0-or-later. crates/cmux-app/src/{terminal_element,
+  terminal_view,mouse,ime}.rs adapt its cell batching, background merging, prepaint resize,
+  paint order, PTY event batching, mouse routing and IME handler.
+
+futures (crates.io 0.3, https://github.com/rust-lang/futures-rs)
+  MIT OR Apache-2.0.
+
 Further components (Rust crates) are listed here as they are added,
 with their licences.
