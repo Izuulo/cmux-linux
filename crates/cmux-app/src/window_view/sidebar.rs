@@ -5,10 +5,11 @@ use cmux_meta::WorkspaceMeta;
 use cmux_meta::pr::{Pr, PrState};
 use gpui::{
     AppContext, ClickEvent, Context, CursorStyle, DragMoveEvent, EmptyView, FontWeight,
-    InteractiveElement, IntoElement, ParentElement, SharedString, StatefulInteractiveElement,
-    Styled, Window, div, prelude::*, px, svg,
+    InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    StatefulInteractiveElement, Styled, Window, div, prelude::*, px, svg,
 };
 
+use super::rename::{RenameEvent, RenameInput, RenameStyle};
 use super::{CONTENT_MIN, SIDEBAR_MAX, SIDEBAR_MIN, WindowView};
 use crate::chrome::{self, SidebarPalette};
 
@@ -36,6 +37,28 @@ const RESIZE_OUT: f32 = 4.0;
 /// The sidebar edge being dragged.
 #[derive(Clone, Copy)]
 pub(super) struct SidebarDrag;
+
+/// The row being dragged; also the drag ghost.
+#[derive(Clone)]
+pub(super) struct DraggedWorkspace {
+    pub id: WorkspaceId,
+    pub title: SharedString,
+}
+
+impl Render for DraggedWorkspace {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px(px(ROW_PAD_X))
+            .py(px(ROW_PAD_Y))
+            .rounded(px(RADIUS))
+            .bg(chrome::cmux_accent(false))
+            .text_size(px(TITLE_PX))
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(gpui::white())
+            .whitespace_nowrap()
+            .child(self.title.clone())
+    }
+}
 
 /// What one row shows below its title.
 #[derive(Debug, Clone, PartialEq)]
@@ -118,6 +141,88 @@ impl WindowView {
         }
     }
 
+    pub(super) fn on_row_drag(
+        &mut self,
+        ev: &DragMoveEvent<DraggedWorkspace>,
+        cx: &mut Context<Self>,
+    ) {
+        let gap = ev.bounds.contains(&ev.event.position).then(|| {
+            let mids: Vec<f32> = self
+                .row_bounds
+                .borrow()
+                .iter()
+                .map(|b| f32::from(b.center().y))
+                .collect();
+            drop_gap(&mids, f32::from(ev.event.position.y))
+        });
+        let dragging = Some(ev.drag(cx).id);
+        if self.drop_gap != gap || self.dragging != dragging {
+            self.drop_gap = gap;
+            self.dragging = dragging;
+            cx.notify();
+        }
+    }
+
+    fn drop_row(&mut self, d: &DraggedWorkspace, cx: &mut Context<Self>) {
+        if let Some(gap) = self.drop_gap.take() {
+            self.workspaces.move_to(d.id, gap);
+        }
+        self.dragging = None;
+        cx.notify();
+    }
+
+    /// Commits the open rename, if any, without refocusing.
+    pub(super) fn commit_rename(&mut self, cx: &mut Context<Self>) {
+        if let Some(r) = self.rename.take() {
+            let (id, text) = r.read(cx).snapshot();
+            self.workspaces.rename(id, &text);
+        }
+    }
+
+    pub(super) fn start_rename(
+        &mut self,
+        id: WorkspaceId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.commit_rename(cx);
+        self.sidebar_visible = true;
+        let p = self.palette();
+        let text = if id == self.workspaces.selected() {
+            p.selected_title
+        } else {
+            p.title
+        };
+        let style = RenameStyle {
+            family: self.style.font.family.clone(),
+            size: TITLE_PX,
+            text,
+            hint: p.detail,
+        };
+        let current = self.title_of(id, cx);
+        let input = cx.new(|cx| RenameInput::new(id, &current, style, window, cx));
+        cx.subscribe_in(&input, window, |this, input, ev, window, cx| {
+            let RenameEvent::Done(id, text) = ev;
+            if this.rename.as_ref() != Some(input) {
+                return;
+            }
+            this.rename = None;
+            if let Some(t) = text {
+                this.workspaces.rename(*id, t);
+            }
+            let sel = this.workspaces.selected();
+            this.select(sel, window, cx);
+        })
+        .detach();
+        self.rename = Some(input);
+        cx.notify();
+    }
+
+    fn palette(&self) -> SidebarPalette {
+        let cfg = &self.style.cfg;
+        chrome::sidebar_palette(chrome::rgba(cfg.background, cfg.background_opacity))
+    }
+
     /// Straddles the sidebar's trailing edge; drawn above the content so it wins the hover test.
     pub(super) fn render_resize_band(&self, width: f32) -> impl IntoElement + use<> {
         div()
@@ -137,8 +242,7 @@ impl WindowView {
         width: f32,
         cx: &Context<Self>,
     ) -> impl IntoElement + use<> {
-        let cfg = &self.style.cfg;
-        let p = chrome::sidebar_palette(chrome::rgba(cfg.background, cfg.background_opacity));
+        let p = self.palette();
         let button = |id: &'static str, icon: &'static str| {
             div()
                 .id(id)
@@ -173,10 +277,20 @@ impl WindowView {
         let closable = list.len() > 1;
         let rows: Vec<_> = list
             .iter()
-            .enumerate()
-            .map(|(ix, w)| self.render_row(ix, w.id, w.id == selected, closable, p, cx))
+            .map(|w| self.render_row(w.id, w.id == selected, closable, p, cx))
             .collect();
+        let n = rows.len();
+        let bounds = self.row_bounds.clone();
+        let line_y = self.drop_gap.and_then(|g| {
+            let b = self.row_bounds.borrow();
+            let y = match g.checked_sub(1).and_then(|k| b.get(k)) {
+                Some(prev) if g >= n => prev.bottom(),
+                _ => b.get(g)?.top(),
+            };
+            Some(f32::from(y))
+        });
         div()
+            .relative()
             .flex()
             .flex_col()
             .flex_none()
@@ -188,6 +302,17 @@ impl WindowView {
             .child(band)
             .child(
                 div()
+                    // Row bounds for the drop-gap maths (the filler below is dropped).
+                    .on_children_prepainted(move |mut b, _, _| {
+                        b.truncate(n);
+                        *bounds.borrow_mut() = b;
+                    })
+                    .on_drag_move(cx.listener(
+                        |this, ev: &DragMoveEvent<DraggedWorkspace>, _, cx| {
+                            this.on_row_drag(ev, cx)
+                        },
+                    ))
+                    .on_drop(cx.listener(|this, d: &DraggedWorkspace, _, cx| this.drop_row(d, cx)))
                     .id("ws-list")
                     .flex()
                     .flex_col()
@@ -210,11 +335,23 @@ impl WindowView {
                         )),
                     ),
             )
+            .when_some(line_y, |d, y| {
+                // Window and sidebar share an origin (the sidebar is the root's first child).
+                d.child(
+                    div()
+                        .absolute()
+                        .top(px(y - 1.))
+                        .left(px(8.))
+                        .right(px(8.))
+                        .h(px(2.))
+                        .rounded(px(1.))
+                        .bg(p.accent),
+                )
+            })
     }
 
     fn render_row(
         &self,
-        ix: usize,
         id: WorkspaceId,
         selected: bool,
         closable: bool,
@@ -247,10 +384,10 @@ impl WindowView {
                 .overflow_hidden()
                 .text_ellipsis()
         };
-        let group = SharedString::from(format!("ws-row-{ix}"));
+        let group = SharedString::from(format!("ws-row-{}", id.0));
         let close = closable.then(|| {
             div()
-                .id(("ws-close", ix))
+                .id(("ws-close", id.0 as usize))
                 .flex_none()
                 .ml(px(ITEM_GAP))
                 .opacity(0.)
@@ -269,12 +406,19 @@ impl WindowView {
                     }
                 }))
         });
+        let renaming = self.rename.as_ref().filter(|r| r.read(cx).id() == id);
+        let dragging = self.dragging == Some(id) && cx.has_active_drag();
+        let ghost = DraggedWorkspace {
+            id,
+            title: m.title.clone().into(),
+        };
         let title = div()
             .flex()
             .flex_row()
             .items_center()
-            .child(
-                div()
+            .child(match renaming {
+                Some(r) => r.clone().into_any_element(),
+                None => div()
                     .flex_1()
                     .min_w(px(0.))
                     .text_size(px(TITLE_PX))
@@ -283,8 +427,9 @@ impl WindowView {
                     .whitespace_nowrap()
                     .overflow_hidden()
                     .text_ellipsis()
-                    .child(m.title),
-            )
+                    .child(m.title)
+                    .into_any_element(),
+            })
             .children(close);
         let dirs = m.dirs.into_iter().map(|(branch, dir)| {
             let text = match (branch, dir) {
@@ -320,7 +465,7 @@ impl WindowView {
                 )
                 .child(
                     div()
-                        .id(SharedString::from(format!("ws-pr-{ix}-{k}")))
+                        .id(SharedString::from(format!("ws-pr-{}-{k}", id.0)))
                         .underline()
                         .child(format!("PR #{}", pr.number))
                         .on_click(move |_, _, cx| {
@@ -337,7 +482,7 @@ impl WindowView {
                 .gap(px(ITEM_GAP))
                 .children(m.ports.into_iter().map(|port| {
                     div()
-                        .id(SharedString::from(format!("ws-port-{ix}-{port}")))
+                        .id(SharedString::from(format!("ws-port-{}-{port}", id.0)))
                         .underline()
                         .child(format!(":{port}"))
                         .on_click(move |_, _, cx| {
@@ -347,7 +492,7 @@ impl WindowView {
                 }))
         });
         div()
-            .id(("ws", ix))
+            .id(("ws", id.0 as usize))
             .group(group)
             .flex()
             .flex_col()
@@ -357,9 +502,16 @@ impl WindowView {
             .py(px(ROW_PAD_Y))
             .rounded(px(RADIUS))
             .when(selected, |d| d.bg(p.selected_fill))
-            .on_click(
-                cx.listener(move |this, _: &ClickEvent, window, cx| this.select(id, window, cx)),
-            )
+            .when(dragging, |d| d.opacity(0.6))
+            .when(renaming.is_none(), |d| {
+                d.on_drag(ghost, |g, _, _, cx| cx.new(|_| g.clone()))
+            })
+            .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
+                this.select(id, window, cx);
+                if ev.click_count() == 2 {
+                    this.start_rename(id, window, cx);
+                }
+            }))
             .child(title)
             .children(dirs)
             .children(prs)

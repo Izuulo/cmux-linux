@@ -1,6 +1,7 @@
 //! The window's root view: the workspace list and one `WorkspaceView` per workspace. Only the
 //! selected workspace is rendered; the others keep their shells running (plan D1, D6).
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -10,9 +11,9 @@ use cmux_core::{WorkspaceClosed, WorkspaceId, Workspaces};
 use cmux_meta::pr::{self, PrKey, PrPoller};
 use cmux_meta::{WorkspaceInput, WorkspaceMeta};
 use gpui::{
-    App, AppContext, Context, Entity, FocusHandle, Focusable, InteractiveElement, IntoElement,
-    ParentElement, PromptLevel, Render, ScrollHandle, Styled, Subscription, Task, Window, div,
-    prelude::*, px,
+    App, AppContext, Bounds, Context, Entity, FocusHandle, Focusable, InteractiveElement,
+    IntoElement, ParentElement, Pixels, PromptLevel, Render, ScrollHandle, Styled, Subscription,
+    Task, Window, div, prelude::*, px,
 };
 
 use crate::actions::*;
@@ -21,6 +22,8 @@ use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
 mod rename;
 mod sidebar;
+
+use rename::RenameInput;
 
 pub const SIDEBAR_DEFAULT: f32 = 240.0;
 pub const SIDEBAR_MIN: f32 = 240.0;
@@ -35,6 +38,11 @@ pub struct WindowView {
     /// The requested width; drawn clamped to the window (`sidebar::clamp_width`).
     sidebar_width: f32,
     sidebar_scroll: ScrollHandle,
+    rename: Option<Entity<RenameInput>>,
+    /// Row bounds in list order, from the last paint (drop-gap maths).
+    row_bounds: Rc<RefCell<Vec<Bounds<Pixels>>>>,
+    drop_gap: Option<usize>,
+    dragging: Option<WorkspaceId>,
     focus: FocusHandle,
     subs: HashMap<WorkspaceId, Subscription>,
     meta: HashMap<WorkspaceId, WorkspaceMeta>,
@@ -59,6 +67,10 @@ impl WindowView {
             sidebar_visible: true,
             sidebar_width: SIDEBAR_DEFAULT,
             sidebar_scroll: ScrollHandle::new(),
+            rename: None,
+            row_bounds: Rc::default(),
+            drop_gap: None,
+            dragging: None,
             focus: cx.focus_handle(),
             subs: HashMap::new(),
             meta: HashMap::new(),
@@ -158,6 +170,9 @@ impl WindowView {
         match self.workspaces.close(id) {
             WorkspaceClosed::Last => cx.quit(),
             WorkspaceClosed::Closed => {
+                if self.rename.as_ref().is_some_and(|r| r.read(cx).id() == id) {
+                    self.rename = None;
+                }
                 self.subs.remove(&id);
                 self.views.remove(&id);
                 let sel = self.workspaces.selected();
@@ -308,6 +323,10 @@ impl Focusable for WindowView {
 
 impl Render for WindowView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !cx.has_active_drag() {
+            self.drop_gap = None;
+            self.dragging = None;
+        }
         let selected = self.views.get(&self.workspaces.selected()).cloned();
         let width = self.sidebar_px(window);
         for v in self.views.values() {
@@ -345,7 +364,10 @@ impl Render for WindowView {
                 }
             }))
             .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| this.toggle_sidebar(cx)))
-            .on_action(cx.listener(|_, _: &RenameWorkspace, _, _| {}))
+            .on_action(cx.listener(|this, _: &RenameWorkspace, w, cx| {
+                let id = this.workspaces.selected();
+                this.start_rename(id, w, cx);
+            }))
             .when_some(width, |d, w| d.child(self.render_sidebar(w, cx)))
             .child(div().flex_1().min_w(px(0.)).h_full().children(selected))
             .when_some(width, |d, w| d.child(self.render_resize_band(w)))

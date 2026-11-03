@@ -1,5 +1,14 @@
 //! Inline workspace rename (plan D1): the key-to-text state machine and the input view.
 
+use cmux_core::WorkspaceId;
+use gpui::{
+    Context, EventEmitter, FocusHandle, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
+    ParentElement, Render, Rgba, SharedString, StatefulInteractiveElement, Styled, Subscription,
+    Window, div, prelude::*, px,
+};
+
+use crate::actions::*;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RenameKey<'a> {
     Char(&'a str),
@@ -50,6 +59,137 @@ impl RenameState {
             RenameKey::Other => {}
         }
         RenameOutcome::Editing
+    }
+}
+
+pub(crate) enum RenameEvent {
+    /// `None` = cancelled.
+    Done(WorkspaceId, Option<String>),
+}
+
+/// Look of the title slot the input replaces.
+pub(crate) struct RenameStyle {
+    pub family: SharedString,
+    pub size: f32,
+    pub text: Rgba,
+    pub hint: Rgba,
+}
+
+pub(crate) struct RenameInput {
+    id: WorkspaceId,
+    state: RenameState,
+    focus: FocusHandle,
+    style: RenameStyle,
+    done: bool,
+    _blur: Subscription,
+}
+
+impl EventEmitter<RenameEvent> for RenameInput {}
+
+impl RenameInput {
+    pub fn new(
+        id: WorkspaceId,
+        current: &str,
+        style: RenameStyle,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let focus = cx.focus_handle();
+        window.focus(&focus);
+        let _blur = cx.on_blur(&focus, window, |this, _, cx| {
+            let text = this.state.text.clone();
+            this.finish(Some(text), cx);
+        });
+        Self {
+            id,
+            state: RenameState::new(current),
+            focus,
+            style,
+            done: false,
+            _blur,
+        }
+    }
+
+    pub fn id(&self) -> WorkspaceId {
+        self.id
+    }
+
+    pub fn snapshot(&self) -> (WorkspaceId, String) {
+        (self.id, self.state.text.clone())
+    }
+
+    fn finish(&mut self, text: Option<String>, cx: &mut Context<Self>) {
+        if !std::mem::replace(&mut self.done, true) {
+            cx.emit(RenameEvent::Done(self.id, text));
+        }
+    }
+
+    fn on_key(&mut self, ev: &KeyDownEvent, cx: &mut Context<Self>) {
+        let ks = &ev.keystroke;
+        let key = match ks.key.as_str() {
+            "backspace" => RenameKey::Backspace,
+            "enter" => RenameKey::Enter,
+            "escape" => RenameKey::Escape,
+            _ => match &ks.key_char {
+                Some(c) if !ks.modifiers.control && !ks.modifiers.platform => RenameKey::Char(c),
+                _ => RenameKey::Other,
+            },
+        };
+        match self.state.apply(key) {
+            RenameOutcome::Editing => cx.notify(),
+            RenameOutcome::Commit(t) => self.finish(Some(t), cx),
+            RenameOutcome::Cancel => self.finish(None, cx),
+        }
+    }
+}
+
+impl Render for RenameInput {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let st = &self.style;
+        let empty = self.state.text.is_empty();
+        let selected = self.state.replace_on_type;
+        // Key bindings fire before key-down listeners, so the workspace-level ones are swallowed
+        // here while typing.
+        div()
+            .id("ws-rename")
+            .track_focus(&self.focus)
+            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
+                this.on_key(ev, cx);
+                cx.stop_propagation();
+            }))
+            .on_action(|_: &NewWorkspace, _, cx| cx.stop_propagation())
+            .on_action(|_: &CloseWorkspace, _, cx| cx.stop_propagation())
+            .on_action(|_: &NextWorkspace, _, cx| cx.stop_propagation())
+            .on_action(|_: &PrevWorkspace, _, cx| cx.stop_propagation())
+            .on_action(|_: &SelectWorkspaceByNumber, _, cx| cx.stop_propagation())
+            .on_action(|_: &MoveWorkspaceUp, _, cx| cx.stop_propagation())
+            .on_action(|_: &MoveWorkspaceDown, _, cx| cx.stop_propagation())
+            .on_action(|_: &ToggleSidebar, _, cx| cx.stop_propagation())
+            // Clicks inside must not reach the row (selecting it would blur the input).
+            .on_click(|_, _, cx| cx.stop_propagation())
+            .flex()
+            .flex_row()
+            .items_center()
+            .flex_1()
+            .min_w(px(0.))
+            .overflow_hidden()
+            .text_size(px(st.size))
+            .font_family(st.family.clone())
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(st.text)
+            .whitespace_nowrap()
+            .child(if empty {
+                div()
+                    .text_color(st.hint)
+                    .child("Workspace name")
+                    .into_any_element()
+            } else {
+                div()
+                    .when(selected, |d| d.bg(Rgba { a: 0.3, ..st.text }))
+                    .child(self.state.text.clone())
+                    .into_any_element()
+            })
+            .child(div().flex_none().w(px(1.)).h(px(st.size)).bg(st.text))
     }
 }
 
