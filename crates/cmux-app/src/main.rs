@@ -53,7 +53,7 @@ fn main() {
                 app_id: Some("cmux-linux".into()),
                 ..Default::default()
             },
-            |window, cx| cx.new(|cx| WorkspaceView::new(style, window, cx)),
+            |window, cx| cx.new(|cx| WorkspaceView::new(style, None, window, cx)),
         )
         .expect("open window");
         cx.activate(true);
