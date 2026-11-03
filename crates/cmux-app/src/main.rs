@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use cmux_app::actions;
+use cmux_app::assets::Assets;
 use cmux_app::style::{TermStyle, installed_families, load_bundled_fonts};
 use cmux_app::workspace::WorkspaceView;
 use cmux_config::ghostty::{Env, load};
@@ -11,7 +12,7 @@ use gpui::{
 };
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
+    Application::new().with_assets(Assets).run(|cx: &mut App| {
         let dark = matches!(
             cx.window_appearance(),
             WindowAppearance::Dark | WindowAppearance::VibrantDark

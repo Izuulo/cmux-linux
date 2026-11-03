@@ -1,6 +1,7 @@
 //! Chrome colours derived from the terminal background with cmux's formulas
 //! (research-cmux.md §4): separators and dividers (`WindowChromeColorResolver.separatorColor`),
-//! the unfocused-pane dim (Ghostty `unfocused-split-*`).
+//! the unfocused-pane dim (Ghostty `unfocused-split-*`), and the pane tab strip
+//! (Bonsplit `TabBarColors.swift`).
 
 use cmux_config::ghostty::{Config, Rgb};
 use gpui::Rgba;
@@ -52,6 +53,111 @@ pub fn dim_overlay(cfg: &Config) -> Option<Rgba> {
     (alpha > 0.0).then(|| rgba(cfg.unfocused_split_fill.unwrap_or(cfg.background), alpha))
 }
 
+/// Bonsplit `isBonsplitLightColor`: WCAG relative luminance, black text contrasts more.
+pub fn wcag_is_light(c: Rgba) -> bool {
+    let lin = |v: f32| {
+        if v <= 0.03928 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let l = 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
+    (l + 0.05) / 0.05 > 1.05 / (l + 0.05)
+}
+
+/// Saturation 0 (Bonsplit `bonsplitSaturating(by: 0)`): every channel becomes the Rec. 601 luma.
+pub fn desaturate(c: Rgba) -> Rgba {
+    let l = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+    Rgba {
+        r: l,
+        g: l,
+        b: l,
+        a: c.a,
+    }
+}
+
+/// macOS's default `controlAccentColor` (systemBlue): #007AFF in light, #0A84FF in dark
+/// appearance. cmux draws the selected-tab indicator in it; Linux has no portable accent, so
+/// we use Apple's value matched to the bar's lightness.
+pub fn accent(light_bar: bool) -> Rgba {
+    if light_bar {
+        rgba(
+            Rgb {
+                r: 0x00,
+                g: 0x7a,
+                b: 0xff,
+            },
+            1.0,
+        )
+    } else {
+        rgba(
+            Rgb {
+                r: 0x0a,
+                g: 0x84,
+                b: 0xff,
+            },
+            1.0,
+        )
+    }
+}
+
+/// Colours of one pane's tab strip.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TabPalette {
+    pub bar: Rgba,
+    pub active_fill: Rgba,
+    pub hover_fill: Rgba,
+    pub active_text: Rgba,
+    pub inactive_text: Rgba,
+    pub separator: Rgba,
+    pub accent: Rgba,
+}
+
+/// The strip palette for a bar drawn on `bg`; an unfocused pane's strip is greyscale
+/// (Bonsplit `TabBarView.swift:923`).
+pub fn tab_palette(bg: Rgba, focused: bool) -> TabPalette {
+    let light = wcag_is_light(bg);
+    let white_or_black = |a: f32| {
+        let v = if light { 0.0 } else { 1.0 };
+        Rgba {
+            r: v,
+            g: v,
+            b: v,
+            a,
+        }
+    };
+    let palette = TabPalette {
+        bar: bg,
+        active_fill: if light {
+            shift(bg, -0.065, bg.a)
+        } else {
+            shift(bg, 0.12, bg.a)
+        },
+        hover_fill: if light {
+            shift(bg, -0.03, 0.78)
+        } else {
+            shift(bg, 0.07, 0.78)
+        },
+        active_text: white_or_black(0.82),
+        inactive_text: white_or_black(if light { 0.62 } else { 0.68 }),
+        separator: separator(bg),
+        accent: accent(light),
+    };
+    if focused {
+        return palette;
+    }
+    TabPalette {
+        bar: desaturate(palette.bar),
+        active_fill: desaturate(palette.active_fill),
+        hover_fill: desaturate(palette.hover_fill),
+        active_text: palette.active_text,
+        inactive_text: palette.inactive_text,
+        separator: desaturate(palette.separator),
+        accent: desaturate(palette.accent),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,6 +202,77 @@ mod tests {
                 a: 0.26
             }
         ));
+    }
+
+    #[test]
+    fn tab_palette_follows_bonsplit_on_dark_and_light_bars() {
+        let dark = rgba(
+            Rgb {
+                r: 0x28,
+                g: 0x2c,
+                b: 0x34,
+            },
+            1.0,
+        );
+        let p = tab_palette(dark, true);
+        assert!(close(p.active_fill, shift(dark, 0.12, 1.0)));
+        assert!(close(p.hover_fill, shift(dark, 0.07, 0.78)));
+        assert!(close(
+            p.active_text,
+            Rgba {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 0.82
+            }
+        ));
+        assert!(close(
+            p.inactive_text,
+            Rgba {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 0.68
+            }
+        ));
+        assert!(close(p.accent, accent(false)));
+        let light = rgba(
+            Rgb {
+                r: 0xfa,
+                g: 0xfa,
+                b: 0xfa,
+            },
+            1.0,
+        );
+        let p = tab_palette(light, true);
+        assert!(close(p.active_fill, shift(light, -0.065, 1.0)));
+        assert!(close(
+            p.inactive_text,
+            Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.62
+            }
+        ));
+    }
+
+    #[test]
+    fn an_unfocused_strip_is_greyscale() {
+        let p = tab_palette(
+            rgba(
+                Rgb {
+                    r: 0x28,
+                    g: 0x2c,
+                    b: 0x34,
+                },
+                1.0,
+            ),
+            false,
+        );
+        assert_eq!(p.accent.r, p.accent.g);
+        assert_eq!(p.accent.g, p.accent.b);
+        assert_eq!(p.active_fill.r, p.active_fill.b);
     }
 
     #[test]

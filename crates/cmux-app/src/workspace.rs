@@ -14,6 +14,8 @@ use gpui::{
     StatefulInteractiveElement, Styled, Subscription, Window, div, px,
 };
 
+mod tab_strip;
+
 use crate::actions::*;
 use crate::chrome;
 use crate::style::TermStyle;
@@ -213,24 +215,39 @@ impl WorkspaceView {
         }
     }
 
-    fn render_pane(&self, pane: PaneId, r: Rect, dim: Option<Rgba>) -> impl IntoElement {
-        let surface = self
-            .layout
-            .pane(pane)
-            .map(|p| p.selected_surface())
-            .and_then(|s| self.surfaces.get(&s))
+    fn render_pane(
+        &self,
+        pane: PaneId,
+        r: Rect,
+        dim: Option<Rgba>,
+        cx: &Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let pane = self.layout.pane(pane).expect("rects come from the layout");
+        let terminal = self
+            .surfaces
+            .get(&pane.selected_surface())
             .map(|s| s.view.clone());
+        let focused = pane.id == self.layout.focused();
         div()
             .absolute()
             .left(px(r.x))
             .top(px(r.y))
             .w(px(r.w))
             .h(px(r.h))
+            .flex()
+            .flex_col()
             .overflow_hidden()
             .key_context("Pane")
-            .children(surface)
-            // No mouse handlers, so no hitbox: clicks go through to the terminal.
-            .children(dim.map(|c| div().absolute().inset_0().bg(c)))
+            .child(self.render_tab_strip(pane, focused, cx))
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_h(px(0.))
+                    .children(terminal)
+                    // No mouse handlers, so no hitbox: clicks go through to the terminal.
+                    .children(dim.map(|c| div().absolute().inset_0().bg(c))),
+            )
     }
 
     fn render_divider(&self, d: DividerRect, color: Rgba, cx: &Context<Self>) -> impl IntoElement {
@@ -307,7 +324,7 @@ impl Render for WorkspaceView {
         let panes: Vec<_> = rects
             .panes
             .iter()
-            .map(|(p, r)| self.render_pane(*p, *r, dim.filter(|_| *p != focused)))
+            .map(|(p, r)| self.render_pane(*p, *r, dim.filter(|_| *p != focused), cx))
             .collect();
         let dividers: Vec<_> = rects
             .dividers

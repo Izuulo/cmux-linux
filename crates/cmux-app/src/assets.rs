@@ -1,0 +1,60 @@
+//! Bundled assets served to gpui (`svg().path(..)`). Icons are Lucide (ISC, see
+//! assets/icons/LICENSE-lucide.txt).
+
+use std::borrow::Cow;
+
+use gpui::{AssetSource, Result, SharedString};
+
+const FILES: &[(&str, &[u8])] = &[
+    (
+        "icons/terminal.svg",
+        include_bytes!("../assets/icons/terminal.svg"),
+    ),
+    (
+        "icons/square-terminal.svg",
+        include_bytes!("../assets/icons/square-terminal.svg"),
+    ),
+    ("icons/x.svg", include_bytes!("../assets/icons/x.svg")),
+    (
+        "icons/columns-2.svg",
+        include_bytes!("../assets/icons/columns-2.svg"),
+    ),
+    (
+        "icons/rows-2.svg",
+        include_bytes!("../assets/icons/rows-2.svg"),
+    ),
+];
+
+pub struct Assets;
+
+impl AssetSource for Assets {
+    fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
+        Ok(FILES
+            .iter()
+            .find(|(p, _)| *p == path)
+            .map(|(_, bytes)| Cow::Borrowed(*bytes)))
+    }
+
+    fn list(&self, path: &str) -> Result<Vec<SharedString>> {
+        Ok(FILES
+            .iter()
+            .filter(|(p, _)| p.starts_with(path))
+            .map(|(p, _)| SharedString::from(*p))
+            .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_icon_loads_and_is_svg() {
+        for (path, _) in FILES {
+            let bytes = Assets.load(path).unwrap().unwrap();
+            assert!(bytes.starts_with(b"<svg"), "{path}");
+        }
+        assert!(Assets.load("icons/missing.svg").unwrap().is_none());
+        assert_eq!(Assets.list("icons/").unwrap().len(), FILES.len());
+    }
+}
