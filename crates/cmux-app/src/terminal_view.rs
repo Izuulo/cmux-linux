@@ -227,6 +227,8 @@ impl TerminalView {
     }
 
     fn focus_changed(&mut self, focused: bool, cx: &mut Context<Self>) {
+        // A binding key released while unfocused never sends key_up here; forget it.
+        self.bound_keys.clear();
         if self.session.term.lock().unwrap().vt().mode(1004, false) {
             self.session.write(encode_focus(focused));
         }
