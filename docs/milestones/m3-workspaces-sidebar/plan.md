@@ -1057,9 +1057,9 @@ impl WindowBlur {
 - Remove the M1 comment about `Blurred`.
 - The blur region is `create_region` + `add(0, 0, i32::MAX / 2, i32::MAX / 2)`, set once, then `destroy` + `flush`. The compositor clips it (rg §1.4).
 
-- [ ] **Step 1: Implement** from rg §1.4's sketch, dropping `set_width` (whole surface, set once). Add the dependency lines, then run `cargo build -p cmux-app --locked`. Expected: builds, and `Cargo.lock` gains only dependency edges (no new packages; libc unchanged).
-- [ ] **Step 2: Lints.** Run the clippy line. Each `unsafe` gets a `// SAFETY:` line: the pointers come from gpui's live window, and our `WindowBlur` is dropped with `WindowView`, before the window.
-- [ ] **Step 3: Commit.** `git commit -m "feat(cmux-app): KWin blur via ext_background_effect_v1 on gpui's surface"`.
+- [x] **Step 1: Implement** from rg §1.4's sketch, dropping `set_width` (whole surface, set once). Add the dependency lines, then run `cargo build -p cmux-app --locked`. Expected: builds, and `Cargo.lock` gains only dependency edges (no new packages; libc unchanged).
+- [x] **Step 2: Lints.** Run the clippy line. Each `unsafe` gets a `// SAFETY:` line: the pointers come from gpui's live window, and our `WindowBlur` is dropped with `WindowView`, before the window.
+- [x] **Step 3: Commit.** `git commit -m "feat(cmux-app): KWin blur via ext_background_effect_v1 on gpui's surface"`.
 - [ ] **Step 4: Run it.** Use a scratch Ghostty config with `background-opacity = 0.8` and `background-blur = true` (the Task 12 Step 2 pattern from M2, never the real config). Expected: window content behind is blurred on Plasma 6.8. Without `background-blur` it is translucent but not blurred. At opacity 1 it is opaque. If `enable` returns None or crashes, record which rg §1.4 risk hit in the journal. Keep the `Transparent` change and leave blur off (`shortcut:` comment) rather than block the milestone.
 
 ---
