@@ -47,7 +47,11 @@ fn log<E: std::fmt::Display>(what: &'static str) -> impl FnOnce(&E) {
 impl WindowBlur {
     /// Binds ext_background_effect_manager_v1 on gpui's own display and blurs the whole surface.
     /// None on X11, without the protocol, or if any step fails (logged once to stderr).
-    pub fn enable(window: &gpui::Window) -> Option<Self> {
+    pub fn enable(window: &gpui::Window, cx: &gpui::App) -> Option<Self> {
+        // gpui 0.2.2's X11 window panics (`unimplemented!`) on raw handles, so ask first.
+        if cx.compositor_name() != "Wayland" {
+            return None;
+        }
         let display = window
             .display_handle()
             .inspect_err(log("display handle"))
@@ -59,7 +63,7 @@ impl WindowBlur {
         let (RawDisplayHandle::Wayland(display), RawWindowHandle::Wayland(handle)) =
             (display.as_raw(), handle.as_raw())
         else {
-            return None; // X11: no blur.
+            return None;
         };
         // SAFETY: the pointer is gpui's live wl_display, which gpui keeps open for the whole
         // app; our Backend is a guest that never closes it, and WindowBlur is dropped with
