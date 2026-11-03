@@ -127,15 +127,21 @@ pub fn physical_key(key: &str) -> (sys::GhosttyKey, Option<char>) {
     (k, None)
 }
 
-/// The encoder input for a gpui keystroke. `utf8` is the typed text (`key_char`), dropped
-/// under Ctrl or when it holds control characters, as the encoder requires. Super
-/// (`platform`) keystrokes must be filtered out by the caller before encoding; the view does this.
+/// The encoder input for a gpui keystroke, shaped like Ghostty's GTK apprt
+/// (apprt/gtk/class/surface.zig ~1408-1437). `utf8` is the typed text (`key_char`); when xkb
+/// gave none (Ctrl turns it into a C0 byte, which gpui drops), it is the key's own character,
+/// uppercased under Shift, like GTK's keyval fallback. Control characters never reach `utf8`.
+/// Super (`platform`) keystrokes must be filtered out by the caller before encoding; the view does this.
 pub fn key_input(ks: &Keystroke, action: KeyAction) -> KeyInput {
     let m = &ks.modifiers;
     let (key, unshifted) = physical_key(&ks.key);
     let utf8 = match &ks.key_char {
-        Some(text) if !m.control && !text.chars().any(char::is_control) => text.clone(),
-        _ => String::new(),
+        Some(text) if !text.chars().any(char::is_control) => text.clone(),
+        Some(_) => String::new(),
+        None if ks.key == "space" => " ".into(),
+        None if ks.key.chars().count() == 1 && m.shift => ks.key.to_uppercase(),
+        None if ks.key.chars().count() == 1 => ks.key.clone(),
+        None => String::new(),
     };
     let consumed_mods = if m.shift && !utf8.is_empty() {
         Mods::SHIFT
@@ -253,14 +259,24 @@ mod tests {
 
     #[test]
     fn ctrl_symbols_produce_c0_bytes() {
-        // key_input drops utf8 under Ctrl, so ctrlSeq (key_encode.zig ~710-800) uses the
-        // physical key's codepoint. Ghostty does NOT map Ctrl+[ to ESC: the fixterms rule
-        // (key_encode.zig:852) leaves '[' out of the C0 table, and with no utf8 the CSI-u
-        // fallback is skipped too. So Ctrl+[ currently sends nothing; xterm sends \x1b.
-        assert_eq!(encode(&ks("c", "[", None)), b"");
+        // Ghostty deliberately leaves '[' out of the C0 table (fixterms, key_encode.zig:852,
+        // test at ~2441), so with utf8 "[" Ctrl+[ goes to CSI-u (key_encode.zig:~500-535),
+        // exactly as in Ghostty's GTK app. It must never be empty.
+        assert_eq!(encode(&ks("c", "[", None)), b"\x1b[91;5u");
+        // key_encode.zig:~808-840 (Kitty's table): '/' and '2' map to 0x1f and 0x00.
+        assert_eq!(encode(&ks("c", "/", None)), b"\x1f");
+        assert_eq!(encode(&ks("c", "2", None)), b"\x00");
         assert_eq!(encode(&ks("c", "\\", None)), b"\x1c");
         assert_eq!(encode(&ks("c", "]", None)), b"\x1d");
         assert_eq!(encode(&ks("c", "space", None)), b"\x00");
+    }
+
+    #[test]
+    fn ctrl_shift_letter_is_csi_u_not_raw() {
+        // key_encode.zig:~499-531: ctrl+shift+letter falls through to CSI-u with the
+        // lowercase letter and both mods; never the bare letter or a C0 byte.
+        let out = encode(&ks("cs", "a", None));
+        assert_eq!(out, b"\x1b[97;6u");
     }
 
     #[test]
@@ -311,13 +327,14 @@ mod tests {
     }
 
     #[test]
-    fn control_text_and_ctrl_never_reach_utf8() {
+    fn control_text_never_reaches_utf8() {
         assert_eq!(
             key_input(&ks("", "enter", Some("\r")), KeyAction::Press).utf8,
             ""
         );
+        assert_eq!(key_input(&ks("c", "a", None), KeyAction::Press).utf8, "a");
         assert_eq!(
-            key_input(&ks("c", "a", Some("a")), KeyAction::Press).utf8,
+            key_input(&ks("c", "a", Some("\x01")), KeyAction::Press).utf8,
             ""
         );
         let shifted = key_input(&ks("s", "a", Some("A")), KeyAction::Repeat);
