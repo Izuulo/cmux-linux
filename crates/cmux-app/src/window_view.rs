@@ -14,6 +14,9 @@ use crate::actions::*;
 use crate::style::TermStyle;
 use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
+#[allow(dead_code)] // The sidebar render (next commits) uses the row model.
+mod sidebar;
+
 pub const SIDEBAR_DEFAULT: f32 = 240.0;
 pub const SIDEBAR_MIN: f32 = 240.0;
 pub const SIDEBAR_MAX: f32 = 600.0;
