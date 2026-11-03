@@ -21,6 +21,7 @@ ghostty-vt = { path = "vendor/ghostty-vt" }
 cmux-term = { path = "crates/cmux-term" }
 cmux-config = { path = "crates/cmux-config" }
 cmux-core = { path = "crates/cmux-core" }
+cmux-meta = { path = "crates/cmux-meta" }
 gpui = "=0.2.2"
 portable-pty = "0.9"
 libc = "0.2"
