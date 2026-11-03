@@ -82,6 +82,7 @@ impl WindowView {
             .views
             .get(&self.workspaces.selected())
             .and_then(|v| v.read(cx).active_cwd(cx));
+        let old = self.workspaces.selected();
         let id = if at_end {
             self.workspaces.add_at_end()
         } else {
@@ -90,10 +91,9 @@ impl WindowView {
         if self.make_view(id, cwd, window, cx) {
             self.select(id, window, cx);
         } else {
-            // The model selected the new entry; closing it returns to the previous one.
-            let prev = self.workspaces.selected();
+            // make_view registered nothing for `id`; drop it from the model and go back.
             self.workspaces.close(id);
-            self.select(prev, window, cx);
+            self.select(old, window, cx);
         }
     }
 
