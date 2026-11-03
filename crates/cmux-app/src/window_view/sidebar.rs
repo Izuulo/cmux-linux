@@ -175,8 +175,9 @@ impl WindowView {
     /// Commits the open rename, if any, without refocusing.
     pub(super) fn commit_rename(&mut self, cx: &mut Context<Self>) {
         if let Some(r) = self.rename.take() {
-            let (id, text) = r.read(cx).snapshot();
-            self.workspaces.rename(id, &text);
+            if let (id, Some(text)) = r.read(cx).snapshot() {
+                self.workspaces.rename(id, &text);
+            }
         }
     }
 
@@ -200,7 +201,8 @@ impl WindowView {
             hint: p.detail,
         };
         let current = self.title_of(id);
-        let input = cx.new(|cx| RenameInput::new(id, &current, style, window, cx));
+        let custom = self.workspaces.custom_title(id).is_some();
+        let input = cx.new(|cx| RenameInput::new(id, &current, custom, style, window, cx));
         cx.subscribe_in(&input, window, |this, input, ev, window, cx| {
             let RenameEvent::Done(id, text) = ev;
             if this.rename.as_ref() != Some(input) {

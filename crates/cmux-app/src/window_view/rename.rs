@@ -29,14 +29,23 @@ pub(crate) struct RenameState {
     pub text: String,
     /// The prefill is "selected": the next edit replaces it whole.
     pub replace_on_type: bool,
+    /// The prefill when it was not a custom name (e.g. the OSC title): committing it unchanged
+    /// must not freeze it as one.
+    auto_prefill: Option<String>,
 }
 
 impl RenameState {
-    pub fn new(current: &str) -> Self {
+    pub fn new(current: &str, custom: bool) -> Self {
         Self {
             text: current.to_string(),
             replace_on_type: true,
+            auto_prefill: (!custom).then(|| current.to_string()),
         }
+    }
+
+    /// The name to store, or `None` when committing changes nothing.
+    pub fn committed(&self) -> Option<String> {
+        (self.auto_prefill.as_ref() != Some(&self.text)).then(|| self.text.clone())
     }
 
     pub fn apply(&mut self, key: RenameKey) -> RenameOutcome {
@@ -54,7 +63,11 @@ impl RenameState {
                     self.text.pop();
                 }
             }
-            RenameKey::Enter => return RenameOutcome::Commit(self.text.clone()),
+            RenameKey::Enter => {
+                return self
+                    .committed()
+                    .map_or(RenameOutcome::Cancel, RenameOutcome::Commit);
+            }
             RenameKey::Escape => return RenameOutcome::Cancel,
             RenameKey::Other => {}
         }
@@ -86,9 +99,11 @@ pub(crate) struct RenameInput {
 impl EventEmitter<RenameEvent> for RenameInput {}
 
 impl RenameInput {
+    /// `custom`: `current` is the workspace's custom name, not a fallback title.
     pub fn new(
         id: WorkspaceId,
         current: &str,
+        custom: bool,
         style: RenameStyle,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -100,12 +115,12 @@ impl RenameInput {
             if !window.is_window_active() {
                 return;
             }
-            let text = this.state.text.clone();
-            this.finish(Some(text), cx);
+            let text = this.state.committed();
+            this.finish(text, cx);
         });
         Self {
             id,
-            state: RenameState::new(current),
+            state: RenameState::new(current, custom),
             focus,
             style,
             done: false,
@@ -117,8 +132,9 @@ impl RenameInput {
         self.id
     }
 
-    pub fn snapshot(&self) -> (WorkspaceId, String) {
-        (self.id, self.state.text.clone())
+    /// `None` text: nothing to store.
+    pub fn snapshot(&self) -> (WorkspaceId, Option<String>) {
+        (self.id, self.state.committed())
     }
 
     fn finish(&mut self, text: Option<String>, cx: &mut Context<Self>) {
@@ -201,7 +217,7 @@ mod tests {
 
     #[test]
     fn first_char_replaces_then_appends() {
-        let mut s = RenameState::new("Terminal");
+        let mut s = RenameState::new("Terminal", true);
         assert_eq!(s.apply(RenameKey::Char("a")), RenameOutcome::Editing);
         assert_eq!(s.text, "a");
         s.apply(RenameKey::Char("pi"));
@@ -216,14 +232,29 @@ mod tests {
 
     #[test]
     fn backspace_first_clears_and_escape_cancels() {
-        let mut s = RenameState::new("é名");
+        let mut s = RenameState::new("é名", true);
         s.apply(RenameKey::Backspace);
         assert_eq!(s.text, "", "preselected text is deleted whole");
-        let mut s = RenameState::new("x");
+        let mut s = RenameState::new("x", true);
         s.replace_on_type = false;
         s.text = "é名".into();
         s.apply(RenameKey::Backspace);
         assert_eq!(s.text, "é", "backspace removes one char, not one byte");
         assert_eq!(s.apply(RenameKey::Escape), RenameOutcome::Cancel);
+    }
+
+    #[test]
+    fn enter_on_an_unchanged_fallback_title_cancels() {
+        let mut s = RenameState::new("vim", false);
+        assert_eq!(s.apply(RenameKey::Enter), RenameOutcome::Cancel);
+        let mut s = RenameState::new("api", true);
+        assert_eq!(
+            s.apply(RenameKey::Enter),
+            RenameOutcome::Commit("api".into()),
+            "a custom name re-committed is kept"
+        );
+        let mut s = RenameState::new("vim", false);
+        s.apply(RenameKey::Char("x"));
+        assert_eq!(s.committed(), Some("x".into()));
     }
 }
