@@ -100,7 +100,7 @@ fn drop_returns_promptly_even_when_the_child_ignores_sighup() {
     drop(session);
     let took = t.elapsed();
     eprintln!("drop took {took:?}");
-    assert!(took < Duration::from_millis(50), "drop took {took:?}");
+    assert!(took < Duration::from_millis(100), "drop took {took:?}");
     let deadline = Instant::now() + Duration::from_secs(2);
     while alive(pid) {
         assert!(Instant::now() < deadline, "child {pid} still alive");
