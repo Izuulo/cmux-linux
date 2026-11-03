@@ -6027,7 +6027,7 @@ D7 (STATUS carry: "unsafe multi-line paste prompt"). vendor/ghostty `src/input/p
 - Consumes: `Config::clipboard_paste_protection` (Task 5).
 - Produces: `cmux_term::input::paste_needs_confirmation(text: &str, bracketed: bool) -> bool`; `TerminalView::paste_text(&mut self, text: String, &mut Window, &mut Context<Self>)` (was `paste_text(&mut self, &str)`; `paste(cx)` removed).
 
-- [ ] **Step 1: Write the failing test.** In `crates/cmux-term/src/input.rs`, add at the top of the tests module (after `use super::*;`):
+- [x] **Step 1: Write the failing test.** In `crates/cmux-term/src/input.rs`, add at the top of the tests module (after `use super::*;`):
 
 ```rust
     #[test]
@@ -6040,9 +6040,9 @@ D7 (STATUS carry: "unsafe multi-line paste prompt"). vendor/ghostty `src/input/p
     }
 ```
 
-- [ ] **Step 2: Run test to verify it fails.** Run: `cargo test -p cmux-term --lib input`. Expected: compile error (`cannot find function paste_needs_confirmation`).
+- [x] **Step 2: Run test to verify it fails.** Run: `cargo test -p cmux-term --lib input`. Expected: compile error (`cannot find function paste_needs_confirmation`).
 
-- [ ] **Step 3: Implement the check.** Insert above `#[cfg(test)]` in `input.rs`:
+- [x] **Step 3: Implement the check.** Insert above `#[cfg(test)]` in `input.rs`:
 
 ```rust
 /// Whether pasting `text` needs the user's OK under Ghostty's `clipboard-paste-protection`
@@ -6060,7 +6060,7 @@ pub fn paste_needs_confirmation(text: &str, bracketed: bool) -> bool {
 
 Run: `cargo test -p cmux-term --lib`. Expected: `test result: ok. 36 passed`.
 
-- [ ] **Step 4: Prompt before an unsafe paste.** Apply:
+- [x] **Step 4: Prompt before an unsafe paste.** Apply:
 
 ```diff
 diff --git a/crates/cmux-app/src/mouse.rs b/crates/cmux-app/src/mouse.rs
@@ -6154,11 +6154,11 @@ index fde47b8..120e71b 100644
  
 ```
 
-- [ ] **Step 5: Run tests and lints.** Run: `cargo test --workspace --locked --exclude ghostty-vt --exclude ghostty-vt-sys` and the clippy line. Expected: every suite passes (cmux-core 32, cmux-config 41, cmux-term lib 36 + pty 9 + spike 1, cmux-app 58); clippy clean.
+- [x] **Step 5: Run tests and lints.** Run: `cargo test --workspace --locked --exclude ghostty-vt --exclude ghostty-vt-sys` and the clippy line. Expected: every suite passes (cmux-core 32, cmux-config 41, cmux-term lib 36 + pty 9 + spike 1, cmux-app 58); clippy clean.
 
 - [ ] **Step 6: Run it.** `cargo run -p cmux-app`. Copy `echo one` + newline + `echo two` from another app. In a plain shell prompt with bracketed paste off (`printf '\e[?2004l'`), Super+V shows a prompt; Cancel pastes nothing, Paste pastes both lines. With bracketed paste on (a default zsh/fish/bash ≥ 5.1 prompt, or `printf '\e[?2004h'`), the same paste goes in without a prompt. A one-line paste never prompts. Middle-click PRIMARY follows the same rule. With `clipboard-paste-protection = false` in the Ghostty config, no prompt ever.
 
-- [ ] **Step 7: Format, lint, commit.**
+- [x] **Step 7: Format, lint, commit.**
 
 ```bash
 cargo fmt -p cmux-term -p cmux-app
