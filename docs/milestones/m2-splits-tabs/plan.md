@@ -5694,7 +5694,7 @@ D6. rc §4 "Drag and drop of tabs" (insertion by mid-x, 2 × 20 bar, last tab ou
 - Consumes: `Layout::move_surface` (Task 3), Task 8 strip.
 - Produces: `tab_strip::insertion_index(mid_xs: &[f32], x: f32) -> usize`; `DraggedTab` (ids + title + palette, `impl Render` as the ghost); `WorkspaceView` fields `tab_bounds: Rc<RefCell<HashMap<PaneId, Vec<Bounds<Pixels>>>>>`, `drop_target: Option<(PaneId, usize)>`; `render_tab_strip(&self, &Pane, focused, strip_x: f32, &Context<Self>)`.
 
-- [ ] **Step 1: Write the failing test.** Append to the end of `tab_strip.rs`:
+- [x] **Step 1: Write the failing test.** Append to the end of `tab_strip.rs`:
 
 ```rust
 #[cfg(test)]
@@ -5713,9 +5713,9 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails.** Run: `cargo test -p cmux-app --lib tab_strip`. Expected: compile error (`cannot find function insertion_index`).
+- [x] **Step 2: Run test to verify it fails.** Run: `cargo test -p cmux-app --lib tab_strip`. Expected: compile error (`cannot find function insertion_index`).
 
-- [ ] **Step 3: Implement.** Apply (the test hunk from Step 1 is left out):
+- [x] **Step 3: Implement.** Apply (the test hunk from Step 1 is left out):
 
 ```diff
 diff --git a/crates/cmux-app/src/workspace/tab_strip.rs b/crates/cmux-app/src/workspace/tab_strip.rs
@@ -6001,11 +6001,11 @@ index 7fa440f..53d5925 100644
          let focused = self.layout.focused();
 ```
 
-- [ ] **Step 4: Run tests and lints.** Run: `cargo test -p cmux-app --locked` and the clippy line. Expected: `ok. 58 passed`; clippy clean.
+- [x] **Step 4: Run tests and lints.** Run: `cargo test -p cmux-app --locked` and the clippy line. Expected: `ok. 58 passed`; clippy clean.
 
 - [ ] **Step 5: Run it.** `cargo run -p cmux-app`. Check: dragging a tab shows a ghost under the pointer and a 2 × 20 blue bar where it will land; dropping reorders; dropping on itself or just right of itself changes nothing; dragging onto another pane's strip moves it there (that pane gets focus); dragging a pane's only tab to another pane closes the empty pane; releasing elsewhere cancels; a plain click still selects (the drag starts only after 2 px).
 
-- [ ] **Step 6: Format, lint, commit.**
+- [x] **Step 6: Format, lint, commit.**
 
 ```bash
 cargo fmt -p cmux-app
