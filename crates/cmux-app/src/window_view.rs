@@ -2,12 +2,16 @@
 //! selected workspace is rendered; the others keep their shells running (plan D1, D6).
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use cmux_core::{WorkspaceClosed, WorkspaceId, Workspaces};
+use cmux_meta::pr::{self, PrKey, PrPoller};
+use cmux_meta::{WorkspaceInput, WorkspaceMeta};
 use gpui::{
     App, AppContext, Context, Entity, FocusHandle, Focusable, InteractiveElement, IntoElement,
-    ParentElement, PromptLevel, Render, Styled, Subscription, Window, div, px,
+    ParentElement, PromptLevel, Render, Styled, Subscription, Task, Window, div, px,
 };
 
 use crate::actions::*;
@@ -33,7 +37,17 @@ pub struct WindowView {
     sidebar_width: f32,
     focus: FocusHandle,
     subs: HashMap<WorkspaceId, Subscription>,
+    meta: HashMap<WorkspaceId, WorkspaceMeta>,
+    prs: PrPoller,
+    pr_in_flight: bool,
+    _tasks: Vec<Task<()>>,
 }
+
+/// Metadata rescan period (plan D2) and PR loop tick (D5).
+const META_EVERY: Duration = Duration::from_millis(1500);
+const PR_EVERY: Duration = Duration::from_millis(2000);
+const PR_FETCHES_PER_TICK: usize = 3;
+const GH_DEADLINE: Duration = Duration::from_secs(15);
 
 impl WindowView {
     /// Quits if the first shell fails to start.
@@ -46,7 +60,12 @@ impl WindowView {
             sidebar_width: SIDEBAR_DEFAULT,
             focus: cx.focus_handle(),
             subs: HashMap::new(),
+            meta: HashMap::new(),
+            prs: PrPoller::new(),
+            pr_in_flight: false,
+            _tasks: Vec::new(),
         };
+        this._tasks = vec![Self::meta_loop(cx), Self::pr_loop(cx)];
         let id = this.workspaces.selected();
         if !this.make_view(id, None, window, cx) {
             cx.quit();
@@ -154,6 +173,127 @@ impl WindowView {
             .and_then(|w| w.custom_title.clone())
             .or_else(|| self.views.get(&id)?.read(cx).title(cx))
             .unwrap_or_else(|| "Terminal".to_string())
+    }
+}
+
+/// Background metadata (plan D5): inputs are read on the UI thread as plain data, the work
+/// runs on the background pool, results come back only if something changed. Both loops end
+/// when the view is dropped (its tasks are cancelled) or gone.
+impl WindowView {
+    fn meta_loop(cx: &mut Context<Self>) -> Task<()> {
+        let home = std::env::var("HOME").ok();
+        cx.spawn(async move |this, cx| {
+            loop {
+                let Ok((ids, inputs)) = this.read_with(cx, |s, cx| s.meta_inputs(cx)) else {
+                    break;
+                };
+                let home = home.clone();
+                let metas = cx
+                    .background_executor()
+                    .spawn(async move {
+                        cmux_meta::collect(&inputs, Path::new("/proc"), home.as_deref())
+                    })
+                    .await;
+                let new: HashMap<_, _> = ids.into_iter().zip(metas).collect();
+                let applied = this.update(cx, |s, cx| {
+                    if s.meta != new {
+                        s.meta = new;
+                        cx.notify();
+                    }
+                });
+                if applied.is_err() {
+                    break;
+                }
+                cx.background_executor().timer(META_EVERY).await;
+            }
+        })
+    }
+
+    fn meta_inputs(&self, cx: &App) -> (Vec<WorkspaceId>, Vec<WorkspaceInput>) {
+        self.workspaces
+            .list()
+            .iter()
+            .filter_map(|w| {
+                let panels = self.views.get(&w.id)?.read(cx).panels(cx);
+                Some((w.id, WorkspaceInput { panels }))
+            })
+            .unzip()
+    }
+
+    fn pr_loop(cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(PR_EVERY).await;
+                let Ok(jobs) = this.update(cx, |s, _| s.due_prs()) else {
+                    break;
+                };
+                if jobs.is_empty() {
+                    continue;
+                }
+                let results = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let today = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map_or(0, |d| (d.as_secs() / 86_400) as i64);
+                        jobs.into_iter()
+                            .map(|(key, dir)| {
+                                let r = pr::fetch("gh", &dir, &key.1, GH_DEADLINE)
+                                    .map(|items| pr::select_pr(&items, &key.1, today));
+                                (key, r)
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .await;
+                let applied = this.update(cx, |s, cx| {
+                    let now = Instant::now();
+                    for (key, r) in results {
+                        s.prs.record(key, r, now);
+                    }
+                    s.pr_in_flight = false;
+                    cx.notify();
+                });
+                if applied.is_err() {
+                    break;
+                }
+            }
+        })
+    }
+
+    /// Up to three due (key, directory) lookups, the selected workspace's first; marks them
+    /// in flight.
+    fn due_prs(&mut self) -> Vec<(PrKey, PathBuf)> {
+        if self.prs.disabled() || self.pr_in_flight {
+            return Vec::new();
+        }
+        let selected = self.workspaces.selected();
+        let mut keys: Vec<(PrKey, PathBuf, bool)> = Vec::new();
+        for (id, meta) in &self.meta {
+            for d in &meta.dirs {
+                let (Some(git), Some(branch)) = (&d.git_dir, &d.branch) else {
+                    continue;
+                };
+                if pr::skip_branch(branch) {
+                    continue;
+                }
+                let key = (git.clone(), branch.clone());
+                let focused = *id == selected;
+                match keys.iter_mut().find(|(k, _, _)| *k == key) {
+                    Some(entry) => entry.2 |= focused,
+                    None => keys.push((key, PathBuf::from(&d.path), focused)),
+                }
+            }
+        }
+        keys.sort_by_key(|(_, _, focused)| !focused);
+        let now = Instant::now();
+        let jobs: Vec<_> = keys
+            .into_iter()
+            .filter(|(k, _, focused)| self.prs.due(k, *focused, now))
+            .take(PR_FETCHES_PER_TICK)
+            .map(|(k, dir, _)| (k, dir))
+            .collect();
+        self.pr_in_flight = !jobs.is_empty();
+        jobs
     }
 }
 
