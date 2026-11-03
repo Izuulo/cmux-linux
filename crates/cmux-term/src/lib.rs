@@ -59,7 +59,13 @@ pub struct Term {
     render: RenderState,
     osc: OscScanner,
     flags: Arc<AtomicU8>,
+    epoch: u64,
+    /// Last bytes of the previous feed, so an ED 3 split across feeds is still seen.
+    tail: Vec<u8>,
 }
+
+/// ED 3: erase saved lines (scrollback).
+const ED3: &[u8] = b"\x1b[3J";
 
 impl Term {
     /// `pty_tx` receives the terminal's replies (DA, DSR, OSC colour queries). The caller
@@ -83,13 +89,30 @@ impl Term {
             render: RenderState::new()?,
             osc: OscScanner::new(),
             flags,
+            epoch: 0,
+            tail: Vec::new(),
         })
+    }
+
+    /// Changes whenever absolute rows stop meaning what they did: the primary/alternate screen
+    /// switched, or scrollback was erased (ED 3). Ghostty's tracked points do not report these
+    /// (the alternate screen reuses the coordinates; ED 3 relocates points to the top).
+    /// Only changes made through `feed` are seen, not ones made via [`Term::vt_mut`].
+    pub fn epoch(&self) -> u64 {
+        self.epoch
     }
 
     /// Feeds PTY output and returns the events it contained.
     pub fn feed(&mut self, bytes: &[u8]) -> Vec<TermEvent> {
+        let screen = self.vt.active_screen();
         // Scan what Ghostty parsed: 8-bit C1 controls (0x9d OSC, 0x9c ST) arrive as ESC ] / ESC \.
         let normalized = self.vt.vt_write_with_normalized(bytes);
+        let mut seen = std::mem::take(&mut self.tail);
+        seen.extend_from_slice(&normalized);
+        if self.vt.active_screen() != screen || seen.windows(ED3.len()).any(|w| w == ED3) {
+            self.epoch += 1;
+        }
+        self.tail = seen[seen.len().saturating_sub(ED3.len() - 1)..].to_vec();
         let mut events: Vec<TermEvent> = self
             .osc
             .feed(&normalized)
@@ -234,5 +257,26 @@ mod tests {
             .unwrap();
         assert_eq!(rows.len(), info.rows as usize);
         assert_eq!(rows[0], (0, 10, "b".to_string()));
+    }
+
+    #[test]
+    fn epoch_bumps_on_history_clear_and_screen_switch_only() {
+        let (mut t, _rx) = term(10, 3);
+        let e = t.epoch();
+        t.feed(b"abc\r\n\x1b[2J");
+        assert_eq!(t.epoch(), e);
+        t.feed(b"\x1b[3J");
+        let e1 = t.epoch();
+        assert!(e1 > e);
+        // ED 3 split across two feeds still counts.
+        t.feed(b"\x1b[3");
+        t.feed(b"J");
+        let e2 = t.epoch();
+        assert!(e2 > e1);
+        t.feed(b"\x1b[?1049h");
+        let e3 = t.epoch();
+        assert!(e3 > e2);
+        t.feed(b"\x1b[?1049l");
+        assert!(t.epoch() > e3);
     }
 }
