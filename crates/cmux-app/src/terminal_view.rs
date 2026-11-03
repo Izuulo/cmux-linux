@@ -3,6 +3,7 @@
 //! terminal (zed-industries/zed@69e2130, crates/terminal/src/terminal.rs and
 //! crates/terminal_view/src/terminal_view.rs, GPL-3.0-or-later, Copyright Zed Industries).
 
+use std::collections::HashSet;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -26,6 +27,16 @@ use crate::terminal_element::TerminalElement;
 /// Ghostty's default window-padding-x/y is 2 points.
 const PADDING_PX: f32 = 2.0 * 96.0 / 72.0;
 
+/// Ghostty floors window padding to whole device pixels (Surface.zig `@floor(padding * dpi / 72)`).
+pub fn snap_padding(logical: f32, scale: f32) -> f32 {
+    (logical * scale).floor() / scale
+}
+
+/// A logical coordinate moved to the nearest whole device pixel.
+pub fn snap_to_device(logical: f32, scale: f32) -> f32 {
+    (logical * scale).round() / scale
+}
+
 /// Grid geometry the element measured in its last prepaint, in logical pixels.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Geometry {
@@ -44,6 +55,13 @@ impl Geometry {
         let y = f32::from(pos.y - self.origin.y) / self.cell_h;
         let clamp = |v: f32, n: u16| (v.max(0.0) as u16).min(n.saturating_sub(1));
         (clamp(x, self.cols), clamp(y, self.rows))
+    }
+
+    /// Whether the PTY needs a new size: the grid, the cell size or the scale (so the pixel
+    /// size follows a move to another-DPI monitor) differs. The origin does not matter.
+    pub fn needs_resize(&self, old: &Geometry) -> bool {
+        (old.cols, old.rows, old.cell_w, old.cell_h, old.scale)
+            != (self.cols, self.rows, self.cell_w, self.cell_h, self.scale)
     }
 
     /// Logical to device pixels. Cells are already snapped, so cell sizes come out whole.
@@ -65,6 +83,8 @@ pub struct TerminalView {
     pub(crate) cursor_blinks: bool,
     pub(crate) blink_on: bool,
     key_encoder: KeyEncoder,
+    /// `Keystroke.key` of presses consumed by an app binding, whose release must not reach the PTY.
+    bound_keys: HashSet<String>,
     title: Option<String>,
     title_dirty: bool,
     /// `CMUX_TRACE_LATENCY=1`: key press time, waiting for its echo.
@@ -145,6 +165,7 @@ impl TerminalView {
             cursor_blinks: false,
             blink_on: true,
             key_encoder: KeyEncoder::new().expect("libghostty-vt key encoder"),
+            bound_keys: HashSet::new(),
             title: None,
             title_dirty: false,
             trace_latency: std::env::var_os("CMUX_TRACE_LATENCY").is_some(),
@@ -213,9 +234,7 @@ impl TerminalView {
     }
 
     pub(crate) fn set_geometry(&mut self, g: Geometry) {
-        let changed = self.geometry.is_none_or(|old| {
-            (old.cols, old.rows, old.cell_w, old.cell_h) != (g.cols, g.rows, g.cell_w, g.cell_h)
-        });
+        let changed = self.geometry.is_none_or(|old| g.needs_resize(&old));
         self.geometry = Some(g);
         if changed {
             let (w, h) = (g.device(g.cell_w), g.device(g.cell_h));
@@ -236,6 +255,7 @@ impl TerminalView {
 
     fn key_down(&mut self, ev: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(action) = keys::binding(&ev.keystroke) {
+            self.bound_keys.insert(ev.keystroke.key.clone());
             match action {
                 AppAction::Copy => self.copy(cx),
                 AppAction::Paste => self.paste(cx),
@@ -244,7 +264,7 @@ impl TerminalView {
         }
         // Super combos are desktop and app shortcuts, never terminal input. gpui's Linux text
         // fallback already skips them (wayland/window.rs:725-727, x11/window.rs:1004 only insert
-        // `key_char` for shift-or-no modifiers), but replay_pending_input (window.rs:3970-3976)
+        // `key_char` for shift-or-no modifiers), but replay_pending_input (window.rs:3969-3978)
         // inserts `key_char` whenever the key propagates, so stop it here too.
         if ev.keystroke.modifiers.platform {
             return cx.stop_propagation();
@@ -265,7 +285,7 @@ impl TerminalView {
     }
 
     fn key_up(&mut self, ev: &KeyUpEvent, _: &mut Window, _: &mut Context<Self>) {
-        if ev.keystroke.modifiers.platform {
+        if self.bound_keys.remove(&ev.keystroke.key) || ev.keystroke.modifiers.platform {
             return;
         }
         // Empty unless the app asked for kitty's report-event-types flag.
@@ -312,7 +332,7 @@ impl Render for TerminalView {
         }
         div()
             .size_full()
-            .p(px(PADDING_PX))
+            .p(px(snap_padding(PADDING_PX, window.scale_factor())))
             .bg(self.style.window_background())
             .track_focus(&self.focus)
             .key_context("Terminal")
@@ -354,5 +374,39 @@ mod tests {
             scale: 2.0,
         };
         assert_eq!((g.device(g.cell_w), g.device(g.cell_h)), (19, 32));
+    }
+
+    #[test]
+    fn padding_snaps_down_to_whole_device_pixels() {
+        // 2pt = 2.667 logical px; Ghostty floors the device pixels (Surface.zig).
+        assert_eq!(snap_padding(PADDING_PX, 1.0), 2.0);
+        assert_eq!(snap_padding(PADDING_PX, 1.25), 2.4);
+        assert_eq!(snap_padding(PADDING_PX, 2.0), 2.5);
+    }
+
+    #[test]
+    fn device_snap_rounds_to_whole_pixels() {
+        assert_eq!(snap_to_device(10.3, 1.0), 10.0);
+        assert_eq!(snap_to_device(2.4, 1.25), 2.4);
+        assert_eq!(snap_to_device(2.6, 2.0), 2.5);
+    }
+
+    #[test]
+    fn a_scale_only_change_resizes() {
+        let g = Geometry {
+            origin: point(px(0.), px(0.)),
+            cell_w: 10.0,
+            cell_h: 20.0,
+            cols: 80,
+            rows: 24,
+            scale: 1.0,
+        };
+        assert!(!g.needs_resize(&g));
+        assert!(Geometry { scale: 2.0, ..g }.needs_resize(&g));
+        let moved = Geometry {
+            origin: point(px(5.), px(5.)),
+            ..g
+        };
+        assert!(!moved.needs_resize(&g));
     }
 }

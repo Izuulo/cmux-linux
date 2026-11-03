@@ -17,7 +17,7 @@ use gpui::{
 
 use crate::colors::{self, CellColors};
 use crate::style::cell_size;
-use crate::terminal_view::{Geometry, TerminalView};
+use crate::terminal_view::{Geometry, TerminalView, snap_to_device};
 
 pub struct TerminalElement {
     view: Entity<TerminalView>,
@@ -51,8 +51,9 @@ struct Run {
     cells: u16,
     text: String,
     style: TextRun,
-    /// Narrow single-codepoint cells only: `force_width` snaps glyphs, not cells, so wide
-    /// and combining cells must stand alone to keep the grid aligned (research.md §1.3).
+    /// Narrow single-codepoint cells only. gpui's `force_width` moves glyph n to n * width, so
+    /// wide and combining cells stand alone and get no `force_width` (a combining mark would
+    /// otherwise land in the next column); each is painted at its own cell origin instead.
     batchable: bool,
 }
 
@@ -82,6 +83,12 @@ fn same_style(a: &TextRun, b: &TextRun) -> bool {
         && a.color == b.color
         && a.underline == b.underline
         && a.strikethrough == b.strikethrough
+}
+
+/// gpui's `force_width` snaps glyph n to n * width, which is right for a batch of narrow cells
+/// and wrong for a cell holding a base plus combining marks or a wide glyph.
+fn run_force_width(batchable: bool, cell_w: f32) -> Option<Pixels> {
+    batchable.then(|| px(cell_w))
 }
 
 fn face(base: &Font, bold: bool, italic: bool) -> Font {
@@ -162,7 +169,10 @@ impl Element for TerminalElement {
         let cols = ((f32::from(bounds.size.width) / cell_w) as u16).max(1);
         let rows = ((f32::from(bounds.size.height) / cell_h) as u16).max(1);
         let geometry = Geometry {
-            origin: bounds.origin,
+            origin: point(
+                px(snap_to_device(f32::from(bounds.origin.x), scale)),
+                px(snap_to_device(f32::from(bounds.origin.y), scale)),
+            ),
             cell_w,
             cell_h,
             cols,
@@ -227,7 +237,13 @@ impl Element for TerminalElement {
                     let font = face(&style.font, cell.bold, cell.italic);
                     if at_cursor == Some((col, row)) {
                         // The cursor picks its colours from the cell before selection, as Ghostty does.
-                        under_cursor = Some((cell.text.clone(), font.clone(), pre, span));
+                        // SGR 8 text stays hidden under a block cursor.
+                        let text = if c.invisible {
+                            String::new()
+                        } else {
+                            cell.text.clone()
+                        };
+                        under_cursor = Some((text, font.clone(), pre, span));
                     }
                     if let Some(bg) = c.bg {
                         let color = colors::hsla(bg, c.bg_alpha);
@@ -365,7 +381,7 @@ impl Element for TerminalElement {
         });
 
         Frame {
-            origin: bounds.origin,
+            origin: geometry.origin,
             cell_w,
             cell_h,
             font_size,
@@ -462,8 +478,20 @@ impl Frame {
             run.text.clone().into(),
             self.font_size,
             std::slice::from_ref(&run.style),
-            Some(px(self.cell_w)),
+            run_force_width(run.batchable, self.cell_w),
         );
         let _ = line.paint(origin, px(self.cell_h), window, cx);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_batchable_runs_force_the_cell_width() {
+        assert_eq!(run_force_width(true, 9.5), Some(px(9.5)));
+        // `e` + U+0301 must keep its accent in the same cell.
+        assert_eq!(run_force_width(false, 9.5), None);
     }
 }
