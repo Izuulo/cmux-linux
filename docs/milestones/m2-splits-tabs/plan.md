@@ -4879,7 +4879,7 @@ D6. rc §4 "Pane tab strip"; Bonsplit `Internal/Styling/{TabBarMetrics,TabBarCol
   - `assets::Assets` (`AssetSource`) serving `icons/*.svg`
   - `workspace::tab_strip::TAB_BAR_HEIGHT: f32 = 28.0`; `WorkspaceView::render_tab_strip(&self, &Pane, focused: bool, &Context<Self>)` (Task 9 adds a `strip_x` parameter)
 
-- [ ] **Step 1: Add the icons.** Create the five SVGs (Lucide, lucide.dev; 24 × 24, `stroke="currentColor"`, which gpui renders as a mask in `text_color`). Each file is one line:
+- [x] **Step 1: Add the icons.** Create the five SVGs (Lucide, lucide.dev; 24 × 24, `stroke="currentColor"`, which gpui renders as a mask in `text_color`). Each file is one line:
 
 ```text
 crates/cmux-app/assets/icons/terminal.svg:
@@ -4931,7 +4931,7 @@ Bonsplit (https://github.com/manaflow-ai/bonsplit @ 58b73fd), cmux's split/tab l
 
 ```
 
-- [ ] **Step 2: Write the failing tests.** Change `crates/cmux-app/src/lib.rs` to:
+- [x] **Step 2: Write the failing tests.** Change `crates/cmux-app/src/lib.rs` to:
 
 ```rust
 //! cmux-app: the gpui app. Everything but `main` lives here so it can be unit-tested.
@@ -5058,9 +5058,9 @@ index 3cf1a99..f607138 100644
          let mut cfg = Config::default();
 ```
 
-- [ ] **Step 3: Run tests to verify they fail.** Run: `cargo test -p cmux-app --lib`. Expected: compile errors (`cannot find value FILES`, `cannot find function tab_palette`).
+- [x] **Step 3: Run tests to verify they fail.** Run: `cargo test -p cmux-app --lib`. Expected: compile errors (`cannot find value FILES`, `cannot find function tab_palette`).
 
-- [ ] **Step 4: Implement assets and palette.** Insert above the tests module in `assets.rs`:
+- [x] **Step 4: Implement assets and palette.** Insert above the tests module in `assets.rs`:
 
 ```rust
 use std::borrow::Cow;
@@ -5239,7 +5239,7 @@ index 3cf1a99..f607138 100644
 
 Run: `cargo test -p cmux-app --lib`. Expected: `test result: ok. 57 passed`.
 
-- [ ] **Step 5: Implement the strip.** Create `crates/cmux-app/src/workspace/tab_strip.rs`:
+- [x] **Step 5: Implement the strip.** Create `crates/cmux-app/src/workspace/tab_strip.rs`:
 
 ```rust
 //! A pane's tab strip, sized and coloured like Bonsplit's tab bar as cmux configures it
@@ -5598,7 +5598,7 @@ index 36b6999..7fa440f 100644
              .dividers
 ```
 
-- [ ] **Step 6: Serve the assets.** Replace `crates/cmux-app/src/main.rs` with:
+- [x] **Step 6: Serve the assets.** Replace `crates/cmux-app/src/main.rs` with:
 
 ```rust
 use std::rc::Rc;
@@ -5664,7 +5664,7 @@ fn main() {
 }
 ```
 
-- [ ] **Step 7: Run tests and lints.** Run: `cargo test -p cmux-app --locked` and the clippy line. Expected: `ok. 57 passed`; clippy clean.
+- [x] **Step 7: Run tests and lints.** Run: `cargo test -p cmux-app --locked` and the clippy line. Expected: `ok. 57 passed`; clippy clean.
 
 - [ ] **Step 8: Run it.** `cargo run -p cmux-app` and check against rc §4, fixing before committing:
   - Every pane has a 28 px strip, also with one tab; the selected tab has the lighter fill, a 1.5 px blue line on top and no bottom line; other tabs show a bottom line and a 1 px right line; hovering a tab lightens it and shows its ×.
@@ -5672,7 +5672,7 @@ fn main() {
   - Clicking a tab selects it and focuses its pane; double-clicking a tab zooms; middle-click or × closes; double-clicking empty strip space opens a tab in that pane; the three buttons open a terminal tab, split right, split down for that pane.
   - The unfocused pane's strip is grey (its accent line too).
 
-- [ ] **Step 9: Format, lint, commit.**
+- [x] **Step 9: Format, lint, commit.**
 
 ```bash
 cargo fmt -p cmux-app
