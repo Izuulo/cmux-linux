@@ -4145,7 +4145,7 @@ D2, D4, D5, D6 (dimming, divider colour, focus click). rc §1, §2, §4 "Divider
   - `workspace::WorkspaceView::new(Rc<TermStyle>, &mut Window, &mut Context<Self>)`, `layout(&self) -> &Layout`, `terminal(&self, SurfaceId) -> Option<&Entity<TerminalView>>`, `close_surface(&mut self, SurfaceId, &mut Window, &mut Context<Self>)`; `impl Focusable`, `impl Render`.
   - Private, used by Tasks 8–9: fields `layout`, `surfaces: HashMap<SurfaceId, Surface>` (`Surface { view, .. }`), `style`; methods `focus_active`, `split(Orientation, ..)`, `new_tab(..)`, `render_pane(PaneId, Rect, Option<Rgba>)`.
 
-- [ ] **Step 1: Wire the crate.** Root `Cargo.toml` `[workspace.dependencies]` add `cmux-core = { path = "crates/cmux-core" }`; `crates/cmux-app/Cargo.toml` `[dependencies]` add `cmux-core.workspace = true`. Change `crates/cmux-app/src/lib.rs` to:
+- [x] **Step 1: Wire the crate.** Root `Cargo.toml` `[workspace.dependencies]` add `cmux-core = { path = "crates/cmux-core" }`; `crates/cmux-app/Cargo.toml` `[dependencies]` add `cmux-core.workspace = true`. Change `crates/cmux-app/src/lib.rs` to:
 
 ```rust
 //! cmux-app: the gpui app. Everything but `main` lives here so it can be unit-tested.
@@ -4164,7 +4164,7 @@ pub mod workspace;
 
 Run `cargo build -p cmux-core` (without `--locked`), then `git diff Cargo.lock`. Expected: only `"cmux-core",` added to `cmux-app`'s dependency list; libc unchanged.
 
-- [ ] **Step 2: Write the failing tests.** Create `crates/cmux-app/src/chrome.rs` with its header and tests module only:
+- [x] **Step 2: Write the failing tests.** Create `crates/cmux-app/src/chrome.rs` with its header and tests module only:
 
 ```rust
 //! Chrome colours derived from the terminal background with cmux's formulas
@@ -4257,9 +4257,9 @@ mod tests {
 
 Create `crates/cmux-app/src/workspace.rs` containing only `//! The workspace (filled in below).` so the module list compiles.
 
-- [ ] **Step 3: Run tests to verify they fail.** Run: `cargo test -p cmux-app --lib chrome`. Expected: compile errors (`cannot find function separator`, `cannot find function dim_overlay`).
+- [x] **Step 3: Run tests to verify they fail.** Run: `cargo test -p cmux-app --lib chrome`. Expected: compile errors (`cannot find function separator`, `cannot find function dim_overlay`).
 
-- [ ] **Step 4: Implement the colours.** Insert above the tests module in `chrome.rs`:
+- [x] **Step 4: Implement the colours.** Insert above the tests module in `chrome.rs`:
 
 ```rust
 use cmux_config::ghostty::{Config, Rgb};
@@ -4315,7 +4315,7 @@ pub fn dim_overlay(cfg: &Config) -> Option<Rgba> {
 
 Run: `cargo test -p cmux-app --lib chrome`. Expected: `test result: ok. 3 passed`.
 
-- [ ] **Step 5: Implement the workspace.** Replace `crates/cmux-app/src/workspace.rs` with:
+- [x] **Step 5: Implement the workspace.** Replace `crates/cmux-app/src/workspace.rs` with:
 
 ```rust
 //! The workspace: one cmux-core `Layout` drawn as absolutely positioned panes and dividers,
@@ -4730,7 +4730,7 @@ impl Render for WorkspaceView {
 }
 ```
 
-- [ ] **Step 6: Drag guard and focus-click policy.** Apply to `mouse.rs`:
+- [x] **Step 6: Drag guard and focus-click policy.** Apply to `mouse.rs`:
 
 ```diff
 diff --git a/crates/cmux-app/src/mouse.rs b/crates/cmux-app/src/mouse.rs
@@ -4777,7 +4777,7 @@ index 6cafb24..e80c109 100644
                  self.report(MouseAction::Release, Some(b), ev.position, &ev.modifiers);
 ```
 
-- [ ] **Step 7: Open the workspace.** Replace `crates/cmux-app/src/main.rs` with:
+- [x] **Step 7: Open the workspace.** Replace `crates/cmux-app/src/main.rs` with:
 
 ```rust
 use std::rc::Rc;
@@ -4842,7 +4842,7 @@ fn main() {
 }
 ```
 
-- [ ] **Step 8: Run tests and lints.** Run: `cargo test --workspace --locked --exclude ghostty-vt --exclude ghostty-vt-sys` then the clippy line. Expected: cmux-app lib `test result: ok. 54 passed`; clippy clean.
+- [x] **Step 8: Run tests and lints.** Run: `cargo test --workspace --locked --exclude ghostty-vt --exclude ghostty-vt-sys` then the clippy line. Expected: cmux-app lib `test result: ok. 54 passed`; clippy clean.
 
 - [ ] **Step 9: Run it.** `cargo run -p cmux-app` and check, fixing before committing:
   - Super+D splits right, Super+Shift+D splits down; the new pane is focused, gets a prompt in the source pane's directory (`cd /tmp` first, then split: `pwd` says `/tmp`), and the window title follows the focused pane (`printf '\e]2;hello\a'`).
@@ -4853,7 +4853,7 @@ fn main() {
   - Super+T opens a tab (the pane shows the new terminal; tabs are not drawn until Task 8), Super+Shift+] / [ and Ctrl+Tab cycle, Ctrl+1 / Ctrl+9 select, Super+W closes; `exit` in a pane closes it and its sibling takes the space; closing the last terminal quits.
   - While dragging a divider over `htop`, `htop` sees no mouse events.
 
-- [ ] **Step 10: Format, lint, commit.**
+- [x] **Step 10: Format, lint, commit.**
 
 ```bash
 cargo fmt -p cmux-app
