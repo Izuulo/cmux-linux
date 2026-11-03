@@ -6242,7 +6242,7 @@ Expected: stderr has one `cmux-linux: config: …config.toml: keybindings: unkno
 - Deferred: edge-drop-to-split, focus-follows-mouse, tab context menu/rename/pin, tooltips, live config reload, in-window warnings.
 ```
 
-- [ ] **Step 2: design.md.** In the Architecture table, change the `cmux-config` row's "Depends on" cell from `—` to `` `toml` ``.
+- [x] **Step 2: design.md.** In the Architecture table, change the `cmux-config` row's "Depends on" cell from `—` to `` `toml` ``.
 
 - [ ] **Step 3: Archive and rewrite STATUS.md.** First append the current file to the archive:
 
