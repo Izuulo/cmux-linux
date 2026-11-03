@@ -558,4 +558,13 @@ mod tests {
         assert!(MetricModifier::parse("inf%").is_err());
         assert!(MetricModifier::parse("nan%").is_err());
     }
+    #[test]
+    fn background_blur_accepts_bool_and_radius() {
+        for (v, on) in [("true", true), ("false", false), ("20", true), ("0", false)] {
+            let mut cfg = Config::default();
+            cfg.apply("background-blur", v).unwrap();
+            assert_eq!(cfg.background_blur, on, "{v}");
+        }
+        assert!(Config::default().apply("background-blur", "maybe").is_err());
+    }
 }
