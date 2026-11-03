@@ -25,5 +25,8 @@ libghostty-vt Rust bindings (vendor/ghostty-vt, vendor/ghostty-vt-sys)
 Ghostty (vendor/ghostty, git submodule of github.com/manaflow-ai/ghostty)
   Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors. MIT.
 
+gpui (https://github.com/zed-industries/zed, crates.io gpui 0.2.2)
+  Copyright Zed Industries. Apache-2.0.
+
 Further components (gpui, Rust crates) are listed here as they are added,
 with their licences.
