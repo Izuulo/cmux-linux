@@ -5,7 +5,7 @@
 
 **Updated:** 2026-11-03
 **Current milestone:** M2 splits-tabs — in progress on branch `m2-splits-tabs` (plan Tasks 1–10 done, CI green)
-**Next action:** at the KDE desktop, run plan Task 11 (exit-criteria checks plus the unticked "Run it" steps), record the results in the journal, then Task 12 close-out (Steps 1, 3, 4; Step 2 done).
+**Next action:** at the KDE desktop, run plan Task 11 (exit-criteria checks plus the unticked "Run it" steps), record the results in the journal, then Task 12 close-out (Steps 1, 3, 4; Step 2 done). In parallel: M3 plan is written on branch `m3-workspaces-sidebar` (based on M2); execute it from Task 1 after rebasing onto `master` once M2 merges.
 
 ## Where things are
 - Project design and milestone table: `docs/design.md`
@@ -19,7 +19,7 @@
 | M0 foundations | done (PR #1) |
 | M1 terminal | done; exit criterion 1 confirmed by user, 2–3 (Ghostty screenshot pair, latency trace) not yet measured |
 | M2 splits-tabs | code done (Tasks 1–10); exit checks (Task 11) pending at the desktop |
-| M3 workspaces-sidebar | not started |
+| M3 workspaces-sidebar | plan written (`docs/milestones/m3-workspaces-sidebar/plan.md`), not started |
 | M4 notifications | not started |
 | M5 cli-socket | not started |
 | M6 parity-release | not started |
