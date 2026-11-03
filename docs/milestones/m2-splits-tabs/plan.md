@@ -3530,7 +3530,7 @@ D3, D4 (events only). rg §1.5–1.7.
   - `terminal_view`: `enum TerminalEvent { Exited, TitleChanged }`, `impl EventEmitter<TerminalEvent> for TerminalView`, `TerminalView::new(style: Rc<TermStyle>, cwd: Option<String>, &mut Window, &mut Context<Self>)`, `TerminalView::title(&self) -> Option<&str>`, `TerminalView::cwd(&self) -> Option<&str>`. `TerminalView` no longer sets the window title.
   - Removed: `keys::{AppAction, BINDINGS, chord, binding}`.
 
-- [ ] **Step 1: Write the failing tests.** Change `crates/cmux-app/src/lib.rs` to:
+- [x] **Step 1: Write the failing tests.** Change `crates/cmux-app/src/lib.rs` to:
 
 ```rust
 //! cmux-app: the gpui app. Everything but `main` lives here so it can be unit-tested.
@@ -3627,9 +3627,9 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail.** Run: `cargo test -p cmux-app --lib actions`. Expected: compile errors (`cannot find function action_for`, `cannot find function key_binding`).
+- [x] **Step 2: Run tests to verify they fail.** Run: `cargo test -p cmux-app --lib actions`. Expected: compile errors (`cannot find function action_for`, `cannot find function key_binding`).
 
-- [ ] **Step 3: Implement the actions.** Insert above the tests module in `actions.rs`:
+- [x] **Step 3: Implement the actions.** Insert above the tests module in `actions.rs`:
 
 ```rust
 use cmux_config::keybindings::{Binding, Keybindings};
@@ -3722,7 +3722,7 @@ pub fn bind(cx: &mut App, keybindings: &Keybindings) -> Vec<String> {
 }
 ```
 
-- [ ] **Step 4: Remove the M1 binding table.** Apply:
+- [x] **Step 4: Remove the M1 binding table.** Apply:
 
 ```diff
 diff --git a/crates/cmux-app/src/keys.rs b/crates/cmux-app/src/keys.rs
@@ -3797,7 +3797,7 @@ index c664bdd..a158c6f 100644
  }
 ```
 
-- [ ] **Step 5: Terminal events, Copy/Paste actions, key-up rule, cwd.** Apply:
+- [x] **Step 5: Terminal events, Copy/Paste actions, key-up rule, cwd.** Apply:
 
 ```diff
 diff --git a/crates/cmux-app/src/terminal_view.rs b/crates/cmux-app/src/terminal_view.rs
@@ -4038,7 +4038,7 @@ index e49025d..fde47b8 100644
              .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
 ```
 
-- [ ] **Step 6: Bind keys at startup.** Replace `crates/cmux-app/src/main.rs` with (the subscription keeps M1's quit-on-exit until Task 7 replaces this window content):
+- [x] **Step 6: Bind keys at startup.** Replace `crates/cmux-app/src/main.rs` with (the subscription keeps M1's quit-on-exit until Task 7 replaces this window content):
 
 ```rust
 use std::rc::Rc;
@@ -4115,11 +4115,11 @@ fn main() {
 }
 ```
 
-- [ ] **Step 7: Run tests and lints.** Run: `cargo test -p cmux-app --locked` then the clippy line. Expected: `test result: ok. 51 passed` (`every_config_action_has_a_gpui_action`, `the_default_table_parses_in_gpui`, `defaults_match_what_linux_reports` new; `keys::tests::default_bindings` gone); clippy clean.
+- [x] **Step 7: Run tests and lints.** Run: `cargo test -p cmux-app --locked` then the clippy line. Expected: `test result: ok. 51 passed` (`every_config_action_has_a_gpui_action`, `the_default_table_parses_in_gpui`, `defaults_match_what_linux_reports` new; `keys::tests::default_bindings` gone); clippy clean.
 
 - [ ] **Step 8: Run it.** `cargo run -p cmux-app`. Check: Super+C/V and Ctrl+Shift+C/V copy and paste as in M1; with nothing selected, `sleep 100` then Ctrl+Shift+C interrupts it (the key reached the PTY); Super+C with nothing selected does nothing; `kitten show-key -m kitty` (if kitty is installed) shows a release for every press it shows; `exit` still quits.
 
-- [ ] **Step 9: Format, lint, commit.**
+- [x] **Step 9: Format, lint, commit.**
 
 ```bash
 cargo fmt -p cmux-app
