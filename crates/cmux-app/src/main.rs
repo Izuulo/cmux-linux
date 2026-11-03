@@ -3,7 +3,7 @@ use std::rc::Rc;
 use cmux_app::actions;
 use cmux_app::assets::Assets;
 use cmux_app::style::{TermStyle, installed_families, load_bundled_fonts};
-use cmux_app::workspace::WorkspaceView;
+use cmux_app::window_view::WindowView;
 use cmux_config::ghostty::{Env, load};
 use cmux_config::keybindings;
 use gpui::{
@@ -53,7 +53,7 @@ fn main() {
                 app_id: Some("cmux-linux".into()),
                 ..Default::default()
             },
-            |window, cx| cx.new(|cx| WorkspaceView::new(style, None, window, cx)),
+            |window, cx| cx.new(|cx| WindowView::new(style, window, cx)),
         )
         .expect("open window");
         cx.activate(true);
