@@ -261,6 +261,8 @@ impl WorkspaceView {
             Closed::Tab | Closed::Pane => {
                 self.surfaces.remove(&surface);
                 self.focus_active(window, cx);
+                // The active surface, and so the sidebar title, may have changed.
+                cx.emit(WorkspaceEvent::Changed);
             }
         }
     }

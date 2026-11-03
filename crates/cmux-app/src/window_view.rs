@@ -46,6 +46,8 @@ pub struct WindowView {
     focus: FocusHandle,
     subs: HashMap<WorkspaceId, Subscription>,
     meta: HashMap<WorkspaceId, WorkspaceMeta>,
+    /// Each workspace's OSC title, so render never reads (and so never tracks) hidden views.
+    titles: HashMap<WorkspaceId, Option<String>>,
     prs: PrPoller,
     pr_in_flight: bool,
     _tasks: Vec<Task<()>>,
@@ -85,6 +87,7 @@ impl WindowView {
             focus: cx.focus_handle(),
             subs: HashMap::new(),
             meta: HashMap::new(),
+            titles: HashMap::new(),
             prs: PrPoller::new(),
             pr_in_flight: false,
             _tasks: Vec::new(),
@@ -118,11 +121,22 @@ impl WindowView {
         }
         let sub = cx.subscribe_in(&view, window, move |this, _, ev, window, cx| match ev {
             WorkspaceEvent::Empty => this.close_now(id, window, cx),
-            WorkspaceEvent::Changed => cx.notify(),
+            WorkspaceEvent::Changed => {
+                this.refresh_title(id, cx);
+                cx.notify();
+            }
         });
         self.subs.insert(id, sub);
         self.views.insert(id, view);
+        self.refresh_title(id, cx);
         true
+    }
+
+    fn refresh_title(&mut self, id: WorkspaceId, cx: &App) {
+        if let Some(v) = self.views.get(&id) {
+            let t = v.read(cx).title(cx);
+            self.titles.insert(id, t);
+        }
     }
 
     fn new_workspace(&mut self, at_end: bool, window: &mut Window, cx: &mut Context<Self>) {
@@ -188,6 +202,7 @@ impl WindowView {
                 }
                 self.subs.remove(&id);
                 self.views.remove(&id);
+                self.titles.remove(&id);
                 let sel = self.workspaces.selected();
                 self.select(sel, window, cx);
             }
@@ -195,14 +210,14 @@ impl WindowView {
         }
     }
 
-    /// Custom title, else the OSC title, else "Terminal".
-    pub(crate) fn title_of(&self, id: WorkspaceId, cx: &App) -> String {
+    /// Custom title, else the cached OSC title, else "Terminal".
+    pub(crate) fn title_of(&self, id: WorkspaceId) -> String {
         self.workspaces
             .list()
             .iter()
             .find(|w| w.id == id)
             .and_then(|w| w.custom_title.clone())
-            .or_else(|| self.views.get(&id)?.read(cx).title(cx))
+            .or_else(|| self.titles.get(&id).cloned().flatten())
             .unwrap_or_else(|| "Terminal".to_string())
     }
 }
@@ -340,9 +355,13 @@ impl Render for WindowView {
             self.drop_gap = None;
             self.dragging = None;
         }
+        // Only the selected view is drawn, so only it is read here: touching a hidden one would
+        // make its every notify redraw this window. Refreshing here catches focus moves, which
+        // don't emit Changed.
+        self.refresh_title(self.workspaces.selected(), cx);
         let selected = self.views.get(&self.workspaces.selected()).cloned();
         let width = self.sidebar_px(window);
-        for v in self.views.values() {
+        if let Some(v) = &selected {
             v.update(cx, |v, _| v.set_left_inset(width.unwrap_or(0.)));
         }
         div()

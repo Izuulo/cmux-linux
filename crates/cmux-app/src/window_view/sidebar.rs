@@ -199,7 +199,7 @@ impl WindowView {
             text,
             hint: p.detail,
         };
-        let current = self.title_of(id, cx);
+        let current = self.title_of(id);
         let input = cx.new(|cx| RenameInput::new(id, &current, style, window, cx));
         cx.subscribe_in(&input, window, |this, input, ev, window, cx| {
             let RenameEvent::Done(id, text) = ev;
@@ -368,7 +368,7 @@ impl WindowView {
                 self.prs.get(&key).map(|(pr, stale)| (pr.clone(), stale))
             })
             .collect();
-        let m = row_model(&self.title_of(id, cx), meta, &prs);
+        let m = row_model(&self.title_of(id), meta, &prs);
         let (title_c, detail_c) = if selected {
             (p.selected_title, p.selected_detail)
         } else {
