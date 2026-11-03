@@ -65,9 +65,11 @@ impl WindowView {
     pub fn new(style: Rc<TermStyle>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         // Blur only when Ghostty asks for it and there is something to see through (plan D4).
         #[cfg(target_os = "linux")]
-        let blur = (style.cfg.background_blur && style.cfg.background_opacity < 1.0)
-            .then(|| crate::blur::WindowBlur::enable(window, cx))
-            .flatten();
+        let blur = if style.cfg.background_blur && style.cfg.background_opacity < 1.0 {
+            crate::blur::WindowBlur::enable(window, cx)
+        } else {
+            None
+        };
         let mut this = Self {
             workspaces: Workspaces::new(),
             views: HashMap::new(),

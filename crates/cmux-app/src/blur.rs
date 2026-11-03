@@ -56,8 +56,8 @@ impl WindowBlur {
             .display_handle()
             .inspect_err(log("display handle"))
             .ok()?;
-        let handle = window
-            .window_handle()
+        // Trait call: gpui's inherent `Window::window_handle` returns its own handle type.
+        let handle = HasWindowHandle::window_handle(window)
             .inspect_err(log("window handle"))
             .ok()?;
         let (RawDisplayHandle::Wayland(display), RawWindowHandle::Wayland(handle)) =
