@@ -523,7 +523,7 @@ Covers STATUS "split prepaint before adding panes" at the seams in rg §4.
 - Consumes: `TermStyle`, `cell_size` (`style.rs`), `Geometry`, `snap_to_device` (`terminal_view.rs`), `cmux_term::{Term, FrameInfo}`, `colors::*` (M1).
 - Produces (private to the module): `fn measure(&mut Window, &TermStyle, Bounds<Pixels>) -> Geometry`; `fn push_rect(&mut Vec<Rect>, row: u16, col: u16, span: u16, Hsla)`; `fn push_run(&mut Vec<Run>, Run)`; `fn collect_cells(&mut Term, &FrameInfo, &TermStyle, Option<SelectionRange>) -> Cells`; `fn plan_cursor(&FrameInfo, Option<UnderCursor>, &TermStyle, CursorState) -> (Option<CursorPaint>, Option<Marked>)`; `Frame::paint_cursor`, `Frame::paint_marked`. `TerminalElement::new(Entity<TerminalView>)` unchanged.
 
-- [ ] **Step 1: Replace the file.** Replace `crates/cmux-app/src/terminal_element.rs` with (the two new tests are at the bottom):
+- [x] **Step 1: Replace the file.** Replace `crates/cmux-app/src/terminal_element.rs` with (the two new tests are at the bottom):
 
 ```rust
 //! Paints the terminal grid.
@@ -1161,11 +1161,11 @@ mod tests {
 
 The cursor condition changed shape only: M1 painted when `!blinking || blink_on || !focused`; `plan_cursor` returns no cursor when `blinking && !blink_on && focused`.
 
-- [ ] **Step 2: Run tests.** Run: `cargo test -p cmux-app --lib terminal_element`. Expected: `test result: ok. 3 passed` (`only_batchable_runs_force_the_cell_width`, `adjacent_same_colour_backgrounds_merge`, `batchable_neighbours_join_one_run`). Then `cargo test -p cmux-app`: `ok. 49 passed`.
+- [x] **Step 2: Run tests.** Run: `cargo test -p cmux-app --lib terminal_element`. Expected: `test result: ok. 3 passed` (`only_batchable_runs_force_the_cell_width`, `adjacent_same_colour_backgrounds_merge`, `batchable_neighbours_join_one_run`). Then `cargo test -p cmux-app`: `ok. 49 passed`.
 
 - [ ] **Step 3: Run it.** `cargo run -p cmux-app`. Expected: identical to M1 — prompt, colours, blinking cursor, hollow cursor when the window loses focus, `vim` and an IME preedit (if you have one) look the same.
 
-- [ ] **Step 4: Format, lint, commit.**
+- [x] **Step 4: Format, lint, commit.**
 
 ```bash
 cargo fmt -p cmux-app
