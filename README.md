@@ -70,7 +70,7 @@ Each milestone has a spec, plan and journal under [`docs/milestones/`](docs/mile
 ## Building
 
 ```sh
-git clone --recursive https://github.com/finneritter/cmux-linux
+git clone --recursive https://github.com/Izuulo/cmux-linux
 # existing clone: git submodule update --init --recursive
 ```
 

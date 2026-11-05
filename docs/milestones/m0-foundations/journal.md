@@ -24,9 +24,9 @@ Append-only, newest last. One entry per session: date, what was tried, what was 
 - libghostty-vt wrapper callbacks cover PTY write, title, bell only; OSC 7/9/777 handled by cmux-term::osc.
 - Spike test (`crates/cmux-term/tests/spike.rs`): passed unmodified. Text lines, bold + `Palette(2)` foreground, cursor at (2,1) and OSC 2 title come from libghostty-vt; OSC 7/777 events come from our scanner.
 - KWin blur: translucent but not blurred on Plasma 6.8.2 Wayland (protocol mismatch, deferred to M3; see Task 6).
-- CI: https://github.com/finneritter/cmux-linux/actions/runs/41566208715 (green on first run). Extra apt packages needed: none beyond the workflow's list. Clippy scoping and libc pin: see Tasks 6 and 7.
+- CI: https://github.com/Izuulo/cmux-linux/actions/runs/41566208715 (green on first run). Extra apt packages needed: none beyond the workflow's list. Clippy scoping and libc pin: see Tasks 6 and 7.
 - **Engine decision: libghostty-vt**, because the vendored tests (191/191) and the spike test passed on cells, styles, cursor and title, so no fallback to `alacritty_terminal` is needed.
 
 ## 2026-11-02 — M0 merged
 
-- PR #1 merged to master (1fa7a33); CI green on master: https://github.com/finneritter/cmux-linux/actions/runs/41567897272. Exit criterion 4 met.
+- PR #1 merged to master (1fa7a33); CI green on master: https://github.com/Izuulo/cmux-linux/actions/runs/41567897272. Exit criterion 4 met.
