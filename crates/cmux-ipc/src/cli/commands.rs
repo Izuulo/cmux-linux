@@ -69,7 +69,7 @@ fn no_positional(name: &str, f: &Flags) -> Result<(), CliError> {
     }
 }
 
-fn is_uuid(s: &str) -> bool {
+pub(crate) fn is_uuid(s: &str) -> bool {
     s.len() == 36 && uuid::Uuid::parse_str(s).is_ok()
 }
 
@@ -87,6 +87,26 @@ impl Cmd<'_> {
         kind: Kind,
         handle: &str,
         scope: &Map<String, Value>,
+    ) -> Result<String, CliError> {
+        self.resolve_as(kind, handle, scope, false)
+    }
+
+    /// `resolve`, but pane and surface refs are looked up too, so the result is a UUID.
+    pub(crate) fn resolve_uuid(
+        &mut self,
+        kind: Kind,
+        handle: &str,
+        scope: &Map<String, Value>,
+    ) -> Result<String, CliError> {
+        self.resolve_as(kind, handle, scope, true)
+    }
+
+    fn resolve_as(
+        &mut self,
+        kind: Kind,
+        handle: &str,
+        scope: &Map<String, Value>,
+        uuid: bool,
     ) -> Result<String, CliError> {
         let handle = handle.trim();
         if handle.is_empty() {
@@ -113,9 +133,14 @@ impl Cmd<'_> {
                 k = kind.name()
             ));
         }
-        if is_ref && matches!(kind, Kind::Pane | Kind::Surface) {
+        if is_ref && !uuid && matches!(kind, Kind::Pane | Kind::Surface) {
             return Ok(handle.to_string());
         }
+        // `tab:N` is `surface:N` (rc §6).
+        let handle = &match handle.strip_prefix("tab:") {
+            Some(n) if kind == Kind::Surface => format!("surface:{n}"),
+            _ => handle.to_string(),
+        };
         let list = self.call(method, scope.clone())?;
         let rows = list[field].as_array().cloned().unwrap_or_default();
         let found = rows.iter().find(|r| match index {
@@ -164,7 +189,7 @@ impl Cmd<'_> {
     }
 
     /// The window, else the caller's workspace and surface (cmux `applyWindowOrCallerContext`).
-    fn window_or_caller(&mut self, f: &Flags) -> Result<Map<String, Value>, CliError> {
+    pub(crate) fn window_or_caller(&mut self, f: &Flags) -> Result<Map<String, Value>, CliError> {
         let mut scope = self.window_scope(f)?;
         if scope.is_empty() {
             for (env, key) in [

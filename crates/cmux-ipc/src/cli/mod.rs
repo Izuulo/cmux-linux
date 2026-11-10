@@ -14,6 +14,7 @@ mod args;
 mod client;
 mod commands;
 mod help;
+mod notify;
 
 use args::Global;
 use client::Client;
@@ -118,6 +119,8 @@ fn run_inner(args: &[String], ctx: &Ctx) -> Result<String, CliError> {
         "new-split" => commands::new_split(&mut cmd),
         "send" => commands::send(&mut cmd),
         "send-key" => commands::send_key(&mut cmd),
+        "notify" => notify::notify(&mut cmd),
+        "dismiss-notification" => notify::dismiss(&mut cmd),
         other => fail(format!("{other} is not available yet")),
     }
 }
