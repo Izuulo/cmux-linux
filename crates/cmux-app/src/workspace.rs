@@ -9,6 +9,7 @@ use std::time::Instant;
 
 use cmux_core::{
     Closed, Direction, DividerRect, Layout, Orientation, PaneId, RESIZE_STEP, Rect, SurfaceId,
+    WorkspaceId,
 };
 use cmux_meta::PanelInput;
 use gpui::{
@@ -23,6 +24,7 @@ use crate::actions::*;
 use crate::chrome;
 use crate::style::TermStyle;
 use crate::terminal_view::{TerminalEvent, TerminalView};
+use crate::window_view::control::ShellEnv;
 
 /// Hit band each side of a 1 px divider (cmux `dividerHitExpansion`).
 const DIVIDER_HIT: f32 = 8.0;
@@ -40,6 +42,8 @@ struct Surface {
 }
 
 pub struct WorkspaceView {
+    id: WorkspaceId,
+    shell: Rc<ShellEnv>,
     layout: Layout,
     surfaces: HashMap<SurfaceId, Surface>,
     style: Rc<TermStyle>,
@@ -60,6 +64,13 @@ pub struct WorkspaceView {
     flashes: HashMap<SurfaceId, (u64, Instant)>,
     flash_seq: u64,
     _subscriptions: Vec<Subscription>,
+}
+
+/// Why `split_surface` made nothing.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum SplitFailed {
+    NoSpace,
+    Spawn,
 }
 
 /// What the owner of this workspace needs to hear about.
@@ -85,7 +96,9 @@ pub enum WorkspaceEvent {
 impl EventEmitter<WorkspaceEvent> for WorkspaceView {}
 
 impl WorkspaceView {
-    pub fn new(
+    pub(crate) fn new(
+        id: WorkspaceId,
+        shell: Rc<ShellEnv>,
         style: Rc<TermStyle>,
         cwd: Option<String>,
         window: &mut Window,
@@ -99,6 +112,8 @@ impl WorkspaceView {
             }
         });
         let mut this = Self {
+            id,
+            shell,
             layout: Layout::new(),
             surfaces: HashMap::new(),
             style,
@@ -183,6 +198,20 @@ impl WorkspaceView {
         self.surfaces.get(&surface).map(|s| &s.view)
     }
 
+    /// Focuses `pane` (the socket's `pane.focus`). False if it is gone.
+    pub fn focus_pane(
+        &mut self,
+        pane: PaneId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.layout.focus_pane(pane) {
+            return false;
+        }
+        self.focus_active(window, cx);
+        true
+    }
+
     /// Selects `surface`'s tab and focuses it (a jump). False if it is gone.
     pub fn focus_surface(
         &mut self,
@@ -247,7 +276,8 @@ impl WorkspaceView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let started = match TerminalView::start(&self.style, cwd.as_deref()) {
+        let env = self.shell.for_surface(self.id, surface);
+        let started = match TerminalView::start(&self.style, cwd.as_deref(), &env) {
             Ok(started) => started,
             Err(e) => {
                 eprintln!("cmux-linux: could not start a shell: {e}");
@@ -353,6 +383,43 @@ impl WorkspaceView {
                 cx.emit(WorkspaceEvent::Changed);
             }
         }
+    }
+
+    /// The socket's `surface.split` (M5 plan D6): splits `surface`'s pane towards `dir`, moving
+    /// focus only when `focus`, and types `input` into the new shell. The new surface, or why not.
+    pub(crate) fn split_surface(
+        &mut self,
+        surface: SurfaceId,
+        dir: Direction,
+        focus: bool,
+        input: Option<&str>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<SurfaceId, SplitFailed> {
+        let (w, h, scale) = self.container(window);
+        let cwd = self
+            .surfaces
+            .get(&surface)
+            .filter(|_| self.style.cfg.split_inherit_working_directory)
+            .and_then(|s| s.view.read(cx).cwd());
+        let new = self
+            .layout
+            .try_split_surface(surface, dir, focus, w, h, scale)
+            .map_err(|_| SplitFailed::NoSpace)?;
+        if !self.add_terminal(new, cwd, window, cx) {
+            self.layout.close_surface(new);
+            return Err(SplitFailed::Spawn);
+        }
+        if let (Some(input), Some(s)) = (input, self.surfaces.get(&new)) {
+            s.view
+                .update(cx, |v, cx| v.send_scripted(input.as_bytes().to_vec(), cx));
+        }
+        if focus {
+            self.focus_active(window, cx);
+        } else {
+            cx.notify();
+        }
+        Ok(new)
     }
 
     fn split(&mut self, o: Orientation, window: &mut Window, cx: &mut Context<Self>) {

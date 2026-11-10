@@ -4,8 +4,8 @@
      current version to docs/status-archive.md. -->
 
 **Updated:** 2026-11-10
-**Current milestone:** M4 notifications merged to `master` (PR #5) before its desktop checks (owner's call, 2026-11-10); M2, M3 and M4 desktop exit checks pending
-**Next action:** at the KDE desktop: M4 plan Task 9 Step 1 (exits 1–3, the "Run it" checks and screenshots of Tasks 4–6, blur re-check), M2 plan Task 11, M3 plan Task 12 Steps 1–3; record results in each journal and fix on `master`; then write `docs/milestones/m5-cli-socket/plan.md`.
+**Current milestone:** M5 cli-socket built on branch `m5-cli-socket` (Tasks 1–11, final review fixed, Linux CI green); not merged. M2, M3, M4 and now M5 desktop checks pending
+**Next action:** owner OK to merge `m5-cli-socket` (PR). At the KDE desktop: M5 plan Task 12 Step 1 (Claude Code hook, `command -v cmux`, tmux denial, second instance, Run-it of Tasks 9–11), M4 plan Task 9 Step 1, M2 plan Task 11, M3 plan Task 12 Steps 1–3; record in each journal.
 
 ## Where things are
 - Project design and milestone table: `docs/design.md`
@@ -21,7 +21,7 @@
 | M2 splits-tabs | merged (PR #3); exit checks (plan Task 11) pending at the desktop |
 | M3 workspaces-sidebar | merged (PR #4); exit checks (plan Task 12 Steps 1–3) pending at the desktop |
 | M4 notifications | merged (PR #5); desktop checks (plan Task 9 Step 1) pending |
-| M5 cli-socket | not started |
+| M5 cli-socket | built on branch (not merged); criterion 1 = `cmux notify` hooks (owner's ruling), automated by `hook_commands_work_unchanged`; desktop check pending |
 | M6 parity-release | not started |
 | M7 feed | not started (post-v1) |
 | M8 groups-dock | not started (post-v1) |
@@ -40,29 +40,33 @@
 - Config: reads Ghostty's own config (`~/.config/ghostty/config[.ghostty]`, includes, themes).
 - Model: `cmux-core` is the pure model (split tree, workspace list); contextless gpui actions bound from `config.toml`; pidfd-based shell exit (Linux).
 - Notifications (M4): cmux read rules in a pure `cmux-core` store; desktop bubbles via `zbus` (already in the tree), click activates with the notification's xdg_activation token (`activation.rs`, sharing `wayland.rs` with blur).
+- Socket (M5): cmux's wire format and access modes; own path `~/.local/state/cmux-linux/cmux.sock`; refs from 1 per run; the `cmux` CLI is a library (`cmux_ipc::cli::run`) tested against the real server.
 - Sidebar metadata: `.git/HEAD` + `/proc` polled every 1.5 s, PR via `gh pr list --json` (cmux cadence), all on the background executor.
 - Blur: own `ext_background_effect_v1` shim on gpui 0.2.2's surface (no gpui upgrade); whole window, only with Ghostty `background-blur`.
 - macOS dev builds: `--features gpui/runtime_shaders` (no Metal Toolchain); Linux CI is the gate.
 
-## Code map (M1–M4)
+## Code map (M1–M5)
 - `cmux-config`: Ghostty config parser/loader.
 - `cmux-term`: `Term` (libghostty-vt wrapper, epoch for selection safety), OSC 7/9/99/777 scanner (Ghostty's ConEmu and kitty rules), PTY `Session` (non-blocking drop), `Selection`, paste/focus encoding.
 - `cmux-core`: split tree (`tree`: panes, tabs, focus, zoom) and `geometry` (rects, admission, divider drag, resize, equalize). No UI.
 - `cmux-config` also: `keybindings` (cmux defaults with Super, `[keybindings]` overrides in `~/.config/cmux-linux/config.toml`).
 - `cmux-core` also: `workspaces` (list, selection, rename, reorder); M4 `notifications` (store, read rules).
 - `cmux-meta`: `git`, `path`, `ports`, `pr` (`PrPoller`), `collect`.
+- `cmux-ipc` (M5, no gpui): `wire`, `handles`, `json`, `snapshot` (reads + target resolution), `server`, `paths`, `env`, `keys`, `cli/*`; binary `cmux`. App side: `window_view/control.rs`.
 - `cmux-app`: gpui `TerminalView` + `TerminalElement`, keys, colours, style, mouse, IME; M2 adds `actions`, `chrome`, `workspace`, `workspace/tab_strip`, `assets`; M3 adds `window_view` (root, pollers), `window_view/sidebar`, `window_view/rename`, `blur` (Linux); M4 adds `attention` (ring, flash), `window_view/notify` (rules wiring, jump), `window_view/panel`, `desktop_notify` (zbus, Linux), `activation` + `wayland` (Linux).
 
 ## Open risks
 - gpui is pre-1.0 (pinned). No public FontMetrics → `line_gap` 0.
 - Blur shim never run on a real Wayland session: rg §1.4 risks (borrowed surface proxy, second-queue roundtrip, oversized region) unverified.
-- No M2/M3/M4 UI has been seen on screen yet (all built against CI + reviews).
+- No M2–M5 UI has been seen on screen yet (all built against CI + reviews). gpui 0.2.2 hangs in `Application::new` on the macOS host (ActionRegistry insert loop), so the app only runs on Linux for now.
+- M5 hooks fail silently if a login shell's startup files hide our `cmux` on `PATH`, or if the agent runs outside the app's process tree (tmux) in cmuxOnly mode (README documents both; cmux's shell integration and capability tokens are not ported).
 - Real IME (fcitx/ibus) unverified.
 
 ## Carry to M4+
 - M3 parked (fixed in M4 Task 4): `WindowView::select` sets no inset, so a split right after selecting a workspace hidden through a sidebar/window resize uses a stale width until the next frame (one line: `set_left_inset` in `select`).
 - M3 deferred: keyboard workspace move doesn't scroll into view; drop line 1 px off/unclipped when scrolled; long rename hides caret; `run_with_deadline` drain join unbounded if a grandchild holds the pipe; no git dirty `*`; no persistence (M10); shell-integration kicks (M5).
 M6: macOS ports/cwd (no /proc; sidebar loses start-dir fallback), pidfd replacement, blur on macOS and Plasma ≤6.6.
+- M5 deferred minors: timed-out requests still run later; denial text can become "Socket closed before reply"; CLI panics on `CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=inf` and non-UTF-8 args; inherited `CMUX_SOCKET_PATH` passes through when no server; no flock against simultaneous starts; hidden new workspace splits measured at full width; no CLI tests for denial/timeout texts. M6: `identify`, `rpc`, `list-notifications`, `clear-notifications`, capability tokens, socket settings UI.
 - **M1 exit criteria 2–3:** take the screenshot pair and run `CMUX_TRACE_LATENCY=1` next time the user is at the desktop.
 - Mouse: touchpad may scroll ~3× Ghostty's rate; no drag threshold, shift-click extend, autoscroll, horizontal wheel; mouse glue untested.
 - Render: underline styles simplified; per-cell Font clone in prepaint; blink task always wakes.

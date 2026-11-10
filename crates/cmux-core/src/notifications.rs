@@ -16,17 +16,37 @@ pub struct Notification {
     pub workspace: WorkspaceId,
     pub surface: SurfaceId,
     pub title: String,
+    /// Only `cmux notify --subtitle` sets one; OSC notifications have none.
+    pub subtitle: String,
     pub body: String,
     pub created: SystemTime,
     pub read: bool,
 }
 
 impl Notification {
-    /// The sidebar line (rn §6): the trimmed body, else the trimmed title, None if both empty.
+    /// The sidebar line (rn §6): the trimmed body, else the subtitle, else the title (cmux
+    /// `TabItemView+WorkspaceNotificationsMenu.swift:31`); None if all are empty.
     pub fn summary(&self) -> Option<&str> {
-        [self.body.trim(), self.title.trim()]
+        [self.body.trim(), self.subtitle.trim(), self.title.trim()]
             .into_iter()
             .find(|s| !s.is_empty())
+    }
+
+    /// The panel's body line: the body, else the subtitle (cmux's workspace menu rule).
+    pub fn detail(&self) -> &str {
+        match self.body.trim() {
+            "" => self.subtitle.trim(),
+            body => body,
+        }
+    }
+
+    /// A desktop bubble's body: the subtitle line, then the body, each trimmed (M5 plan D7).
+    pub fn desktop_body(&self) -> String {
+        [self.subtitle.trim(), self.body.trim()]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     fn at(&self, ws: WorkspaceId, s: SurfaceId) -> bool {
@@ -66,11 +86,13 @@ impl Notifications {
 
     /// Stores a new unread notification, replacing any other on the same surface (rn §2).
     /// `focused`: it arrived on the focused surface of the active window.
+    #[allow(clippy::too_many_arguments)]
     pub fn add(
         &mut self,
         ws: WorkspaceId,
         s: SurfaceId,
         title: String,
+        subtitle: String,
         body: String,
         focused: bool,
         now: SystemTime,
@@ -85,6 +107,7 @@ impl Notifications {
                 workspace: ws,
                 surface: s,
                 title,
+                subtitle,
                 body,
                 created: now,
                 read: false,
@@ -165,6 +188,11 @@ impl Notifications {
         self.take(|_| true)
     }
 
+    /// `cmux dismiss-notification --all-read`.
+    pub fn remove_read(&mut self) -> Vec<NotificationId> {
+        self.take(|n| n.read)
+    }
+
     pub fn remove_surface(&mut self, ws: WorkspaceId, s: SurfaceId) -> Vec<NotificationId> {
         self.take(|n| n.at(ws, s))
     }
@@ -219,7 +247,8 @@ mod tests {
     }
 
     fn add(n: &mut Notifications, ws: WorkspaceId, s: SurfaceId, body: &str) -> NotificationId {
-        n.add(ws, s, "T".into(), body.into(), false, at(0)).id
+        n.add(ws, s, "T".into(), String::new(), body.into(), false, at(0))
+            .id
     }
 
     #[test]
@@ -238,7 +267,15 @@ mod tests {
         let mut n = Notifications::new();
         let mut prev = add(&mut n, W1, S1, "0");
         for i in 1..1000 {
-            let added = n.add(W1, S1, String::new(), i.to_string(), false, at(i));
+            let added = n.add(
+                W1,
+                S1,
+                String::new(),
+                String::new(),
+                i.to_string(),
+                false,
+                at(i),
+            );
             assert_eq!(added.replaced, vec![prev]);
             prev = added.id;
         }
@@ -250,7 +287,7 @@ mod tests {
     fn same_surface_id_in_two_workspaces_is_distinct() {
         let mut n = Notifications::new();
         add(&mut n, W1, S1, "a");
-        let added = n.add(W2, S1, "T".into(), "b".into(), false, at(0));
+        let added = n.add(W2, S1, "T".into(), String::new(), "b".into(), false, at(0));
         assert!(added.replaced.is_empty());
         assert_eq!(n.list().len(), 2);
     }
@@ -258,7 +295,9 @@ mod tests {
     #[test]
     fn focused_arrival_is_unread_with_indicator() {
         let mut n = Notifications::new();
-        let id = n.add(W1, S1, "T".into(), "b".into(), true, at(0)).id;
+        let id = n
+            .add(W1, S1, "T".into(), String::new(), "b".into(), true, at(0))
+            .id;
         assert!(!n.get(id).unwrap().read);
         assert!(n.shows_ring(W1, S1));
         assert_eq!(n.mark_surface_read(W1, S1), vec![id]);
@@ -310,10 +349,30 @@ mod tests {
     fn summary_prefers_body_then_title() {
         let mut n = Notifications::new();
         let a = n
-            .add(W1, S1, " Title ".into(), "  body \n".into(), false, at(0))
+            .add(
+                W1,
+                S1,
+                " Title ".into(),
+                String::new(),
+                "  body \n".into(),
+                false,
+                at(0),
+            )
             .id;
-        let b = n.add(W1, S2, " Title ".into(), " ".into(), false, at(0)).id;
-        let c = n.add(W2, S1, "".into(), "".into(), false, at(0)).id;
+        let b = n
+            .add(
+                W1,
+                S2,
+                " Title ".into(),
+                String::new(),
+                " ".into(),
+                false,
+                at(0),
+            )
+            .id;
+        let c = n
+            .add(W2, S1, "".into(), String::new(), "".into(), false, at(0))
+            .id;
         assert_eq!(n.get(a).unwrap().summary(), Some("body"));
         assert_eq!(n.get(b).unwrap().summary(), Some("Title"));
         assert_eq!(n.get(c).unwrap().summary(), None);
@@ -348,7 +407,9 @@ mod tests {
     #[test]
     fn ids_of_closed_surfaces_are_gone() {
         let mut n = Notifications::new();
-        let a = n.add(W1, S1, "T".into(), "a".into(), true, at(0)).id;
+        let a = n
+            .add(W1, S1, "T".into(), String::new(), "a".into(), true, at(0))
+            .id;
         let b = add(&mut n, W2, S1, "b");
         let c = add(&mut n, W2, S2, "c");
         assert_eq!(n.remove_surface(W1, S1), vec![a]);
@@ -381,8 +442,102 @@ mod tests {
     #[test]
     fn remove_drops_one_and_its_indicator() {
         let mut n = Notifications::new();
-        let a = n.add(W1, S1, "T".into(), "a".into(), true, at(0)).id;
+        let a = n
+            .add(W1, S1, "T".into(), String::new(), "a".into(), true, at(0))
+            .id;
         assert_eq!(n.remove(a), vec![a]);
         assert!(!n.shows_ring(W1, S1));
+    }
+
+    #[test]
+    fn summary_prefers_body_then_subtitle_then_title() {
+        let mut n = Notifications::new();
+        let mut summary = |title: &str, subtitle: &str, body: &str| {
+            let id = n
+                .add(
+                    W1,
+                    S1,
+                    title.into(),
+                    subtitle.into(),
+                    body.into(),
+                    false,
+                    at(0),
+                )
+                .id;
+            n.get(id).unwrap().summary().map(str::to_string)
+        };
+        assert_eq!(summary("T", "S", "B").as_deref(), Some("B"));
+        assert_eq!(summary("T", " S ", "  ").as_deref(), Some("S"));
+        assert_eq!(summary("T", "", "").as_deref(), Some("T"));
+        assert_eq!(summary(" ", "", "").as_deref(), None);
+    }
+
+    #[test]
+    fn subtitle_is_stored() {
+        let mut n = Notifications::new();
+        let id = n
+            .add(
+                W1,
+                S1,
+                "T".into(),
+                "Permission".into(),
+                "b".into(),
+                false,
+                at(0),
+            )
+            .id;
+        assert_eq!(n.get(id).unwrap().subtitle, "Permission");
+    }
+
+    #[test]
+    fn remove_read_keeps_unread() {
+        let mut n = Notifications::new();
+        let a = add(&mut n, W1, S1, "a");
+        let b = add(&mut n, W1, S2, "b");
+        let c = add(&mut n, W2, S1, "c");
+        n.mark_read(a);
+        n.mark_read(c);
+        let before = n.generation();
+        let mut gone = n.remove_read();
+        gone.sort();
+        assert_eq!(gone, vec![a, c]);
+        let left: Vec<_> = n.list().iter().map(|x| x.id).collect();
+        assert_eq!(left, vec![b]);
+        assert!(n.generation() > before);
+        let before = n.generation();
+        assert!(n.remove_read().is_empty());
+        assert_eq!(n.generation(), before, "nothing visible changed");
+    }
+
+    #[test]
+    fn desktop_body_joins_subtitle_and_body() {
+        let mut n = Notifications::new();
+        let mut body = |subtitle: &str, b: &str| {
+            let id = n
+                .add(W1, S1, "T".into(), subtitle.into(), b.into(), false, at(0))
+                .id;
+            n.get(id).unwrap().desktop_body()
+        };
+        assert_eq!(
+            body(" Permission ", " Approval needed\n"),
+            "Permission\nApproval needed"
+        );
+        assert_eq!(body("", "b"), "b");
+        assert_eq!(body("s", " "), "s");
+        assert_eq!(body("", ""), "");
+    }
+
+    #[test]
+    fn detail_is_body_else_subtitle() {
+        let mut n = Notifications::new();
+        let mut detail = |subtitle: &str, b: &str| {
+            let id = n
+                .add(W1, S1, "T".into(), subtitle.into(), b.into(), false, at(0))
+                .id;
+            n.get(id).unwrap().detail().to_string()
+        };
+        assert_eq!(detail("s", "b"), "b");
+        assert_eq!(detail("s", "  "), "s");
+        assert_eq!(detail("", ""), "");
     }
 }

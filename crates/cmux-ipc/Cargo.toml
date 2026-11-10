@@ -9,4 +9,12 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[[bin]]
+name = "cmux"
+path = "src/bin/cmux.rs"
+
 [dependencies]
+serde_json.workspace = true
+uuid.workspace = true
+libc.workspace = true
+futures.workspace = true

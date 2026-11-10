@@ -316,23 +316,52 @@ impl Layout {
         height: f32,
         scale: f32,
     ) -> Result<SurfaceId, NoSpace> {
-        let verdict = self.split_verdict(o, width, height, scale);
+        let dir = match o {
+            Orientation::Horizontal => Direction::Right,
+            Orientation::Vertical => Direction::Down,
+        };
+        self.try_split_surface(self.active_surface(), dir, true, width, height, scale)
+    }
+
+    /// `try_split` for the pane holding `surface` (the socket's `surface.split`): the new pane
+    /// goes before it for `Left`/`Up`, after it for `Right`/`Down`, and takes focus only when
+    /// `focus`. An unknown surface is `Err(NoSpace)`; callers resolve it first.
+    pub fn try_split_surface(
+        &mut self,
+        surface: SurfaceId,
+        dir: Direction,
+        focus: bool,
+        width: f32,
+        height: f32,
+        scale: f32,
+    ) -> Result<SurfaceId, NoSpace> {
+        let Some(pane) = self.pane_of(surface) else {
+            return Err(NoSpace);
+        };
+        let o = dir.orientation();
+        let verdict = self.split_verdict(pane, o, width, height, scale);
         if verdict == Verdict::NoSpace {
             return Err(NoSpace);
         }
-        let surface = self.split(o);
+        let new = self.split_pane(pane, o, !dir.forward(), focus);
         if verdict == Verdict::FitsAfterEqualizingRun
-            && let Some(path) = self.root.path_to_pane(self.focused())
+            && let Some(path) = self.root.path_to_pane(pane)
             && let Some((parent, _)) = path.last()
         {
             self.equalize_run(*parent);
         }
-        Ok(surface)
+        Ok(new)
     }
 
-    /// cmux `splitSpaceVerdict` for splitting the focused pane along `o`.
-    fn split_verdict(&self, o: Orientation, width: f32, height: f32, scale: f32) -> Verdict {
-        let pane = self.focused();
+    /// cmux `splitSpaceVerdict` for splitting `pane` along `o`.
+    fn split_verdict(
+        &self,
+        pane: PaneId,
+        o: Orientation,
+        width: f32,
+        height: f32,
+        scale: f32,
+    ) -> Verdict {
         let min = match o {
             Orientation::Horizontal => MIN_SPLIT_WIDTH,
             Orientation::Vertical => MIN_SPLIT_HEIGHT,
@@ -672,6 +701,90 @@ mod tests {
         assert!(l.equalize_run(inner));
         assert!((l.ratio(outer).unwrap() - 1.0 / 3.0).abs() < 1e-6);
         assert_eq!(l.ratio(inner), Some(0.5));
+    }
+
+    fn first_pane_surfaces(l: &Layout) -> Vec<SurfaceId> {
+        let mut out = Vec::new();
+        fn walk(n: &Node, out: &mut Vec<SurfaceId>) {
+            match n {
+                Node::Pane(p) => out.push(p.tabs[0]),
+                Node::Split(s) => {
+                    walk(&s.first, out);
+                    walk(&s.second, out);
+                }
+            }
+        }
+        walk(l.root(), &mut out);
+        out
+    }
+
+    #[test]
+    fn split_left_puts_new_pane_first() {
+        let mut l = Layout::new();
+        let old = l.active_surface();
+        let new = l
+            .try_split_surface(old, Direction::Left, true, 1000.0, 500.0, 1.0)
+            .unwrap();
+        assert_eq!(root_split(&l).orientation, Horizontal);
+        assert_eq!(first_pane_surfaces(&l), vec![new, old]);
+        assert_eq!(l.active_surface(), new);
+    }
+
+    #[test]
+    fn split_up_puts_new_pane_first() {
+        let mut l = Layout::new();
+        let old = l.active_surface();
+        let new = l
+            .try_split_surface(old, Direction::Up, true, 1000.0, 500.0, 1.0)
+            .unwrap();
+        assert_eq!(root_split(&l).orientation, Vertical);
+        assert_eq!(first_pane_surfaces(&l), vec![new, old]);
+        let down = l
+            .try_split_surface(old, Direction::Down, true, 1000.0, 500.0, 1.0)
+            .unwrap();
+        assert_eq!(first_pane_surfaces(&l), vec![new, old, down]);
+    }
+
+    #[test]
+    fn split_without_focus_keeps_focus() {
+        let mut l = Layout::new();
+        let old = l.active_surface();
+        let pane = l.focused();
+        let new = l
+            .try_split_surface(old, Direction::Right, false, 1000.0, 500.0, 1.0)
+            .unwrap();
+        assert_eq!(l.focused(), pane);
+        assert_eq!(l.active_surface(), old);
+        assert_eq!(first_pane_surfaces(&l), vec![old, new]);
+    }
+
+    #[test]
+    fn split_surface_in_unfocused_pane() {
+        let mut l = Layout::new();
+        let a = l.active_surface();
+        let b = l.split(Horizontal);
+        assert_eq!(l.active_surface(), b);
+        let c = l
+            .try_split_surface(a, Direction::Down, false, 1000.0, 500.0, 1.0)
+            .unwrap();
+        assert_eq!(first_pane_surfaces(&l), vec![a, c, b]);
+        assert_eq!(l.active_surface(), b);
+    }
+
+    #[test]
+    fn split_surface_respects_min_size() {
+        let mut l = Layout::new();
+        let a = l.active_surface();
+        assert_eq!(
+            l.try_split_surface(a, Direction::Left, true, 300.0, 500.0, 1.0),
+            Err(NoSpace)
+        );
+        assert_eq!(l.pane_count(), 1);
+        assert_eq!(
+            l.try_split_surface(SurfaceId(999), Direction::Left, true, 1000.0, 500.0, 1.0),
+            Err(NoSpace),
+            "an unknown surface is refused, not a panic"
+        );
     }
 
     #[test]

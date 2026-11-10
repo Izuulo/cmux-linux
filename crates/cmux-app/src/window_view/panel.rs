@@ -85,7 +85,7 @@ impl WindowView {
                         n.id,
                         self.title_of(n.workspace),
                         n.title.clone(),
-                        n.body.clone(),
+                        n.detail().to_string(),
                         clock(n.created),
                         !n.read,
                         p,

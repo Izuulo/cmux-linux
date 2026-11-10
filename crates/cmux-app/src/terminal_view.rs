@@ -119,14 +119,19 @@ pub struct TerminalView {
 }
 
 impl TerminalView {
-    /// Starts the user's shell, in `cwd` when it is an existing directory (else `$HOME`).
+    /// Starts the user's shell, in `cwd` when it is an existing directory (else `$HOME`), with
+    /// `env` added (the `CMUX_*` variables, M5 plan D8).
     /// Fallible so the caller can survive a failed spawn; pass the result to [`Self::new`].
     pub fn start(
         style: &TermStyle,
         cwd: Option<&str>,
+        env: &[(String, String)],
     ) -> std::io::Result<(Session, mpsc::UnboundedReceiver<PtyEvent>)> {
         let (tx, rx) = mpsc::unbounded::<PtyEvent>();
         let mut cmd = Session::shell_command();
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
         if let Some(dir) = cwd.filter(|d| std::path::Path::new(d).is_dir()) {
             cmd.cwd(dir);
         }
@@ -302,6 +307,24 @@ impl TerminalView {
         if self.trace_latency {
             self.key_at = Some(Instant::now());
         }
+    }
+
+    /// Input from the socket (`cmux send`, `send-key`): written like typing, but it isn't the
+    /// user, so it doesn't count as reading the pane's notification (no `Typed`).
+    pub(crate) fn send_scripted(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) {
+        if bytes.is_empty() {
+            return;
+        }
+        self.session.term.lock().unwrap().scroll_to_bottom();
+        self.session.write(bytes);
+        cx.notify();
+    }
+
+    /// `cmux send --paste`: the paste path without the confirmation prompt (the caller has
+    /// already replaced control characters, rc §8).
+    pub(crate) fn paste_scripted(&mut self, text: &str, cx: &mut Context<Self>) {
+        let bracketed = self.session.term.lock().unwrap().vt().mode(2004, false);
+        self.send_scripted(encode_paste(text, bracketed), cx);
     }
 
     fn focus_changed(&mut self, focused: bool, cx: &mut Context<Self>) {

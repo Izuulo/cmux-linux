@@ -51,7 +51,7 @@ One Cargo workspace. Each crate has one job and is testable alone.
 | `cmux-term` | PTY + libghostty-vt wrapper; emits title, cwd (OSC 7), bell, notification (OSC 9/99/777) events. | `ghostty-vt` (vendored) |
 | `cmux-meta` | Sidebar metadata: git branch (`.git/HEAD`), listening ports (`/proc`, by controlling TTY), PR via `gh`. | `serde_json` |
 | `cmux-config` | Ghostty config parser + keybinding config. | `toml` |
-| `cmux-ipc` | Socket server + the `cmux` CLI binary. | `cmux-core` |
+| `cmux-ipc` | Socket server, cmux wire format and handles, model snapshot for socket reads, the `cmux` CLI binary. No gpui. | `serde_json`, `uuid`, `libc`, `futures` |
 | `cmux-app` | gpui app: window, sidebar, split view, terminal element, shortcuts, notification UI; desktop notifications over D-Bus (`zbus`, Linux). | all |
 
 **Data flow:** PTY bytes → `cmux-term` (libghostty-vt state + events) →

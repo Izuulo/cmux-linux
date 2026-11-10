@@ -158,6 +158,39 @@ that pane. Clicking it brings the window forward on that pane. Typing in a pane 
 
 If Plasma binds Meta+I or Meta+Shift+U on your system, remap them as shown above.
 
+## CLI and socket
+
+`cargo build` also builds `cmux`, cmux's command-line client. Keep it next to the
+`cmux-app` binary. Every terminal then finds it first on its `PATH` and gets cmux's
+variables: `CMUX_WORKSPACE_ID`, `CMUX_SURFACE_ID` (with their aliases `CMUX_TAB_ID` and
+`CMUX_PANEL_ID`) and `CMUX_SOCKET_PATH`. Scripts and agent hooks written for cmux work
+unchanged, for example a Claude Code hook in `~/.claude/settings.json`:
+
+```json
+{"hooks": {"Stop": [{"hooks": [{"type": "command",
+  "command": "command -v cmux &>/dev/null && cmux notify --title 'Claude Code' --body 'Done'"}]}]}}
+```
+
+Ported commands: `notify`, `dismiss-notification`, `new-workspace`, `new-split`, `send`,
+`send-key`, `list-workspaces`, `current-workspace`, `list-panes`, `list-pane-surfaces`,
+`select-workspace`, `focus-pane`, `focus-panel`, `ping`, `version`, with `--json` and
+`--id-format refs|uuids|both`. `cmux --help` and `cmux <command> --help` list the flags.
+
+The socket is `~/.local/state/cmux-linux/cmux.sock` (`$XDG_STATE_HOME/cmux-linux/` when
+set). By default only processes started inside cmux-linux may use it. Set
+`CMUX_SOCKET_MODE` before starting the app to change that: `allowAll`, `off`, or `password`
+with the password on the first line of `~/.local/state/cmux-linux/socket-control-password`
+(the CLI reads `--password`, then `CMUX_SOCKET_PASSWORD`, then that file).
+
+Two things can keep a hook from reaching the app:
+- A process that has left the app's process tree is refused in the default mode: a tmux or
+  screen server, anything started with `setsid` or `nohup`. Use `allowAll` or `password` if
+  your agents run there.
+- Shells start as login shells, and a startup file that sets `PATH` outright (or puts
+  another `cmux` first) hides ours. Check with `command -v cmux` in a new pane; if it isn't
+  ours, link it into a directory early on your `PATH`, e.g. `ln -s "$PWD/target/release/cmux"
+  ~/.local/bin/cmux`.
+
 ## Contributing
 
 Issues and ideas are welcome. Before working on code, read [`STATUS.md`](STATUS.md)

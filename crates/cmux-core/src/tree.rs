@@ -361,21 +361,37 @@ impl Layout {
     /// `second` (right or below), gets focus, and the ratio is 0.5. Clears zoom. No size check;
     /// the app uses `Layout::try_split`, which checks the minimum pane size first.
     pub fn split(&mut self, orientation: Orientation) -> SurfaceId {
+        self.split_pane(self.focused, orientation, false, true)
+    }
+
+    /// Splits `target` (which must exist): a new one-tab pane goes `first` when `new_first`
+    /// (left or above), else `second`, and gets focus only when `focus`. Ratio 0.5; clears zoom.
+    pub(crate) fn split_pane(
+        &mut self,
+        target: PaneId,
+        orientation: Orientation,
+        new_first: bool,
+        focus: bool,
+    ) -> SurfaceId {
         self.zoomed = None;
         let pane = self.new_pane();
         let (pane_id, surface) = (pane.id, pane.tabs[0]);
         let split_id = SplitId(self.next());
         let mut pane = Some(pane);
-        self.root.replace_pane(self.focused, &mut |old| {
+        self.root.replace_pane(target, &mut |old| {
+            let new = Node::Pane(pane.take().expect("replaced once"));
+            let (first, second) = if new_first { (new, old) } else { (old, new) };
             Node::Split(Split {
                 id: split_id,
                 orientation,
-                first: Box::new(old),
-                second: Box::new(Node::Pane(pane.take().expect("replaced once"))),
+                first: Box::new(first),
+                second: Box::new(second),
                 ratio: DEFAULT_RATIO,
             })
         });
-        self.focus_pane(pane_id);
+        if focus {
+            self.focus_pane(pane_id);
+        }
         surface
     }
 

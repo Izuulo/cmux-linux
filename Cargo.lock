@@ -871,12 +871,14 @@ version = "0.1.0"
 dependencies = [
  "cmux-config",
  "cmux-core",
+ "cmux-ipc",
  "cmux-meta",
  "cmux-term",
  "futures",
  "gpui",
  "libc",
  "raw-window-handle",
+ "serde_json",
  "wayland-backend",
  "wayland-client",
  "wayland-protocols 0.32.13",
@@ -897,6 +899,12 @@ version = "0.1.0"
 [[package]]
 name = "cmux-ipc"
 version = "0.1.0"
+dependencies = [
+ "futures",
+ "libc",
+ "serde_json",
+ "uuid",
+]
 
 [[package]]
 name = "cmux-meta"
