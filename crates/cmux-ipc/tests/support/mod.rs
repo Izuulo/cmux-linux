@@ -61,3 +61,17 @@ pub fn fixture() -> Snapshot {
         ],
     }
 }
+
+/// A fresh empty directory under the system temp dir (short, so socket paths fit `sun_path`).
+pub fn temp_dir() -> std::path::PathBuf {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static N: AtomicUsize = AtomicUsize::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "cmux-ipc-{}-{}",
+        std::process::id(),
+        N.fetch_add(1, Ordering::SeqCst)
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}

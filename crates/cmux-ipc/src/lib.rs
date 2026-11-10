@@ -2,5 +2,7 @@
 
 pub mod handles;
 pub mod json;
+pub mod paths;
+pub mod server;
 pub mod snapshot;
 pub mod wire;
