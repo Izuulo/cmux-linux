@@ -240,6 +240,15 @@ fn caller_with_gone_ids_is_not_found() {
         .err(),
         Some(RpcError::new("not_found", "Workspace not found"))
     );
+    // The pane closed but its workspace is open: still nothing lands on another pane.
+    let a = s.workspaces[0].handle.id.clone();
+    assert_eq!(
+        s.caller(&p(
+            json!({"preferred_workspace_id": a, "preferred_surface_id": gone})
+        ))
+        .err(),
+        Some(RpcError::new("not_found", "Surface not found"))
+    );
 }
 
 #[test]

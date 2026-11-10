@@ -182,6 +182,15 @@ set). By default only processes started inside cmux-linux may use it. Set
 with the password on the first line of `~/.local/state/cmux-linux/socket-control-password`
 (the CLI reads `--password`, then `CMUX_SOCKET_PASSWORD`, then that file).
 
+Two things can keep a hook from reaching the app:
+- A process that has left the app's process tree is refused in the default mode: a tmux or
+  screen server, anything started with `setsid` or `nohup`. Use `allowAll` or `password` if
+  your agents run there.
+- Shells start as login shells, and a startup file that sets `PATH` outright (or puts
+  another `cmux` first) hides ours. Check with `command -v cmux` in a new pane; if it isn't
+  ours, link it into a directory early on your `PATH`, e.g. `ln -s "$PWD/target/release/cmux"
+  ~/.local/bin/cmux`.
+
 ## Contributing
 
 Issues and ideas are welcome. Before working on code, read [`STATUS.md`](STATUS.md)

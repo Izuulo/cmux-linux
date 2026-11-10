@@ -224,6 +224,13 @@ impl Snapshot {
     ) -> Result<(&WsSnap, Option<Target<'_>>), RpcError> {
         let pw = param(params, "preferred_workspace_id")?;
         let ps = param(params, "preferred_surface_id")?;
+        // A caller whose pane has closed gets nothing rather than a ring on another pane
+        // (plan Review Focus 5); a pane that only moved to another workspace still resolves.
+        if ps.is_some_and(|h| self.find_surface(h).is_none())
+            && pw.is_some_and(|h| self.find_workspace(h).is_some())
+        {
+            return Err(not_found("Surface"));
+        }
         if let Some(ws) = pw.and_then(|h| self.find_workspace(h)) {
             let t = ps.and_then(|h| ws.targets().find(|t| matches(&t.surface.handle, h)));
             return Ok((ws, t));
