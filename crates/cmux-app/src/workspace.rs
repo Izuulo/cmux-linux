@@ -197,6 +197,12 @@ impl WorkspaceView {
         true
     }
 
+    /// The notification ring, flash and tab dot colour: cmux's accent for this background.
+    pub(crate) fn attention_color(&self) -> Rgba {
+        let cfg = &self.style.cfg;
+        chrome::cmux_accent(chrome::wcag_is_light(chrome::rgba(cfg.background, 1.0)))
+    }
+
     /// The surfaces whose pane shows the notification ring.
     pub fn set_attention(&mut self, ring: HashSet<SurfaceId>, cx: &mut Context<Self>) {
         if self.attention != ring {
@@ -433,6 +439,16 @@ impl WorkspaceView {
             .get(&pane.selected_surface())
             .map(|s| s.view.clone());
         let focused = pane.id == self.layout.focused();
+        let shown = pane.selected_surface();
+        let accent = self.attention_color();
+        let ring = self
+            .attention
+            .contains(&shown)
+            .then(|| crate::attention::ring(accent));
+        let flash = self
+            .flashes
+            .get(&shown)
+            .map(|(token, _)| crate::attention::flash(accent, *token));
         div()
             .absolute()
             .left(px(r.x))
@@ -452,7 +468,9 @@ impl WorkspaceView {
                     .min_h(px(0.))
                     .children(terminal)
                     // No mouse handlers, so no hitbox: clicks go through to the terminal.
-                    .children(dim.map(|c| div().absolute().inset_0().bg(c))),
+                    .children(dim.map(|c| div().absolute().inset_0().bg(c)))
+                    .children(ring)
+                    .children(flash),
             )
     }
 

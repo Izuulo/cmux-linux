@@ -24,6 +24,7 @@ const TITLE_PX: f32 = 11.0;
 const CLOSE_SLOT: f32 = 16.0;
 const CLOSE_GLYPH: f32 = 9.0;
 const INDICATOR_H: f32 = 1.5;
+const UNREAD_DOT: f32 = 6.0;
 const LANE_LEAD: f32 = 6.0;
 const LANE_TRAIL: f32 = 8.0;
 const BUTTON_W: f32 = 22.0;
@@ -286,6 +287,7 @@ impl WorkspaceView {
             palette: p,
         };
         let close_group = SharedString::from(format!("tab-close-{}", surface.0));
+        let accent = self.attention_color();
         // gpui's svg paints only its own text colour (it does not inherit), so the button is
         // revealed with opacity (which applies to children) and the glyph brightens through its
         // own group hover.
@@ -321,7 +323,7 @@ impl WorkspaceView {
             }));
         div()
             .id(SharedString::from(format!("tab-{}", surface.0)))
-            .group(group)
+            .group(group.clone())
             .relative()
             .flex()
             .flex_row()
@@ -363,6 +365,23 @@ impl WorkspaceView {
                     .child(self.tab_title(surface, cx)),
             )
             .child(close)
+            // Unread dot in the close slot of a background tab; hover shows the × instead
+            // (Bonsplit TabItemView.swift:1159-1172, plan M4 D5).
+            .when(!selected && self.attention.contains(&surface), |d| {
+                d.child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .bottom_0()
+                        .right(px(TAB_PAD))
+                        .w(px(CLOSE_SLOT))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .group_hover(group.clone(), |s| s.opacity(0.))
+                        .child(div().size(px(UNREAD_DOT)).rounded_full().bg(accent)),
+                )
+            })
             .when(selected, |d| {
                 d.child(
                     div()
