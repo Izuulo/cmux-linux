@@ -11,15 +11,20 @@ use super::WindowView;
 use crate::attention::is_focused_arrival;
 
 impl WindowView {
+    /// A new notification on `surface` (OSC or the socket). `desktop`: post a desktop bubble
+    /// unless it is a focused arrival (`cmux notify --desktop false` passes false, M5 plan D7).
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn on_notify(
         &mut self,
         ws: WorkspaceId,
         surface: SurfaceId,
         title: String,
+        subtitle: String,
         body: String,
+        desktop: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> NotificationId {
         let title = if title.trim().is_empty() {
             self.title_of(ws)
         } else {
@@ -35,13 +40,15 @@ impl WindowView {
             ws,
             surface,
             title,
-            String::new(),
+            subtitle,
             body,
             focused,
             SystemTime::now(),
         );
+        #[cfg(not(target_os = "linux"))]
+        let _ = desktop;
         #[cfg(target_os = "linux")]
-        if !focused && self.desktop.is_some() {
+        if !focused && desktop && self.desktop.is_some() {
             // The new bubble reuses the replaced one's (replaces_id): don't close it.
             for old in &added.replaced {
                 self.desktop_ids.retire(*old);
@@ -58,6 +65,7 @@ impl WindowView {
             }
         }
         self.after_change(added.replaced, cx);
+        added.id
     }
 
     /// Focus reached a terminal: reading counts only in the selected workspace of an active
@@ -266,7 +274,7 @@ impl WindowView {
         let (Some(notifier), Some(n)) = (self.desktop.clone(), self.notifications.get(id)) else {
             return;
         };
-        let (summary, body) = (n.title.clone(), n.body.clone());
+        let (summary, body) = (n.title.clone(), n.desktop_body());
         cx.spawn(async move |this, cx| {
             let server = notifier.post(&summary, &body, replaces).await;
             let _ = this.update(cx, |this, cx| {

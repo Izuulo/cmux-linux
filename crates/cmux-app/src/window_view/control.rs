@@ -4,12 +4,12 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
-use cmux_core::{Direction, PaneId, SurfaceId, WorkspaceId};
+use cmux_core::{Direction, Notification, PaneId, SurfaceId, WorkspaceId};
 use cmux_ipc::handles::{Handles, Kind};
 use cmux_ipc::keys::{KeySpec, parse_key, sanitize_paste, typed_bytes};
 use cmux_ipc::paths;
 use cmux_ipc::server::{Access, DEADLINE, Request, Server};
-use cmux_ipc::snapshot::{PaneSnap, Snapshot, SurfSnap, WsSnap};
+use cmux_ipc::snapshot::{PaneSnap, Snapshot, SurfSnap, Target, WsSnap};
 use cmux_ipc::wire::{Reply, RpcError};
 use cmux_term::ghostty_vt::KeyAction;
 use futures::channel::mpsc::UnboundedReceiver;
@@ -222,6 +222,13 @@ impl WindowView {
             "surface.send_text" | "surface.send_key" | "terminal.paste" => {
                 self.send_from_socket(&snap, method, params, cx)
             }
+            "notification.create"
+            | "notification.create_for_target"
+            | "notification.create_for_caller" => {
+                self.notify_from_socket(&snap, method, params, window, cx)
+            }
+            "notification.clear" => self.clear_from_socket(&snap, params, cx),
+            "notification.dismiss" => self.dismiss_from_socket(params, cx),
             _ => Err(RpcError::new("method_not_found", "Unknown method")),
         }
     }
@@ -394,6 +401,165 @@ impl WindowView {
         let mut reply = snap.target_payload(&t);
         reply["queued"] = json!(false);
         Ok(reply)
+    }
+}
+
+impl WindowView {
+    /// `notification.create`, `create_for_target`, `create_for_caller` (rc §8). A
+    /// workspace-level target lands on that workspace's active surface (plan D7).
+    fn notify_from_socket(
+        &mut self,
+        snap: &Snapshot,
+        method: &str,
+        params: &Map<String, Value>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Reply {
+        let desktop = match params.get("effects") {
+            None | Some(Value::Null) => true,
+            Some(Value::Object(e)) => e.get("desktop").and_then(Value::as_bool).unwrap_or(true),
+            Some(_) => {
+                return Err(RpcError::new(
+                    "invalid_params",
+                    "Missing or invalid effects",
+                ));
+            }
+        };
+        let t: Target = match method {
+            "notification.create_for_target" => {
+                require(params, "workspace_id")?;
+                require(params, "surface_id")?;
+                let ws = snap.workspace(params)?;
+                let t = snap.surface(params)?;
+                if t.ws.key != ws.key {
+                    return Err(RpcError::new("not_found", "Surface not found"));
+                }
+                t
+            }
+            "notification.create_for_caller" => {
+                let (ws, t) = snap.caller(params)?;
+                t.unwrap_or_else(|| ws.focused())
+            }
+            _ => snap.surface(params)?,
+        };
+        let text = |k: &str| {
+            params
+                .get(k)
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string()
+        };
+        let (ws, surface) = (WorkspaceId(t.ws.key), SurfaceId(t.surface.key));
+        let id = self.on_notify(
+            ws,
+            surface,
+            text("title"),
+            text("subtitle"),
+            text("body"),
+            desktop,
+            window,
+            cx,
+        );
+        let mut reply = json!({
+            "workspace_id": t.ws.handle.id,
+            "surface_id": t.surface.handle.id,
+            "id": self.shell.handles.borrow_mut().notification(id.0),
+        });
+        if method == "notification.create_for_target" {
+            reply["workspace_ref"] = json!(t.ws.handle.r#ref);
+            reply["surface_ref"] = json!(t.surface.handle.r#ref);
+            reply = snap.with_window(reply);
+        }
+        Ok(reply)
+    }
+
+    /// `notification.clear`: a surface, a workspace, the caller's surface, or everything.
+    fn clear_from_socket(
+        &mut self,
+        snap: &Snapshot,
+        params: &Map<String, Value>,
+        cx: &mut Context<Self>,
+    ) -> Reply {
+        let (ws, t): (Option<&WsSnap>, Option<Target>) = if flag(params, "caller") {
+            let (ws, t) = snap.caller(params)?;
+            (Some(ws), t)
+        } else if params.get("workspace_id").is_some_and(|v| !v.is_null()) {
+            let ws = snap.workspace(params)?;
+            let t = match params.get("surface_id") {
+                Some(v) if !v.is_null() => {
+                    let t = snap.surface(params)?;
+                    if t.ws.key != ws.key {
+                        return Err(RpcError::new("not_found", "Surface not found"));
+                    }
+                    Some(t)
+                }
+                _ => None,
+            };
+            (Some(ws), t)
+        } else {
+            (None, None)
+        };
+        let gone = match (ws, &t) {
+            (_, Some(t)) => self
+                .notifications
+                .remove_surface(WorkspaceId(t.ws.key), SurfaceId(t.surface.key)),
+            (Some(ws), None) => self.notifications.remove_workspace(WorkspaceId(ws.key)),
+            (None, None) => self.notifications.clear_all(),
+        };
+        self.after_change(gone, cx);
+        Ok(json!({
+            "cleared": true,
+            "workspace_id": ws.map(|w| w.handle.id.clone()),
+            "workspace_ref": ws.map(|w| w.handle.r#ref.clone()),
+            "surface_id": t.map(|t| t.surface.handle.id.clone()),
+            "surface_ref": t.map(|t| t.surface.handle.r#ref.clone()),
+        }))
+    }
+
+    /// `notification.dismiss`: one notification by id, or every read one.
+    fn dismiss_from_socket(
+        &mut self,
+        params: &Map<String, Value>,
+        cx: &mut Context<Self>,
+    ) -> Reply {
+        if flag(params, "all_read") {
+            let gone = self.notifications.remove_read();
+            let n = gone.len();
+            self.after_change(gone, cx);
+            return Ok(json!({ "dismissed": n, "all_read": true }));
+        }
+        let Some(wanted) = params.get("id").and_then(Value::as_str) else {
+            return Err(RpcError::new("invalid_params", "Missing or invalid id"));
+        };
+        let found = {
+            let mut h = self.shell.handles.borrow_mut();
+            self.notifications
+                .list()
+                .iter()
+                .find(|n| h.notification(n.id.0).eq_ignore_ascii_case(wanted))
+                .cloned()
+        };
+        let Some(n) = found else {
+            return Err(RpcError::new("not_found", "Notification not found"));
+        };
+        let mut reply = self.notification_payload(&n);
+        reply["dismissed"] = json!(1);
+        let gone = self.notifications.remove(n.id);
+        self.after_change(gone, cx);
+        Ok(reply)
+    }
+
+    fn notification_payload(&self, n: &Notification) -> Value {
+        let mut h = self.shell.handles.borrow_mut();
+        let ws = h.handle(Kind::Workspace, (n.workspace.0, 0));
+        let s = h.handle(Kind::Surface, (n.workspace.0, n.surface.0));
+        json!({
+            "id": h.notification(n.id.0),
+            "workspace_id": ws.id, "workspace_ref": ws.r#ref,
+            "surface_id": s.id, "surface_ref": s.r#ref,
+            "title": n.title, "subtitle": n.subtitle, "body": n.body,
+            "is_read": n.read,
+        })
     }
 }
 

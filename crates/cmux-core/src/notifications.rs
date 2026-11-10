@@ -32,6 +32,23 @@ impl Notification {
             .find(|s| !s.is_empty())
     }
 
+    /// The panel's body line: the body, else the subtitle (cmux's workspace menu rule).
+    pub fn detail(&self) -> &str {
+        match self.body.trim() {
+            "" => self.subtitle.trim(),
+            body => body,
+        }
+    }
+
+    /// A desktop bubble's body: the subtitle line, then the body, each trimmed (M5 plan D7).
+    pub fn desktop_body(&self) -> String {
+        [self.subtitle.trim(), self.body.trim()]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     fn at(&self, ws: WorkspaceId, s: SurfaceId) -> bool {
         self.workspace == ws && self.surface == s
     }
@@ -490,5 +507,37 @@ mod tests {
         let before = n.generation();
         assert!(n.remove_read().is_empty());
         assert_eq!(n.generation(), before, "nothing visible changed");
+    }
+
+    #[test]
+    fn desktop_body_joins_subtitle_and_body() {
+        let mut n = Notifications::new();
+        let mut body = |subtitle: &str, b: &str| {
+            let id = n
+                .add(W1, S1, "T".into(), subtitle.into(), b.into(), false, at(0))
+                .id;
+            n.get(id).unwrap().desktop_body()
+        };
+        assert_eq!(
+            body(" Permission ", " Approval needed\n"),
+            "Permission\nApproval needed"
+        );
+        assert_eq!(body("", "b"), "b");
+        assert_eq!(body("s", " "), "s");
+        assert_eq!(body("", ""), "");
+    }
+
+    #[test]
+    fn detail_is_body_else_subtitle() {
+        let mut n = Notifications::new();
+        let mut detail = |subtitle: &str, b: &str| {
+            let id = n
+                .add(W1, S1, "T".into(), subtitle.into(), b.into(), false, at(0))
+                .id;
+            n.get(id).unwrap().detail().to_string()
+        };
+        assert_eq!(detail("s", "b"), "b");
+        assert_eq!(detail("s", "  "), "s");
+        assert_eq!(detail("", ""), "");
     }
 }

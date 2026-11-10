@@ -183,7 +183,10 @@ impl WindowView {
                 surface,
                 title,
                 body,
-            } => this.on_notify(id, *surface, title.clone(), body.clone(), window, cx),
+            } => {
+                let (title, body) = (title.clone(), body.clone());
+                this.on_notify(id, *surface, title, String::new(), body, true, window, cx);
+            }
             WorkspaceEvent::Focused(s) => this.on_focused(id, *s, window, cx),
             WorkspaceEvent::Typed(s) => this.on_typed(id, *s, cx),
             WorkspaceEvent::Closed(s) => this.on_closed(id, *s, cx),
