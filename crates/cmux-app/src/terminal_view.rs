@@ -72,12 +72,16 @@ impl Geometry {
 }
 
 /// What the workspace hears from a terminal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TerminalEvent {
     /// The shell exited; the workspace closes this tab.
     Exited,
     /// The OSC 0/2 title changed.
     TitleChanged,
+    /// OSC 9/99/777; `title` may be empty.
+    Notify { title: String, body: String },
+    /// The user typed or pasted into the terminal (anything sent by `send_input`).
+    Typed,
 }
 
 pub struct TerminalView {
@@ -232,8 +236,11 @@ impl TerminalView {
                                 cx.emit(TerminalEvent::TitleChanged);
                             }
                             TermEvent::Cwd(dir) => self.cwd = Some(dir),
-                            // Bell and notifications feed the sidebar and attention UI (M3/M4).
-                            TermEvent::Bell | TermEvent::Notify { .. } => {}
+                            TermEvent::Notify { title, body } => {
+                                cx.emit(TerminalEvent::Notify { title, body })
+                            }
+                            // shortcut: BEL does nothing yet (no beep API, no visual bell); M6.
+                            TermEvent::Bell => {}
                         }
                     }
                 }
@@ -284,10 +291,11 @@ impl TerminalView {
     }
 
     /// Writes user input and snaps the viewport back to the live screen, like Ghostty.
-    pub(crate) fn send_input(&mut self, bytes: Vec<u8>) {
+    pub(crate) fn send_input(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) {
         if bytes.is_empty() {
             return;
         }
+        cx.emit(TerminalEvent::Typed);
         self.session.term.lock().unwrap().scroll_to_bottom();
         self.session.write(bytes);
         self.blink_on = true;
@@ -353,7 +361,7 @@ impl TerminalView {
             self.selection = None;
             self.marked_text.clear();
             self.forwarded_keys.insert(ev.keystroke.key.clone());
-            self.send_input(bytes);
+            self.send_input(bytes, cx);
             cx.stop_propagation();
             cx.notify();
         }
@@ -413,7 +421,7 @@ impl TerminalView {
         let bracketed = self.session.term.lock().unwrap().vt().mode(2004, false);
         if !self.style.cfg.clipboard_paste_protection || !paste_needs_confirmation(&text, bracketed)
         {
-            return self.send_input(encode_paste(&text, bracketed));
+            return self.send_input(encode_paste(&text, bracketed), cx);
         }
         // gpui draws its own prompt on Linux (platform prompt is None, window/prompts.rs).
         let answer = window.prompt(
@@ -425,10 +433,10 @@ impl TerminalView {
         );
         cx.spawn_in(window, async move |this, cx| {
             if answer.await == Ok(0) {
-                let _ = this.update(cx, |view, _| {
+                let _ = this.update(cx, |view, cx| {
                     // Bracketed paste may have changed while the prompt was up.
                     let bracketed = view.session.term.lock().unwrap().vt().mode(2004, false);
-                    view.send_input(encode_paste(&text, bracketed));
+                    view.send_input(encode_paste(&text, bracketed), cx);
                 });
             }
         })

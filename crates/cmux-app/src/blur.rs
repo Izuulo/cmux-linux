@@ -3,14 +3,11 @@
 //! `wl_display`, with our own event queue, and blur the whole surface.
 // shortcut: Plasma <= 6.6 offers only org_kde_kwin_blur and gets no blur; add a kde-blur path if needed.
 
-use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle};
-use wayland_backend::client::{Backend, ObjectId};
 use wayland_client::globals::{GlobalListContents, registry_queue_init};
 use wayland_client::protocol::wl_compositor::WlCompositor;
 use wayland_client::protocol::wl_region::WlRegion;
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
-use wayland_client::protocol::wl_surface::WlSurface;
-use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle, delegate_noop};
+use wayland_client::{Connection, Dispatch, EventQueue, QueueHandle, delegate_noop};
 use wayland_protocols::ext::background_effect::v1::client::ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1;
 use wayland_protocols::ext::background_effect::v1::client::ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1;
 
@@ -42,35 +39,14 @@ delegate_noop!(State: ExtBackgroundEffectSurfaceV1);
 delegate_noop!(State: ignore ExtBackgroundEffectManagerV1);
 
 fn log<E: std::fmt::Display>(what: &'static str) -> impl FnOnce(&E) {
-    move |e| eprintln!("cmux-linux: blur: {what}: {e}")
+    crate::wayland::log("blur", what)
 }
 
 impl WindowBlur {
     /// Binds ext_background_effect_manager_v1 on gpui's own display and blurs the whole surface.
     /// None on X11, without the protocol, or if any step fails (logged once to stderr).
     pub fn enable(window: &gpui::Window, cx: &gpui::App) -> Option<Self> {
-        // gpui 0.2.2's X11 window panics (`unimplemented!`) on raw handles, so ask first.
-        if cx.compositor_name() != "Wayland" {
-            return None;
-        }
-        let display = window
-            .display_handle()
-            .inspect_err(log("display handle"))
-            .ok()?;
-        // Trait call: gpui's inherent `Window::window_handle` returns its own handle type.
-        let handle = HasWindowHandle::window_handle(window)
-            .inspect_err(log("window handle"))
-            .ok()?;
-        let (RawDisplayHandle::Wayland(display), RawWindowHandle::Wayland(handle)) =
-            (display.as_raw(), handle.as_raw())
-        else {
-            return None;
-        };
-        // SAFETY: the pointer is gpui's live wl_display. Our guest Backend never disconnects it,
-        // and it outlives every entity (WindowView is released during App::shutdown while the
-        // platform is alive); a surface gone first just leaves the effect inert (see Drop).
-        let backend = unsafe { Backend::from_foreign_display(display.display.as_ptr().cast()) };
-        let conn = Connection::from_backend(backend);
+        let (conn, surface) = crate::wayland::guest_surface(window, cx, "blur")?;
         let (globals, queue) = registry_queue_init::<State>(&conn)
             .inspect_err(log("registry"))
             .ok()?;
@@ -82,16 +58,6 @@ impl WindowBlur {
         let compositor: WlCompositor = globals
             .bind(&qh, 1..=1, ())
             .inspect_err(log("wl_compositor"))
-            .ok()?;
-        // SAFETY: the pointer is the wl_surface proxy of gpui's live window (borrowed from
-        // `window` for this call), and from_ptr checks its interface; the id is only used
-        // inside this function.
-        let id =
-            unsafe { ObjectId::from_ptr(WlSurface::interface(), handle.surface.as_ptr().cast()) }
-                .inspect_err(log("surface id"))
-                .ok()?;
-        let surface = WlSurface::from_id(&conn, id)
-            .inspect_err(log("surface"))
             .ok()?;
         let effect = manager.get_background_effect(&surface, &qh, ());
         manager.destroy(); // The effect outlives its manager (protocol).

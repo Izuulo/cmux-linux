@@ -70,7 +70,7 @@ impl EntityInputHandler for TerminalView {
         if !bytes.is_empty() {
             self.selection = None;
         }
-        self.send_input(bytes);
+        self.send_input(bytes, cx);
         cx.notify();
     }
 

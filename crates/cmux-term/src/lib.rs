@@ -28,7 +28,11 @@ pub enum TermEvent {
     Title(String),
     Bell,
     Cwd(String),
-    Notify { title: Option<String>, body: String },
+    /// `title` is empty for OSC 9.
+    Notify {
+        title: String,
+        body: String,
+    },
 }
 
 impl From<OscEvent> for TermEvent {
