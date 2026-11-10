@@ -4,8 +4,8 @@
      current version to docs/status-archive.md. -->
 
 **Updated:** 2026-11-10
-**Current milestone:** M5 cli-socket built on branch `m5-cli-socket` (Tasks 1–11, final review fixed, Linux CI green); not merged. M2, M3, M4 and now M5 desktop checks pending
-**Next action:** owner OK to merge `m5-cli-socket` (PR). At the KDE desktop: M5 plan Task 12 Step 1 (Claude Code hook, `command -v cmux`, tmux denial, second instance, Run-it of Tasks 9–11), M4 plan Task 9 Step 1, M2 plan Task 11, M3 plan Task 12 Steps 1–3; record in each journal.
+**Current milestone:** M5 cli-socket merged to `master` (PR #6). Its Run-it steps (Tasks 9–11) passed on the macOS host with a release build; KDE desktop checks for M2–M5 pending
+**Next action:** at the KDE desktop: M5 plan Task 12 Step 1 (real Claude Code hook, `command -v cmux`, tmux denial, second instance), M4 plan Task 9 Step 1, M2 plan Task 11, M3 plan Task 12 Steps 1–3; record in each journal. Then write `docs/milestones/m6-parity-release/plan.md`.
 
 ## Where things are
 - Project design and milestone table: `docs/design.md`
@@ -21,7 +21,7 @@
 | M2 splits-tabs | merged (PR #3); exit checks (plan Task 11) pending at the desktop |
 | M3 workspaces-sidebar | merged (PR #4); exit checks (plan Task 12 Steps 1–3) pending at the desktop |
 | M4 notifications | merged (PR #5); desktop checks (plan Task 9 Step 1) pending |
-| M5 cli-socket | built on branch (not merged); criterion 1 = `cmux notify` hooks (owner's ruling), automated by `hook_commands_work_unchanged`; desktop check pending |
+| M5 cli-socket | merged (PR #6); criterion 1 = `cmux notify` hooks (owner's ruling), automated by `hook_commands_work_unchanged`; KDE desktop check pending |
 | M6 parity-release | not started |
 | M7 feed | not started (post-v1) |
 | M8 groups-dock | not started (post-v1) |
@@ -58,7 +58,7 @@
 ## Open risks
 - gpui is pre-1.0 (pinned). No public FontMetrics → `line_gap` 0.
 - Blur shim never run on a real Wayland session: rg §1.4 risks (borrowed surface proxy, second-queue roundtrip, oversized region) unverified.
-- No M2–M5 UI has been seen on screen yet (all built against CI + reviews). gpui 0.2.2 hangs in `Application::new` on the macOS host (ActionRegistry insert loop), so the app only runs on Linux for now.
+- No M2–M5 UI has been seen on screen yet (all built against CI + reviews). On macOS a **debug** build hangs in gpui's `Application::new` (ActionRegistry insert loop); a **release** build (`cargo build --release --features gpui/runtime_shaders`) runs.
 - M5 hooks fail silently if a login shell's startup files hide our `cmux` on `PATH`, or if the agent runs outside the app's process tree (tmux) in cmuxOnly mode (README documents both; cmux's shell integration and capability tokens are not ported).
 - Real IME (fcitx/ibus) unverified.
 

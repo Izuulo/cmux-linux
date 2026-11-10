@@ -24,3 +24,15 @@ Append-only, newest last. One entry per session: date, what was tried, what was 
   - Texts chosen where cmux's are UNVERIFIED: `timeout`/`Timed out waiting for the app`, `invalid_params`/`params must be an object`, `invalid_state`/`Not enough space to split`.
   - `cmux-app` gained `serde_json` (already locked; only its dependency list in `Cargo.lock` changed).
 - Final review (one fresh reviewer): no Critical. Fixed the closed-pane case above; documented two silent hook failures in the README (processes outside the app's tree, such as tmux, are refused in cmuxOnly; login shells can reorder `PATH` and hide our `cmux`). Deferred minors are in STATUS.
+
+## 2026-11-10 — Merged (PR #6); release build run on the macOS host
+
+- Merged after Linux CI went green on `bdd7ebb`.
+- The gpui hang on macOS is debug-only: a release build (`--features gpui/runtime_shaders`) starts. With it, the deferred Run-it steps of Tasks 9–11 passed against the real app over the socket (allowAll for the test):
+  - The shell's env carries our `CMUX_*` ids, socket and blanked `CMUX_SOCKET`, and `command -v cmux` is ours. The login shell moved our dir far down `PATH`, but nothing earlier was named `cmux`.
+  - `new-workspace` stays unselected and runs `--command`; `new-split left` puts the new pane first and keeps focus.
+  - `send` and `send-key` work. `notify` (subtitle, `--desktop false`), the docs' `awk` + `dismiss-notification` line and `notify --clear` work.
+  - Default mode refuses a process outside the app's tree.
+  - Not seen: the visual ring, badge and panel (no screenshot taken), and KDE bubbles.
+- Our CLI also works against real cmux's socket (`ping`, `current-workspace`, `list-panes`; its refs start near 10⁹), a cross-check of the wire format.
+- Launched from inside a cmux terminal, the app passes that terminal's other `CMUX_*` variables (Claude hook shims, capability token) to its own shells. A local launcher script clears them; the app itself doesn't yet (M6).
