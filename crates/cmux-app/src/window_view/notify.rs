@@ -130,10 +130,12 @@ impl WindowView {
         if view.read(cx).terminal(surface).is_none() {
             return false;
         }
+        // Target tab first: selecting the workspace reads its active surface, which must be
+        // this one, not whichever pane was active there before.
+        view.update(cx, |v, cx| v.focus_surface(surface, window, cx));
         if ws != self.workspaces.selected() {
             self.select(ws, window, cx);
         }
-        view.update(cx, |v, cx| v.focus_surface(surface, window, cx));
         let read = self.notifications.mark_read(id);
         self.flash(ws, surface, cx);
         self.after_change(read, cx);
