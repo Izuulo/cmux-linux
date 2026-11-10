@@ -4,6 +4,7 @@ pub mod cli;
 pub mod env;
 pub mod handles;
 pub mod json;
+pub mod keys;
 pub mod paths;
 pub mod server;
 pub mod snapshot;
