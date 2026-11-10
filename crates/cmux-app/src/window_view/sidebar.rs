@@ -5,7 +5,7 @@ use cmux_meta::WorkspaceMeta;
 use cmux_meta::pr::{Pr, PrState};
 use gpui::{
     AppContext, ClickEvent, Context, CursorStyle, DragMoveEvent, EmptyView, FontWeight,
-    InteractiveElement, IntoElement, ParentElement, Render, SharedString,
+    InteractiveElement, IntoElement, ParentElement, Pixels, Render, Rgba, SharedString,
     StatefulInteractiveElement, Styled, Window, div, prelude::*, px, svg,
 };
 
@@ -30,6 +30,14 @@ const TITLE_PX: f32 = 12.5;
 const DETAIL_PX: f32 = 10.0;
 const CLOSE_GLYPH: f32 = 9.0;
 const ITEM_GAP: f32 = 4.0;
+/// Unread badge on a row (rn §6) and on the bell (rn §9).
+const BADGE: f32 = 16.0;
+const BADGE_PX: f32 = 9.0;
+const BELL_BADGE: f32 = 13.0;
+const BELL_BADGE_OFFSET: f32 = 3.0;
+/// Notification message under the title (rn §6).
+const MESSAGE_LINES: usize = 12;
+const MESSAGE_ALPHA: f32 = 0.8;
 /// The resize band reaches this far into the sidebar and into the content.
 const RESIZE_IN: f32 = 6.0;
 const RESIZE_OUT: f32 = 4.0;
@@ -99,6 +107,21 @@ pub(crate) fn row_model(title: &str, meta: &WorkspaceMeta, prs: &[(Pr, bool)]) -
 }
 
 /// [MIN, MAX], leaving the terminal area at least CONTENT_MIN, but never below MIN.
+/// The sidebar row's unread badge shows the full count (rn §6).
+pub(crate) fn badge_label(count: usize) -> String {
+    count.to_string()
+}
+
+/// The bell's badge: nothing at 0, else the count capped at 99 without a "+" (rn §9).
+pub(crate) fn bell_label(count: usize) -> Option<String> {
+    (count > 0).then(|| count.min(99).to_string())
+}
+
+/// cmux bounds the sidebar message to 4096 characters before layout (rn §6).
+pub(crate) fn clip_message(s: &str) -> &str {
+    s.char_indices().nth(4096).map_or(s, |(i, _)| &s[..i])
+}
+
 pub(crate) fn clamp_width(w: f32, window_w: f32) -> f32 {
     w.clamp(SIDEBAR_MIN, SIDEBAR_MAX)
         .min(window_w - CONTENT_MIN)
@@ -269,6 +292,7 @@ impl WindowView {
                 button("sidebar-toggle", "icons/panel-left.svg")
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_sidebar(cx))),
             )
+            .child(self.render_bell(p, cx))
             .child(
                 button("sidebar-new", "icons/plus.svg").on_click(cx.listener(
                     |this, _: &ClickEvent, window, cx| this.new_workspace(false, window, cx),
@@ -352,6 +376,56 @@ impl WindowView {
             })
     }
 
+    /// The bell (cmux's titlebar bell, here in the band): toggles the notification panel; its
+    /// badge counts unread notifications.
+    fn render_bell(&self, p: SidebarPalette, cx: &Context<Self>) -> impl IntoElement + use<> {
+        let badge = bell_label(self.notifications.total_unread()).map(|label| {
+            div()
+                .absolute()
+                .top(px(-BELL_BADGE_OFFSET))
+                .right(px(-BELL_BADGE_OFFSET))
+                .flex()
+                .items_center()
+                .justify_center()
+                .min_w(px(BELL_BADGE))
+                .h(px(BELL_BADGE))
+                .px(px(2.))
+                .rounded_full()
+                .bg(p.accent)
+                .text_size(px(BADGE_PX))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(gpui::white())
+                .child(label)
+        });
+        div()
+            .id("sidebar-bell")
+            .relative()
+            .flex()
+            .items_center()
+            .justify_center()
+            .size(px(BUTTON))
+            .rounded(px(RADIUS))
+            .child(
+                svg()
+                    .path("icons/bell.svg")
+                    .size(px(BUTTON_ICON))
+                    .text_color(p.detail),
+            )
+            .children(badge)
+            .active(|s| s.opacity(0.72))
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_panel(cx)))
+    }
+
+    /// Where the notification panel hangs: under the bell, or the top-left corner when the
+    /// sidebar is hidden.
+    pub(super) fn bell_anchor(&self, window: &Window) -> gpui::Point<Pixels> {
+        let x = self.sidebar_px(window).map_or(BAND_INSET, |w| {
+            // Band buttons from the right: new, then the bell.
+            w - BAND_INSET - 2. * BUTTON - BUTTON_GAP
+        });
+        gpui::point(px(x), px(BAND_H))
+    }
+
     fn render_row(
         &self,
         id: WorkspaceId,
@@ -415,10 +489,49 @@ impl WindowView {
             title: m.title.clone().into(),
             accent: p.accent,
         };
+        let unread = self.notifications.unread_count(id);
+        let badge = (unread > 0).then(|| {
+            let (fill, text) = if selected {
+                (Rgba { a: 0.25, ..title_c }, title_c)
+            } else {
+                (p.accent, gpui::white().into())
+            };
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .justify_center()
+                .mr(px(ITEM_GAP + 2.))
+                .min_w(px(BADGE))
+                .h(px(BADGE))
+                .px(px(3.))
+                .rounded_full()
+                .bg(fill)
+                .text_size(px(BADGE_PX))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(text)
+                .child(badge_label(unread))
+        });
+        let message = self
+            .notifications
+            .latest(id)
+            .and_then(|n| n.summary())
+            .map(|text| {
+                div()
+                    .text_size(px(DETAIL_PX))
+                    .text_color(Rgba {
+                        a: detail_c.a * MESSAGE_ALPHA,
+                        ..detail_c
+                    })
+                    .line_clamp(MESSAGE_LINES)
+                    .text_ellipsis()
+                    .child(clip_message(text).to_string())
+            });
         let title = div()
             .flex()
             .flex_row()
             .items_center()
+            .children(badge)
             .child(match renaming {
                 Some(r) => r.clone().into_any_element(),
                 None => div()
@@ -516,6 +629,7 @@ impl WindowView {
                 }
             }))
             .child(title)
+            .children(message)
             .children(dirs)
             .children(prs)
             .children(ports)
@@ -524,6 +638,25 @@ impl WindowView {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn bell_label_caps_at_99() {
+        assert_eq!(bell_label(0), None);
+        assert_eq!(bell_label(7).as_deref(), Some("7"));
+        assert_eq!(bell_label(150).as_deref(), Some("99"));
+    }
+
+    #[test]
+    fn badge_label_has_no_cap() {
+        assert_eq!(badge_label(150), "150");
+    }
+
+    #[test]
+    fn clip_message_respects_char_boundaries() {
+        let s = "é".repeat(5000);
+        assert_eq!(clip_message(&s).chars().count(), 4096);
+        assert_eq!(clip_message("short"), "short");
+    }
+
     use super::*;
     use cmux_meta::{DirLine, WorkspaceMeta};
 

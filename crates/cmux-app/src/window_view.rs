@@ -21,6 +21,7 @@ use crate::style::TermStyle;
 use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
 mod notify;
+mod panel;
 mod rename;
 mod sidebar;
 
@@ -54,6 +55,8 @@ pub struct WindowView {
     notifications: Notifications,
     /// The notification panel is showing (Super+I, the bell).
     panel_open: bool,
+    /// When a click outside last closed the panel (panel.rs REOPEN_GUARD).
+    panel_dismissed: Option<Instant>,
     _tasks: Vec<Task<()>>,
     _activation: Option<Subscription>,
     /// Whole-window KWin blur, dropped with the view. gpui may destroy the surface first; the
@@ -97,6 +100,7 @@ impl WindowView {
             pr_in_flight: false,
             notifications: Notifications::new(),
             panel_open: false,
+            panel_dismissed: None,
             _tasks: Vec::new(),
             _activation: None,
             #[cfg(target_os = "linux")]
@@ -436,6 +440,13 @@ impl Render for WindowView {
                 this.panel_open = !this.panel_open;
                 cx.notify();
             }))
+            // The terminal keeps focus while the panel is up, so Escape is caught here first.
+            .capture_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, _, cx| {
+                if this.panel_open && ev.keystroke.key == "escape" {
+                    this.close_panel(cx);
+                    cx.stop_propagation();
+                }
+            }))
             .on_action(
                 cx.listener(|this, _: &JumpToUnread, w, cx| this.jump_to_latest_unread(w, cx)),
             )
@@ -450,6 +461,7 @@ impl Render for WindowView {
             .when_some(width, |d, w| d.child(self.render_sidebar(w, cx)))
             .child(div().flex_1().min_w(px(0.)).h_full().children(selected))
             .when_some(width, |d, w| d.child(self.render_resize_band(w)))
+            .children(self.render_panel(window, cx))
     }
 }
 

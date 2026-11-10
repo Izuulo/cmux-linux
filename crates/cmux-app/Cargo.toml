@@ -16,6 +16,7 @@ cmux-core.workspace = true
 cmux-meta.workspace = true
 gpui.workspace = true
 futures.workspace = true
+libc.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 wayland-client.workspace = true

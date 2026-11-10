@@ -32,7 +32,7 @@ pub fn flash_opacity(t: f32) -> f32 {
     }
     let seg = (t * 4.0).floor();
     let u = t * 4.0 - seg;
-    if seg as u32 % 2 == 0 {
+    if (seg as u32).is_multiple_of(2) {
         1.0 - (1.0 - u) * (1.0 - u)
     } else {
         1.0 - u * u
