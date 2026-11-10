@@ -18,7 +18,7 @@ fn bytes_to_cells_styles_cursor_and_events() {
         vec![
             TermEvent::Cwd("/tmp/my dir".into()),
             TermEvent::Notify {
-                title: Some("Claude".into()),
+                title: "Claude".into(),
                 body: "Waiting".into()
             },
             TermEvent::Title("spike".into()),
