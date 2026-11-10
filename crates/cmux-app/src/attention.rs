@@ -1,6 +1,11 @@
 //! What a notification does to the panes: the focused-arrival rule (rn §3) and, from Task 5,
 //! the pane ring and flash.
 
+use std::time::Duration;
+
+/// How long one flash runs (rn §4 double blink).
+pub const FLASH: Duration = Duration::from_millis(900);
+
 /// A notification "arrives focused" only on the focused surface of the selected workspace of
 /// the active window. Such an arrival posts no desktop notification, doesn't flash and doesn't
 /// reorder the sidebar (rn §3, §9).

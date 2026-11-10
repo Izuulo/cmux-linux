@@ -3,8 +3,9 @@
 //! layout, focus and divider drag share one maths source (plan D2).
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
+use std::time::Instant;
 
 use cmux_core::{
     Closed, Direction, DividerRect, Layout, Orientation, PaneId, RESIZE_STEP, Rect, SurfaceId,
@@ -53,6 +54,11 @@ pub struct WorkspaceView {
     /// Only the active workspace pulls focus back after a focus loss.
     active: bool,
     has_terminals: bool,
+    /// Surfaces whose pane shows the notification ring (pushed by the window).
+    attention: HashSet<SurfaceId>,
+    /// Running flashes: token (animation id) and start.
+    flashes: HashMap<SurfaceId, (u64, Instant)>,
+    flash_seq: u64,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -62,6 +68,18 @@ pub enum WorkspaceEvent {
     Empty,
     /// Something shown in the sidebar (a title) changed.
     Changed,
+    /// A terminal posted a notification (OSC 9/99/777).
+    Notify {
+        surface: SurfaceId,
+        title: String,
+        body: String,
+    },
+    /// A terminal gained keyboard focus.
+    Focused(SurfaceId),
+    /// The user typed or pasted into a terminal.
+    Typed(SurfaceId),
+    /// A surface closed (sent before `Empty` for the last one).
+    Closed(SurfaceId),
 }
 
 impl EventEmitter<WorkspaceEvent> for WorkspaceView {}
@@ -91,6 +109,9 @@ impl WorkspaceView {
             left_inset: 0.0,
             active: true,
             has_terminals: true,
+            attention: HashSet::new(),
+            flashes: HashMap::new(),
+            flash_seq: 0,
             _subscriptions: vec![lost],
         };
         let first = this.layout.active_surface();
@@ -162,6 +183,57 @@ impl WorkspaceView {
         self.surfaces.get(&surface).map(|s| &s.view)
     }
 
+    /// Selects `surface`'s tab and focuses it (a jump). False if it is gone.
+    pub fn focus_surface(
+        &mut self,
+        surface: SurfaceId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.surfaces.contains_key(&surface) || !self.layout.select_surface(surface) {
+            return false;
+        }
+        self.focus_active(window, cx);
+        true
+    }
+
+    /// The surfaces whose pane shows the notification ring.
+    pub fn set_attention(&mut self, ring: HashSet<SurfaceId>, cx: &mut Context<Self>) {
+        if self.attention != ring {
+            self.attention = ring;
+            cx.notify();
+        }
+    }
+
+    /// Starts the arrival/dismissal flash on `surface` (rn §4). A flash already running there
+    /// keeps going; a new one is not stacked on it.
+    pub fn flash(&mut self, surface: SurfaceId, cx: &mut Context<Self>) {
+        let now = Instant::now();
+        if self
+            .flashes
+            .get(&surface)
+            .is_some_and(|(_, at)| now.duration_since(*at) < crate::attention::FLASH)
+        {
+            return;
+        }
+        self.flash_seq += 1;
+        self.flashes.insert(surface, (self.flash_seq, now));
+        // Redraw once it has run so the finished overlay goes.
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(crate::attention::FLASH)
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                let now = Instant::now();
+                this.flashes
+                    .retain(|_, (_, at)| now.duration_since(*at) < crate::attention::FLASH);
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
     fn add_terminal(
         &mut self,
         surface: SurfaceId,
@@ -184,6 +256,12 @@ impl WorkspaceView {
                 cx.notify();
                 cx.emit(WorkspaceEvent::Changed);
             }
+            TerminalEvent::Notify { title, body } => cx.emit(WorkspaceEvent::Notify {
+                surface,
+                title: title.clone(),
+                body: body.clone(),
+            }),
+            TerminalEvent::Typed => cx.emit(WorkspaceEvent::Typed(surface)),
         });
         let handle = view.read(cx).focus_handle(cx);
         // A click focuses the terminal itself; follow it in the model.
@@ -191,6 +269,7 @@ impl WorkspaceView {
             if this.layout.active_surface() != surface && this.layout.select_surface(surface) {
                 cx.notify();
             }
+            cx.emit(WorkspaceEvent::Focused(surface));
         });
         self.surfaces.insert(
             surface,
@@ -255,11 +334,14 @@ impl WorkspaceView {
         match self.layout.close_surface(surface) {
             Closed::LastSurface => {
                 self.surfaces.remove(&surface);
+                cx.emit(WorkspaceEvent::Closed(surface));
                 cx.emit(WorkspaceEvent::Empty);
             }
             Closed::NotFound => {}
             Closed::Tab | Closed::Pane => {
                 self.surfaces.remove(&surface);
+                self.flashes.remove(&surface);
+                cx.emit(WorkspaceEvent::Closed(surface));
                 self.focus_active(window, cx);
                 // The active surface, and so the sidebar title, may have changed.
                 cx.emit(WorkspaceEvent::Changed);
@@ -298,6 +380,8 @@ impl WorkspaceView {
     fn close_other_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         for s in self.layout.close_other_tabs() {
             self.surfaces.remove(&s);
+            self.flashes.remove(&s);
+            cx.emit(WorkspaceEvent::Closed(s));
         }
         self.focus_active(window, cx);
     }

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use cmux_core::{WorkspaceClosed, WorkspaceId, Workspaces};
+use cmux_core::{Notifications, WorkspaceClosed, WorkspaceId, Workspaces};
 use cmux_meta::pr::{self, PrKey, PrPoller};
 use cmux_meta::{WorkspaceInput, WorkspaceMeta};
 use gpui::{
@@ -20,6 +20,7 @@ use crate::actions::*;
 use crate::style::TermStyle;
 use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
+mod notify;
 mod rename;
 mod sidebar;
 
@@ -50,7 +51,11 @@ pub struct WindowView {
     titles: HashMap<WorkspaceId, Option<String>>,
     prs: PrPoller,
     pr_in_flight: bool,
+    notifications: Notifications,
+    /// The notification panel is showing (Super+I, the bell).
+    panel_open: bool,
     _tasks: Vec<Task<()>>,
+    _activation: Option<Subscription>,
     /// Whole-window KWin blur, dropped with the view. gpui may destroy the surface first; the
     /// effect is then inert and its destroy is still allowed (blur.rs).
     #[cfg(target_os = "linux")]
@@ -90,11 +95,20 @@ impl WindowView {
             titles: HashMap::new(),
             prs: PrPoller::new(),
             pr_in_flight: false,
+            notifications: Notifications::new(),
+            panel_open: false,
             _tasks: Vec::new(),
+            _activation: None,
             #[cfg(target_os = "linux")]
             _blur: blur,
         };
         this._tasks = vec![Self::meta_loop(cx), Self::pr_loop(cx)];
+        // Coming back to the window reads what is in front of the user (rn §3).
+        this._activation = Some(cx.observe_window_activation(window, |this, window, cx| {
+            if window.is_window_active() {
+                this.read_selected(window, cx);
+            }
+        }));
         let id = this.workspaces.selected();
         if !this.make_view(id, None, window, cx) {
             cx.quit();
@@ -125,6 +139,14 @@ impl WindowView {
                 this.refresh_title(id, cx);
                 cx.notify();
             }
+            WorkspaceEvent::Notify {
+                surface,
+                title,
+                body,
+            } => this.on_notify(id, *surface, title.clone(), body.clone(), window, cx),
+            WorkspaceEvent::Focused(s) => this.on_focused(id, *s, window, cx),
+            WorkspaceEvent::Typed(s) => this.on_typed(id, *s, cx),
+            WorkspaceEvent::Closed(s) => this.on_closed(id, *s, cx),
         });
         self.subs.insert(id, sub);
         self.views.insert(id, view);
@@ -161,8 +183,13 @@ impl WindowView {
 
     fn select(&mut self, id: WorkspaceId, window: &mut Window, cx: &mut Context<Self>) {
         self.workspaces.select(id);
+        let inset = self.sidebar_px(window).unwrap_or(0.);
         for (wid, view) in &self.views {
             view.update(cx, |v, _| v.set_active(*wid == id));
+        }
+        // Splits right after the switch need this workspace's width now, not next frame.
+        if let Some(view) = self.views.get(&id) {
+            view.update(cx, |v, _| v.set_left_inset(inset));
         }
         if let Some(view) = self.views.get(&id) {
             view.update(cx, |v, cx| v.focus_active(window, cx));
@@ -170,6 +197,7 @@ impl WindowView {
         if let Some(ix) = self.workspaces.index_of(id) {
             self.sidebar_scroll.scroll_to_item(ix);
         }
+        self.read_selected(window, cx);
         cx.notify();
     }
 
@@ -204,6 +232,8 @@ impl WindowView {
                 self.subs.remove(&id);
                 self.views.remove(&id);
                 self.titles.remove(&id);
+                let gone = self.notifications.remove_workspace(id);
+                self.after_change(gone, cx);
                 if was_selected {
                     let sel = self.workspaces.selected();
                     self.select(sel, window, cx);
@@ -402,6 +432,17 @@ impl Render for WindowView {
                 }
             }))
             .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| this.toggle_sidebar(cx)))
+            .on_action(cx.listener(|this, _: &ShowNotifications, _, cx| {
+                this.panel_open = !this.panel_open;
+                cx.notify();
+            }))
+            .on_action(
+                cx.listener(|this, _: &JumpToUnread, w, cx| this.jump_to_latest_unread(w, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &MarkAllNotificationsRead, _, cx| this.mark_all_read(cx)),
+            )
+            .on_action(cx.listener(|this, _: &ClearAllNotifications, _, cx| this.clear_all(cx)))
             .on_action(cx.listener(|this, _: &RenameWorkspace, w, cx| {
                 let id = this.workspaces.selected();
                 this.start_rename(id, w, cx);
