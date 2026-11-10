@@ -138,6 +138,8 @@ pub fn body_text(body: &str, markup: bool) -> String {
         .replace('>', "&gt;")
 }
 
+#[cfg(all(test, target_os = "linux"))]
+use dbus::pair;
 #[cfg(target_os = "linux")]
 pub use dbus::{DesktopNotifier, Signal};
 
@@ -145,7 +147,7 @@ pub use dbus::{DesktopNotifier, Signal};
 mod dbus {
     use std::collections::HashMap;
 
-    use futures::{Stream, StreamExt, stream};
+    use futures::{Stream, StreamExt};
     use zbus::zvariant::Value;
 
     #[zbus::proxy(
@@ -170,15 +172,36 @@ mod dbus {
         fn close_notification(&self, id: u32) -> zbus::Result<()>;
 
         fn get_capabilities(&self) -> zbus::Result<Vec<String>>;
+    }
 
-        #[zbus(signal)]
-        fn action_invoked(&self, id: u32, action_key: String) -> zbus::Result<()>;
+    const PATH: &str = "/org/freedesktop/Notifications";
+    const INTERFACE: &str = "org.freedesktop.Notifications";
 
-        #[zbus(signal)]
-        fn activation_token(&self, id: u32, activation_token: String) -> zbus::Result<()>;
-
-        #[zbus(signal)]
-        fn notification_closed(&self, id: u32, reason: u32) -> zbus::Result<()>;
+    /// One server signal, in bus order. `ActivationToken` comes just before the
+    /// `ActionInvoked` of the same click, so the token is held until then.
+    pub(super) fn pair(pending: &mut HashMap<u32, String>, m: &zbus::Message) -> Option<Signal> {
+        let header = m.header();
+        let body = m.body();
+        match header.member()?.as_str() {
+            "ActivationToken" => {
+                let (id, token): (u32, String) = body.deserialize().ok()?;
+                pending.insert(id, token);
+                None
+            }
+            "ActionInvoked" => {
+                let (id, key): (u32, String) = body.deserialize().ok()?;
+                (key == "default").then(|| Signal::Activated {
+                    server: id,
+                    token: pending.remove(&id),
+                })
+            }
+            "NotificationClosed" => {
+                let (id, _reason): (u32, u32) = body.deserialize().ok()?;
+                pending.remove(&id);
+                Some(Signal::Closed(id))
+            }
+            _ => None,
+        }
     }
 
     /// What the notification server tells us about our bubbles.
@@ -257,55 +280,24 @@ mod dbus {
             let _ = self.proxy.close_notification(server).await;
         }
 
-        /// Clicks and closes. `ActivationToken` comes just before its `ActionInvoked`, so the
-        /// token is paired with the click here.
+        /// Clicks and closes, from one stream so the bus order (token, then click) holds.
         pub async fn signals(&self) -> Option<impl Stream<Item = Signal> + use<>> {
-            enum Raw {
-                Token(u32, String),
-                Action(u32, String),
-                Closed(u32),
-            }
-            let tokens = self.proxy.receive_activation_token().await.ok()?;
-            let actions = self.proxy.receive_action_invoked().await.ok()?;
-            let closed = self.proxy.receive_notification_closed().await.ok()?;
-            let raw = stream::select_all([
-                tokens
-                    .filter_map(|s| async move {
-                        let a = s.args().ok()?;
-                        Some(Raw::Token(a.id, a.activation_token))
-                    })
-                    .boxed(),
-                actions
-                    .filter_map(|s| async move {
-                        let a = s.args().ok()?;
-                        Some(Raw::Action(a.id, a.action_key))
-                    })
-                    .boxed(),
-                closed
-                    .filter_map(|s| async move { Some(Raw::Closed(s.args().ok()?.id)) })
-                    .boxed(),
-            ]);
-            Some(
-                raw.scan(HashMap::<u32, String>::new(), |pending, r| {
-                    let out = match r {
-                        Raw::Token(id, t) => {
-                            pending.insert(id, t);
-                            None
-                        }
-                        Raw::Action(id, key) if key == "default" => Some(Signal::Activated {
-                            server: id,
-                            token: pending.remove(&id),
-                        }),
-                        Raw::Action(..) => None,
-                        Raw::Closed(id) => {
-                            pending.remove(&id);
-                            Some(Signal::Closed(id))
-                        }
-                    };
-                    futures::future::ready(Some(out))
-                })
-                .filter_map(futures::future::ready),
-            )
+            let rule = zbus::MatchRule::builder()
+                .msg_type(zbus::message::Type::Signal)
+                .interface(INTERFACE)
+                .and_then(|r| r.path(PATH))
+                .inspect_err(|e| off(e))
+                .ok()?
+                .build();
+            let stream =
+                zbus::MessageStream::for_match_rule(rule, self.proxy.inner().connection(), None)
+                    .await
+                    .inspect_err(|e| off(e))
+                    .ok()?;
+            let mut pending = HashMap::new();
+            Some(stream.filter_map(move |m| {
+                futures::future::ready(m.ok().and_then(|m| pair(&mut pending, &m)))
+            }))
         }
     }
 }
@@ -438,16 +430,28 @@ mod tests {
             .unwrap()
         };
         let mut pending = HashMap::new();
-        assert_eq!(pair(&mut pending, &sig("ActivationToken", &(7, "tok"))), None);
+        assert_eq!(
+            pair(&mut pending, &sig("ActivationToken", &(7, "tok"))),
+            None
+        );
         assert_eq!(
             pair(&mut pending, &sig("ActionInvoked", &(7, "default"))),
-            Some(Signal::Activated { server: 7, token: Some("tok".into()) })
+            Some(Signal::Activated {
+                server: 7,
+                token: Some("tok".into())
+            })
         );
         assert_eq!(
             pair(&mut pending, &sig("ActionInvoked", &(8, "default"))),
-            Some(Signal::Activated { server: 8, token: None })
+            Some(Signal::Activated {
+                server: 8,
+                token: None
+            })
         );
-        assert_eq!(pair(&mut pending, &sig("ActionInvoked", &(8, "other"))), None);
+        assert_eq!(
+            pair(&mut pending, &sig("ActionInvoked", &(8, "other"))),
+            None
+        );
         let closed = zbus::Message::signal(
             "/org/freedesktop/Notifications",
             "org.freedesktop.Notifications",
