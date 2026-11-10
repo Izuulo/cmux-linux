@@ -2,6 +2,7 @@
 
 pub mod actions;
 pub mod assets;
+pub mod attention;
 #[cfg(target_os = "linux")]
 pub mod blur;
 pub mod chrome;
