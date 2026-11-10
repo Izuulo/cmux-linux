@@ -52,7 +52,7 @@ One Cargo workspace. Each crate has one job and is testable alone.
 | `cmux-meta` | Sidebar metadata: git branch (`.git/HEAD`), listening ports (`/proc`, by controlling TTY), PR via `gh`. | `serde_json` |
 | `cmux-config` | Ghostty config parser + keybinding config. | `toml` |
 | `cmux-ipc` | Socket server + the `cmux` CLI binary. | `cmux-core` |
-| `cmux-app` | gpui app: window, sidebar, split view, terminal element, shortcuts. | all |
+| `cmux-app` | gpui app: window, sidebar, split view, terminal element, shortcuts, notification UI; desktop notifications over D-Bus (`zbus`, Linux). | all |
 
 **Data flow:** PTY bytes → `cmux-term` (libghostty-vt state + events) →
 `cmux-core` model updates (title, cwd, notifications) → gpui re-renders the

@@ -11,8 +11,9 @@
   <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20macOS-lightgrey" alt="Platforms: Linux, macOS"/>
 </p>
 
-> **Status: pre-alpha.** Milestone M0 (toolchain and foundations) is done.
-> Nothing is usable as a terminal yet. See [`STATUS.md`](STATUS.md) for where things stand.
+> **Status: pre-alpha.** A single terminal (M1), splits and tabs (M2), the workspace sidebar
+> (M3) and notifications (M4, on a branch) are built; M2–M4 still await their checks on a KDE
+> desktop. See [`STATUS.md`](STATUS.md) for where things stand.
 
 ## Why
 
@@ -119,7 +120,9 @@ selectSurfaceByNumber = "alt+1"       # binds alt+1 … alt+9 (9 = last tab)
   `toggleSplitZoom`, `equalizeSplits`, `resizePaneLeft/Right/Up/Down`,
   `focusLeft/Right/Up/Down`, `focusPreviousPane`, `focusNextPane`, `newSurface`,
   `closeTab`, `closeOtherTabsInPane`, `nextSurface`, `prevSurface`,
-  `selectSurfaceByNumber`, `moveSurfaceLeft`, `moveSurfaceRight`.
+  `selectSurfaceByNumber`, `moveSurfaceLeft`, `moveSurfaceRight`, and for notifications
+  `showNotifications` (Super+I), `jumpToUnread` (Super+Shift+U), `markAllNotificationsRead`
+  and `clearAllNotifications` (both unbound).
 - A chord is modifiers and a key joined by `+`. Modifiers: `super` (or `cmd`), `shift`,
   `alt` (or `opt`), `ctrl`. Keys: letters, digits, symbols, `left`/`right`/`up`/`down`,
   `return`, `tab`, `space`, `escape`, `f1`–`f20`. An array lists alternative chords. It is
@@ -143,6 +146,17 @@ focusRight = "ctrl+alt+shift+right"
 focusUp = "ctrl+alt+shift+up"
 focusDown = "ctrl+alt+shift+down"
 ```
+
+## Notifications
+
+A program asks for attention with OSC 9 (`printf '\e]9;Build done\a'`), OSC 777
+(`\e]777;notify;Title;Body\a`) or OSC 99 (kitty's protocol). As in cmux, the pane gets a blue
+ring, its tab a dot, and its workspace row the message and an unread badge; the row moves to
+the top. The bell in the sidebar (or Super+I) lists them, Super+Shift+U jumps to the newest
+unread one, and on Linux a desktop notification appears unless you are already looking at
+that pane. Clicking it brings the window forward on that pane. Typing in a pane clears its ring.
+
+If Plasma binds Meta+I or Meta+Shift+U on your system, remap them as shown above.
 
 ## Contributing
 

@@ -4,8 +4,8 @@
      current version to docs/status-archive.md. -->
 
 **Updated:** 2026-11-10
-**Current milestone:** M4 notifications: plan written on branch `m4-notifications` (`docs/milestones/m4-notifications/plan.md`); M2 and M3 desktop exit checks still pending
-**Next action:** execute the M4 plan from Task 1 (Linux-only Tasks 7–8 are checked by CI). Separately, at the KDE desktop: M2 plan Task 11, M3 plan Task 12 Steps 1–3 and every unticked "Run it" step; record results in each journal.
+**Current milestone:** M4 notifications: built on branch `m4-notifications` (Tasks 1–8 and review fixes, Linux CI green); desktop checks (plan Task 9 Step 1) pending. M2 and M3 desktop exit checks also pending
+**Next action:** at the KDE desktop: M4 plan Task 9 Step 1 (exits 1–3, the "Run it" checks and screenshots of Tasks 4–6, blur re-check), M2 plan Task 11, M3 plan Task 12 Steps 1–3; record results in each journal, fix on the branch, then merge M4 and write the M5 plan.
 
 ## Where things are
 - Project design and milestone table: `docs/design.md`
@@ -20,7 +20,7 @@
 | M1 terminal | done; exit criterion 1 confirmed by user, 2–3 (Ghostty screenshot pair, latency trace) not yet measured |
 | M2 splits-tabs | merged (PR #3); exit checks (plan Task 11) pending at the desktop |
 | M3 workspaces-sidebar | merged (PR #4); exit checks (plan Task 12 Steps 1–3) pending at the desktop |
-| M4 notifications | plan written (branch `m4-notifications`); not built |
+| M4 notifications | built (branch `m4-notifications`), CI green; desktop checks pending |
 | M5 cli-socket | not started |
 | M6 parity-release | not started |
 | M7 feed | not started (post-v1) |
@@ -39,28 +39,28 @@
 - Terminal behaviour follows Ghostty source where cmux delegates to Ghostty (M1 journal lists the cases, e.g. Ctrl+[ sends CSI-u).
 - Config: reads Ghostty's own config (`~/.config/ghostty/config[.ghostty]`, includes, themes).
 - Model: `cmux-core` is the pure model (split tree, workspace list); contextless gpui actions bound from `config.toml`; pidfd-based shell exit (Linux).
-- Notifications (M4 plan): cmux read rules in a pure `cmux-core` store; desktop bubbles via `zbus` (already in the tree), click activates with the notification's xdg_activation token.
+- Notifications (M4): cmux read rules in a pure `cmux-core` store; desktop bubbles via `zbus` (already in the tree), click activates with the notification's xdg_activation token (`activation.rs`, sharing `wayland.rs` with blur).
 - Sidebar metadata: `.git/HEAD` + `/proc` polled every 1.5 s, PR via `gh pr list --json` (cmux cadence), all on the background executor.
 - Blur: own `ext_background_effect_v1` shim on gpui 0.2.2's surface (no gpui upgrade); whole window, only with Ghostty `background-blur`.
 - macOS dev builds: `--features gpui/runtime_shaders` (no Metal Toolchain); Linux CI is the gate.
 
-## Code map (M1–M3)
+## Code map (M1–M4)
 - `cmux-config`: Ghostty config parser/loader.
-- `cmux-term`: `Term` (libghostty-vt wrapper, epoch for selection safety), OSC 7/9/777 scanner, PTY `Session` (non-blocking drop), `Selection`, paste/focus encoding.
+- `cmux-term`: `Term` (libghostty-vt wrapper, epoch for selection safety), OSC 7/9/99/777 scanner (Ghostty's ConEmu and kitty rules), PTY `Session` (non-blocking drop), `Selection`, paste/focus encoding.
 - `cmux-core`: split tree (`tree`: panes, tabs, focus, zoom) and `geometry` (rects, admission, divider drag, resize, equalize). No UI.
 - `cmux-config` also: `keybindings` (cmux defaults with Super, `[keybindings]` overrides in `~/.config/cmux-linux/config.toml`).
-- `cmux-core` also: `workspaces` (list, selection, rename, reorder).
+- `cmux-core` also: `workspaces` (list, selection, rename, reorder); M4 `notifications` (store, read rules).
 - `cmux-meta`: `git`, `path`, `ports`, `pr` (`PrPoller`), `collect`.
-- `cmux-app`: gpui `TerminalView` + `TerminalElement`, keys, colours, style, mouse, IME; M2 adds `actions`, `chrome`, `workspace`, `workspace/tab_strip`, `assets`; M3 adds `window_view` (root, pollers), `window_view/sidebar`, `window_view/rename`, `blur` (Linux).
+- `cmux-app`: gpui `TerminalView` + `TerminalElement`, keys, colours, style, mouse, IME; M2 adds `actions`, `chrome`, `workspace`, `workspace/tab_strip`, `assets`; M3 adds `window_view` (root, pollers), `window_view/sidebar`, `window_view/rename`, `blur` (Linux); M4 adds `attention` (ring, flash), `window_view/notify` (rules wiring, jump), `window_view/panel`, `desktop_notify` (zbus, Linux), `activation` + `wayland` (Linux).
 
 ## Open risks
 - gpui is pre-1.0 (pinned). No public FontMetrics → `line_gap` 0.
 - Blur shim never run on a real Wayland session: rg §1.4 risks (borrowed surface proxy, second-queue roundtrip, oversized region) unverified.
-- No M2/M3 UI has been seen on screen yet (all built against CI + reviews).
+- No M2/M3/M4 UI has been seen on screen yet (all built against CI + reviews).
 - Real IME (fcitx/ibus) unverified.
 
 ## Carry to M4+
-- M3 parked (in M4 plan Task 4): `WindowView::select` sets no inset, so a split right after selecting a workspace hidden through a sidebar/window resize uses a stale width until the next frame (one line: `set_left_inset` in `select`).
+- M3 parked (fixed in M4 Task 4): `WindowView::select` sets no inset, so a split right after selecting a workspace hidden through a sidebar/window resize uses a stale width until the next frame (one line: `set_left_inset` in `select`).
 - M3 deferred: keyboard workspace move doesn't scroll into view; drop line 1 px off/unclipped when scrolled; long rename hides caret; `run_with_deadline` drain join unbounded if a grandchild holds the pipe; no git dirty `*`; no persistence (M10); shell-integration kicks (M5).
 M6: macOS ports/cwd (no /proc; sidebar loses start-dir fallback), pidfd replacement, blur on macOS and Plasma ≤6.6.
 - **M1 exit criteria 2–3:** take the screenshot pair and run `CMUX_TRACE_LATENCY=1` next time the user is at the desktop.
