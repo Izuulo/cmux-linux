@@ -23,3 +23,5 @@ wayland-client.workspace = true
 wayland-backend.workspace = true
 wayland-protocols.workspace = true
 raw-window-handle.workspace = true
+# Desktop notifications over D-Bus (already in the tree through gpui's ashpd).
+zbus = { version = "5.19", default-features = false, features = ["async-io"] }
