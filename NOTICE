@@ -13,7 +13,8 @@ cmux (https://github.com/manaflow-ai/cmux)
   Copyright (c) 2024-present Manaflow, Inc. and contributors.
   GPL-3.0-or-later. cmux-linux is a port of cmux's application code; files
   derived from cmux keep their original copyright. Nothing is taken from cmux's
-  BUSL-1.1 directories.
+  BUSL-1.1 directories. The `cmux` CLI's help texts (crates/cmux-ipc/src/cli/help.rs)
+  are cmux's (CLI/cmux.swift), trimmed to the ported commands.
 
 REA reverse-engineer-anything skill (https://github.com/morluto/rea)
   .claude/skills/reverse-engineer-anything/
@@ -55,8 +56,11 @@ toml (crates.io 0.8, https://github.com/toml-rs/toml), used by cmux-config, with
   toml_edit, toml_datetime, toml_write, serde_spanned and winnow dependencies
   MIT OR Apache-2.0 (winnow: MIT).
 
-serde_json (crates.io 1, https://github.com/serde-rs/json), used by cmux-meta
-  MIT OR Apache-2.0.
+serde_json (crates.io 1, https://github.com/serde-rs/json), used by cmux-meta, cmux-ipc
+  and cmux-app. MIT OR Apache-2.0.
+
+uuid (crates.io 1, https://github.com/uuid-rs/uuid), used by cmux-ipc for socket handles.
+  MIT OR Apache-2.0. Already a dependency of gpui.
 
 zbus (crates.io 5.19, https://github.com/dbus2/zbus), used by cmux-app on Linux for
   desktop notifications. MIT. Already a dependency of gpui (through ashpd).
