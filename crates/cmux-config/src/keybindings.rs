@@ -63,6 +63,11 @@ pub const DEFAULTS: &[(&str, &[&str])] = &[
     ("moveWorkspaceUp", &["super+ctrl+opt+["]),
     ("moveWorkspaceDown", &["super+ctrl+opt+]"]),
     ("toggleSidebar", &["super+b"]),
+    // Notification actions: rn §10 (M4).
+    ("showNotifications", &["super+i"]),
+    ("jumpToUnread", &["super+shift+u"]),
+    ("markAllNotificationsRead", &[]),
+    ("clearAllNotifications", &[]),
 ];
 
 const NUMBERED: &[&str] = &["selectSurfaceByNumber", "selectWorkspaceByNumber"];
@@ -424,6 +429,27 @@ mod tests {
         assert_eq!(numbered.len(), 9);
         assert_eq!(numbered[0], ("super-1", Some(1)));
         assert_eq!(numbered[8], ("super-9", Some(9)));
+    }
+
+    #[test]
+    fn notification_defaults_bind_like_cmux() {
+        let k = keybindings(None, "config.toml");
+        let chord = |k: &Keybindings, a: &str| {
+            k.bindings
+                .iter()
+                .filter(|b| b.action == a)
+                .map(|b| b.keystroke.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(chord(&k, "showNotifications"), vec!["super-i"]);
+        assert_eq!(chord(&k, "jumpToUnread"), vec!["shift-super-u"]);
+        assert!(chord(&k, "markAllNotificationsRead").is_empty());
+        assert!(chord(&k, "clearAllNotifications").is_empty());
+        let user = "[keybindings]\nmarkAllNotificationsRead = \"ctrl+m\"\nclearAllNotifications = \"ctrl+shift+m\"\n";
+        let k = keybindings(Some(user), "config.toml");
+        assert!(k.warnings.is_empty(), "{:?}", k.warnings);
+        assert_eq!(chord(&k, "markAllNotificationsRead"), vec!["ctrl-m"]);
+        assert_eq!(chord(&k, "clearAllNotifications"), vec!["ctrl-shift-m"]);
     }
 
     #[test]

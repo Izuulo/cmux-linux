@@ -37,6 +37,10 @@ gpui::actions!(
         MoveWorkspaceUp,
         MoveWorkspaceDown,
         ToggleSidebar,
+        ShowNotifications,
+        JumpToUnread,
+        MarkAllNotificationsRead,
+        ClearAllNotifications,
     ]
 );
 
@@ -85,6 +89,10 @@ pub fn action_for(b: &Binding) -> Option<Box<dyn Action>> {
         "moveWorkspaceUp" => Box::new(MoveWorkspaceUp),
         "moveWorkspaceDown" => Box::new(MoveWorkspaceDown),
         "toggleSidebar" => Box::new(ToggleSidebar),
+        "showNotifications" => Box::new(ShowNotifications),
+        "jumpToUnread" => Box::new(JumpToUnread),
+        "markAllNotificationsRead" => Box::new(MarkAllNotificationsRead),
+        "clearAllNotifications" => Box::new(ClearAllNotifications),
         "selectWorkspaceByNumber" => Box::new(SelectWorkspaceByNumber(b.number?)),
         "selectSurfaceByNumber" => Box::new(SelectSurfaceByNumber(b.number?)),
         _ => return None,
