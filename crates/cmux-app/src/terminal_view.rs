@@ -309,6 +309,24 @@ impl TerminalView {
         }
     }
 
+    /// Input from the socket (`cmux send`, `send-key`): written like typing, but it isn't the
+    /// user, so it doesn't count as reading the pane's notification (no `Typed`).
+    pub(crate) fn send_scripted(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) {
+        if bytes.is_empty() {
+            return;
+        }
+        self.session.term.lock().unwrap().scroll_to_bottom();
+        self.session.write(bytes);
+        cx.notify();
+    }
+
+    /// `cmux send --paste`: the paste path without the confirmation prompt (the caller has
+    /// already replaced control characters, rc §8).
+    pub(crate) fn paste_scripted(&mut self, text: &str, cx: &mut Context<Self>) {
+        let bracketed = self.session.term.lock().unwrap().vt().mode(2004, false);
+        self.send_scripted(encode_paste(text, bracketed), cx);
+    }
+
     fn focus_changed(&mut self, focused: bool, cx: &mut Context<Self>) {
         // A key released while unfocused never sends key_up here; forget it.
         self.forwarded_keys.clear();

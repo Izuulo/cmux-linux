@@ -4,17 +4,20 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
-use cmux_core::{PaneId, SurfaceId, WorkspaceId};
+use cmux_core::{Direction, PaneId, SurfaceId, WorkspaceId};
 use cmux_ipc::handles::{Handles, Kind};
+use cmux_ipc::keys::{KeySpec, parse_key, sanitize_paste, typed_bytes};
 use cmux_ipc::paths;
 use cmux_ipc::server::{Access, DEADLINE, Request, Server};
 use cmux_ipc::snapshot::{PaneSnap, Snapshot, SurfSnap, WsSnap};
 use cmux_ipc::wire::{Reply, RpcError};
+use cmux_term::ghostty_vt::KeyAction;
 use futures::channel::mpsc::UnboundedReceiver;
-use gpui::{App, Context, Window};
+use gpui::{App, Context, Keystroke, Modifiers, Window};
 use serde_json::{Map, Value, json};
 
 use super::WindowView;
+use crate::workspace::SplitFailed;
 
 /// What a new shell needs to find the app: shared by the window and its workspaces.
 pub(crate) struct ShellEnv {
@@ -214,7 +217,213 @@ impl WindowView {
                 }
                 Ok(snap.target_payload(&t))
             }
+            "workspace.create" => self.create_workspace(params, window, cx),
+            "surface.split" => self.split_from_socket(&snap, params, window, cx),
+            "surface.send_text" | "surface.send_key" | "terminal.paste" => {
+                self.send_from_socket(&snap, method, params, cx)
+            }
             _ => Err(RpcError::new("method_not_found", "Unknown method")),
         }
+    }
+
+    /// `workspace.create` (rc §8, plan D6): after the selected workspace, selected only with
+    /// `focus:true`.
+    fn create_workspace(
+        &mut self,
+        params: &Map<String, Value>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Reply {
+        let text = |k: &str| params.get(k).and_then(Value::as_str);
+        if params
+            .get("cwd")
+            .is_some_and(|v| !v.is_string() && !v.is_null())
+        {
+            return Err(RpcError::new("invalid_params", "cwd must be a string"));
+        }
+        let focus = flag(params, "focus");
+        let old = self.workspaces.selected();
+        let cwd = text("cwd")
+            .map(str::to_string)
+            .or_else(|| self.views.get(&old).and_then(|v| v.read(cx).active_cwd(cx)));
+        let id = self.workspaces.add_after_selected();
+        if !self.make_view(id, cwd, window, cx) {
+            self.workspaces.close(id);
+            self.workspaces.select(old);
+            return Err(RpcError::new(
+                "internal_error",
+                "Failed to create workspace",
+            ));
+        }
+        if let Some(title) = text("title") {
+            self.workspaces.rename(id, title);
+        }
+        let view = self.views[&id].clone();
+        let surface = view.read(cx).layout().active_surface();
+        if let Some(input) = text("initial_input")
+            && let Some(term) = view.read(cx).terminal(surface).cloned()
+        {
+            term.update(cx, |t, cx| t.send_scripted(input.as_bytes().to_vec(), cx));
+        }
+        if focus {
+            self.select(id, window, cx);
+        } else {
+            // The new view focused its shell as it started: give focus back (plan D6).
+            self.workspaces.select(old);
+            view.update(cx, |v, _| v.set_active(false));
+            if let Some(v) = self.views.get(&old) {
+                v.update(cx, |v, cx| v.focus_active(window, cx));
+            }
+            cx.notify();
+        }
+        let mut h = self.shell.handles.borrow_mut();
+        let (w, ws, s) = (
+            h.handle(Kind::Window, (0, 0)),
+            h.handle(Kind::Workspace, (id.0, 0)),
+            h.handle(Kind::Surface, (id.0, surface.0)),
+        );
+        Ok(json!({
+            "window_id": w.id, "window_ref": w.r#ref,
+            "workspace_id": ws.id, "workspace_ref": ws.r#ref,
+            "surface_id": s.id, "surface_ref": s.r#ref,
+        }))
+    }
+
+    /// `surface.split` (rc §8, plan D6).
+    fn split_from_socket(
+        &mut self,
+        snap: &Snapshot,
+        params: &Map<String, Value>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Reply {
+        let dir = match params.get("direction").and_then(Value::as_str) {
+            Some("left") => Direction::Left,
+            Some("right") => Direction::Right,
+            Some("up") => Direction::Up,
+            Some("down") => Direction::Down,
+            _ => {
+                return Err(RpcError::new(
+                    "invalid_params",
+                    "Missing or invalid direction (left|right|up|down)",
+                ));
+            }
+        };
+        let focus = flag(params, "focus");
+        let t = snap.surface(params)?;
+        let id = WorkspaceId(t.ws.key);
+        let Some(view) = self.views.get(&id).cloned() else {
+            return Err(RpcError::new("not_found", "Workspace not found"));
+        };
+        let input = params.get("initial_input").and_then(Value::as_str);
+        let new = view
+            .update(cx, |v, cx| {
+                v.split_surface(SurfaceId(t.surface.key), dir, focus, input, window, cx)
+            })
+            .map_err(|e| match e {
+                // shortcut: cmux's no-space code is UNVERIFIED (rc §8); invalid_state is ours.
+                SplitFailed::NoSpace => RpcError::new("invalid_state", "Not enough space to split"),
+                SplitFailed::Spawn => RpcError::new("internal_error", "Failed to create split"),
+            })?;
+        if focus && id != self.workspaces.selected() {
+            self.select(id, window, cx);
+        }
+        let pane = view.read(cx).layout().pane_of(new).map_or(0, |p| p.0);
+        let mut h = self.shell.handles.borrow_mut();
+        let (w, ws) = (
+            h.handle(Kind::Window, (0, 0)),
+            h.handle(Kind::Workspace, (id.0, 0)),
+        );
+        let (p, s) = (
+            h.handle(Kind::Pane, (id.0, pane)),
+            h.handle(Kind::Surface, (id.0, new.0)),
+        );
+        Ok(json!({
+            "window_id": w.id, "window_ref": w.r#ref,
+            "workspace_id": ws.id, "workspace_ref": ws.r#ref,
+            "pane_id": p.id, "pane_ref": p.r#ref,
+            "surface_id": s.id, "surface_ref": s.r#ref,
+            "type": "terminal",
+        }))
+    }
+
+    /// `surface.send_text`, `surface.send_key`, `terminal.paste` (rc §8).
+    fn send_from_socket(
+        &mut self,
+        snap: &Snapshot,
+        method: &str,
+        params: &Map<String, Value>,
+        cx: &mut Context<Self>,
+    ) -> Reply {
+        let (field, missing) = match method {
+            "surface.send_key" => ("key", "Missing key"),
+            _ => ("text", "Missing text"),
+        };
+        let Some(value) = params
+            .get(field)
+            .and_then(Value::as_str)
+            .filter(|v| !v.is_empty())
+        else {
+            return Err(RpcError::new("invalid_params", missing));
+        };
+        let t = snap.surface(params)?;
+        let Some(term) = self
+            .views
+            .get(&WorkspaceId(t.ws.key))
+            .and_then(|v| v.read(cx).terminal(SurfaceId(t.surface.key)).cloned())
+        else {
+            return Err(RpcError::new("not_found", "Surface not found"));
+        };
+        match method {
+            "surface.send_key" => {
+                let Some(spec) = parse_key(value) else {
+                    return Err(RpcError::new("invalid_params", "Unknown key")
+                        .with_data(json!({ "key": value })));
+                };
+                let ks = keystroke(&spec);
+                term.update(cx, |t, cx| {
+                    let bytes = t.encode_key(&ks, KeyAction::Press);
+                    t.send_scripted(bytes, cx);
+                });
+            }
+            "terminal.paste" => {
+                term.update(cx, |t, cx| t.paste_scripted(&sanitize_paste(value), cx));
+            }
+            _ => term.update(cx, |t, cx| t.send_scripted(typed_bytes(value), cx)),
+        }
+        let mut reply = snap.target_payload(&t);
+        reply["queued"] = json!(false);
+        Ok(reply)
+    }
+}
+
+/// A boolean param, false when absent.
+fn flag(params: &Map<String, Value>, key: &str) -> bool {
+    params.get(key).and_then(Value::as_bool).unwrap_or(false)
+}
+
+/// The keystroke the keyboard would deliver for `k`, so the terminal's own encoder (modes,
+/// kitty keyboard) applies.
+fn keystroke(k: &KeySpec) -> Keystroke {
+    let typed = !(k.ctrl || k.platform);
+    let key_char = match k.key.as_str() {
+        "space" if typed => Some(" ".to_string()),
+        c if typed && c.chars().count() == 1 => Some(if k.shift {
+            c.to_uppercase()
+        } else {
+            c.to_string()
+        }),
+        _ => None,
+    };
+    Keystroke {
+        modifiers: Modifiers {
+            control: k.ctrl,
+            alt: k.alt,
+            shift: k.shift,
+            platform: k.platform,
+            function: false,
+        },
+        key: k.key.clone(),
+        key_char,
     }
 }

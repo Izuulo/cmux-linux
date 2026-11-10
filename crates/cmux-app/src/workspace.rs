@@ -66,6 +66,13 @@ pub struct WorkspaceView {
     _subscriptions: Vec<Subscription>,
 }
 
+/// Why `split_surface` made nothing.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum SplitFailed {
+    NoSpace,
+    Spawn,
+}
+
 /// What the owner of this workspace needs to hear about.
 pub enum WorkspaceEvent {
     /// The last surface closed.
@@ -376,6 +383,43 @@ impl WorkspaceView {
                 cx.emit(WorkspaceEvent::Changed);
             }
         }
+    }
+
+    /// The socket's `surface.split` (M5 plan D6): splits `surface`'s pane towards `dir`, moving
+    /// focus only when `focus`, and types `input` into the new shell. The new surface, or why not.
+    pub(crate) fn split_surface(
+        &mut self,
+        surface: SurfaceId,
+        dir: Direction,
+        focus: bool,
+        input: Option<&str>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<SurfaceId, SplitFailed> {
+        let (w, h, scale) = self.container(window);
+        let cwd = self
+            .surfaces
+            .get(&surface)
+            .filter(|_| self.style.cfg.split_inherit_working_directory)
+            .and_then(|s| s.view.read(cx).cwd());
+        let new = self
+            .layout
+            .try_split_surface(surface, dir, focus, w, h, scale)
+            .map_err(|_| SplitFailed::NoSpace)?;
+        if !self.add_terminal(new, cwd, window, cx) {
+            self.layout.close_surface(new);
+            return Err(SplitFailed::Spawn);
+        }
+        if let (Some(input), Some(s)) = (input, self.surfaces.get(&new)) {
+            s.view
+                .update(cx, |v, cx| v.send_scripted(input.as_bytes().to_vec(), cx));
+        }
+        if focus {
+            self.focus_active(window, cx);
+        } else {
+            cx.notify();
+        }
+        Ok(new)
     }
 
     fn split(&mut self, o: Orientation, window: &mut Window, cx: &mut Context<Self>) {
