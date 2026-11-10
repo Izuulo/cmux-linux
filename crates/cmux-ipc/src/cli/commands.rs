@@ -378,3 +378,253 @@ pub(crate) fn focus_panel(cmd: &mut Cmd) -> Result<String, CliError> {
     let v = cmd.call("surface.focus", scope)?;
     Ok(cmd.ok(v, &["surface", "workspace"]))
 }
+
+/// `1/true/yes/on` or `0/false/no/off`.
+pub(crate) fn parse_bool(v: &str) -> Option<bool> {
+    match v.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => None,
+    }
+}
+
+fn focus(f: &Flags) -> Result<bool, CliError> {
+    match f.get("--focus") {
+        None => Ok(false),
+        Some(v) => parse_bool(v).map_or_else(|| fail("--focus must be true|false"), Ok),
+    }
+}
+
+/// `--command <text>` as typed input: the text plus Enter; blank text is dropped.
+fn initial_input(f: &Flags, params: &mut Map<String, Value>) {
+    if let Some(c) = f.get("--command").filter(|c| !c.trim().is_empty()) {
+        params.insert("initial_input".into(), format!("{c}\r").into());
+    }
+}
+
+impl Cmd<'_> {
+    /// Window, workspace and surface for the surface commands (`send`, `send-key`,
+    /// `new-split`): `--surface`/`--panel`, else `CMUX_SURFACE_ID` when neither a workspace nor
+    /// a window was given; `--workspace`, else `CMUX_WORKSPACE_ID` when no window was given and
+    /// the surface isn't a handle that names its own workspace.
+    fn surface_scope(&mut self, f: &Flags) -> Result<Map<String, Value>, CliError> {
+        let mut scope = self.window_scope(f)?;
+        let windowed = scope.contains_key("window_id");
+        let surface = f.get("--surface").or(f.get("--panel")).map(str::to_string);
+        match f.get("--workspace") {
+            Some(w) => {
+                let ws = self.resolve(Kind::Workspace, w, &scope)?;
+                scope.insert("workspace_id".into(), ws.into());
+            }
+            None if !windowed && surface.as_deref().is_none_or(|s| s.parse::<u64>().is_ok()) => {
+                if let Some(ws) = self.env("CMUX_WORKSPACE_ID") {
+                    scope.insert("workspace_id".into(), ws.into());
+                }
+            }
+            None => {}
+        }
+        let surface = match surface {
+            Some(s) => Some(self.resolve(Kind::Surface, &s, &scope)?),
+            None if f.get("--workspace").is_none() && !windowed => {
+                self.env("CMUX_SURFACE_ID").map(str::to_string)
+            }
+            None => None,
+        };
+        if let Some(s) = surface {
+            scope.insert("surface_id".into(), s.into());
+        }
+        Ok(scope)
+    }
+
+    /// `OK <surface> <workspace>`, with cmux's suffix when the terminal hasn't started yet.
+    fn sent(&self, v: Value) -> String {
+        let queued = v["queued"].as_bool() == Some(true);
+        let out = self.ok(v, &["surface", "workspace"]);
+        if queued && !self.g.json {
+            return out.trim_end().to_string()
+                + " queued (terminal starting; input will be sent when its PTY is ready)\n";
+        }
+        out
+    }
+
+    /// `~` expanded, relative paths made absolute against the cwd, `.` parts dropped.
+    fn absolute(&self, path: &str) -> String {
+        let home = self.env("HOME").unwrap_or("");
+        let expanded = match path.strip_prefix('~') {
+            Some(rest) if rest.is_empty() || rest.starts_with('/') => format!("{home}{rest}"),
+            _ => path.to_string(),
+        };
+        let joined = self.ctx.cwd.join(expanded);
+        joined
+            .components()
+            .collect::<std::path::PathBuf>()
+            .display()
+            .to_string()
+    }
+}
+
+const NEW_WORKSPACE_FLAGS: &[&str] = &["--name", "--cwd", "--command", "--window", "--focus"];
+
+pub(crate) fn new_workspace(cmd: &mut Cmd) -> Result<String, CliError> {
+    let args = cmd.args.clone();
+    for a in args.iter().take_while(|a| *a != "--") {
+        let flag = a.split('=').next().unwrap_or(a);
+        if flag.starts_with("--") && !NEW_WORKSPACE_FLAGS.contains(&flag) {
+            return fail(format!(
+                "new-workspace: unknown flag '{flag}'. Known flags: --name <title>, --cwd <path>, --command <text>, --window <id|ref|index>, --focus <true|false>"
+            ));
+        }
+    }
+    let f = flags("new-workspace", &args, NEW_WORKSPACE_FLAGS, &[]).map_err(|e| {
+        if e.msg == "new-workspace: --command requires a value" {
+            CliError::from("new-workspace: --command requires <text>".to_string())
+        } else {
+            e
+        }
+    })?;
+    no_positional("new-workspace", &f)?;
+    let focus = focus(&f)?;
+    let mut params = cmd.window_or_caller(&f)?;
+    if let Some(name) = f.get("--name") {
+        params.insert("title".into(), name.into());
+    }
+    if let Some(cwd) = f.get("--cwd") {
+        params.insert("cwd".into(), cmd.absolute(cwd).into());
+    }
+    initial_input(&f, &mut params);
+    params.insert("focus".into(), focus.into());
+    let v = cmd.call("workspace.create", params)?;
+    // Always the ref, whatever --json/--id-format say (rc §8).
+    let ws = v["workspace_ref"].as_str().or(v["workspace_id"].as_str());
+    Ok(format!("OK {}\n", ws.unwrap_or("")))
+}
+
+pub(crate) fn new_split(cmd: &mut Cmd) -> Result<String, CliError> {
+    let args = cmd.args.clone();
+    let known = [
+        "--workspace",
+        "--surface",
+        "--panel",
+        "--window",
+        "--command",
+        "--focus",
+    ];
+    for a in args.iter().take_while(|a| *a != "--") {
+        let flag = a.split('=').next().unwrap_or(a);
+        if flag.starts_with("--") && !known.contains(&flag) {
+            return fail(format!("new-split: unknown flag '{flag}'"));
+        }
+    }
+    let f = flags("new-split", &args, &known, &[])?;
+    let Some(dir) = f.positional.first() else {
+        return fail("new-split requires a direction");
+    };
+    let direction = match dir.to_ascii_lowercase().as_str() {
+        "left" | "l" => "left",
+        "right" | "r" => "right",
+        "up" | "u" => "up",
+        "down" | "d" => "down",
+        _ => return fail("new-split: direction must be left|right|up|down"),
+    };
+    let focus = focus(&f)?;
+    let mut params = cmd.surface_scope(&f)?;
+    params.insert("direction".into(), direction.into());
+    initial_input(&f, &mut params);
+    params.insert("focus".into(), focus.into());
+    let v = cmd.call("surface.split", params)?;
+    Ok(cmd.ok(v, &["surface", "workspace"]))
+}
+
+/// The leading options of `send`/`send-key`, then everything else (after an optional `--`).
+fn send_args(name: &str, args: &[String], bools: &[&str]) -> Result<Flags, CliError> {
+    let mut f = Flags {
+        values: HashMap::new(),
+        bools: Vec::new(),
+        positional: Vec::new(),
+    };
+    let mut i = 0;
+    while let Some(arg) = args.get(i) {
+        let (flag, inline) = match arg.split_once('=') {
+            Some((fl, v)) if fl.starts_with("--") => (fl, Some(v.to_string())),
+            _ => (arg.as_str(), None),
+        };
+        if arg == "--" {
+            i += 1;
+            break;
+        } else if bools.contains(&flag) && inline.is_none() {
+            f.bools.push(flag.to_string());
+        } else if ["--workspace", "--surface", "--window"].contains(&flag) {
+            let value = match inline {
+                Some(v) => v,
+                None => {
+                    i += 1;
+                    match args.get(i) {
+                        Some(v) => v.clone(),
+                        None => return fail(format!("{name}: {flag} requires a value")),
+                    }
+                }
+            };
+            f.values.insert(flag.to_string(), value);
+        } else {
+            break;
+        }
+        i += 1;
+    }
+    f.positional = args[i.min(args.len())..].to_vec();
+    Ok(f)
+}
+
+/// cmux's escapes for typed text: `\n` and `\r` press Enter, `\t` is Tab.
+fn unescape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match (c, chars.peek()) {
+            ('\\', Some('n' | 'r')) => {
+                chars.next();
+                out.push('\r');
+            }
+            ('\\', Some('t')) => {
+                chars.next();
+                out.push('\t');
+            }
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+pub(crate) fn send(cmd: &mut Cmd) -> Result<String, CliError> {
+    let f = send_args("send", &cmd.args.clone(), &["--paste", "--force"])?;
+    let text = f.positional.join(" ");
+    if text.is_empty() {
+        return fail("send requires text");
+    }
+    let paste = f.bools.iter().any(|b| b == "--paste");
+    let mut params = cmd.surface_scope(&f)?;
+    let (method, text) = if paste {
+        ("terminal.paste", text)
+    } else {
+        ("surface.send_text", unescape(&text))
+    };
+    params.insert("text".into(), text.into());
+    let v = cmd.call(method, params)?;
+    Ok(cmd.sent(v))
+}
+
+pub(crate) fn send_key(cmd: &mut Cmd) -> Result<String, CliError> {
+    let f = send_args("send-key", &cmd.args.clone(), &["--force"])?;
+    let Some(key) = f.positional.first().cloned() else {
+        return fail("send-key requires a key");
+    };
+    if f.positional.len() > 1 {
+        return fail(format!(
+            "send-key: unexpected arguments: {}",
+            f.positional[1..].join(" ")
+        ));
+    }
+    let mut params = cmd.surface_scope(&f)?;
+    params.insert("key".into(), key.into());
+    let v = cmd.call("surface.send_key", params)?;
+    Ok(cmd.sent(v))
+}

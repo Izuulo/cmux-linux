@@ -114,6 +114,10 @@ fn run_inner(args: &[String], ctx: &Ctx) -> Result<String, CliError> {
         "select-workspace" => commands::select_workspace(&mut cmd),
         "focus-pane" => commands::focus_pane(&mut cmd),
         "focus-panel" => commands::focus_panel(&mut cmd),
+        "new-workspace" => commands::new_workspace(&mut cmd),
+        "new-split" => commands::new_split(&mut cmd),
+        "send" => commands::send(&mut cmd),
+        "send-key" => commands::send_key(&mut cmd),
         other => fail(format!("{other} is not available yet")),
     }
 }

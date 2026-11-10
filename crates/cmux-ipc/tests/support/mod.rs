@@ -160,3 +160,68 @@ pub fn cli(args: &[&str], ctx: &Ctx) -> Outcome {
     let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
     run(&args, ctx)
 }
+
+/// A fake app on the fixture, run with the caller env of a shell in A/S1.
+pub struct T {
+    pub s: Snapshot,
+    pub fake: Fake,
+}
+
+impl T {
+    pub fn new(canned: HashMap<&'static str, Reply>) -> T {
+        let s = fixture();
+        let fake = Fake::start(s.clone(), canned);
+        T { s, fake }
+    }
+
+    pub fn a(&self) -> String {
+        self.s.workspaces[0].handle.id.clone()
+    }
+
+    pub fn b(&self) -> String {
+        self.s.workspaces[1].handle.id.clone()
+    }
+
+    pub fn s1(&self) -> String {
+        self.s.workspaces[0].panes[0].surfaces[0].handle.id.clone()
+    }
+
+    /// The same snapshot behind a new fake with `canned` replies.
+    pub fn with(&self, canned: HashMap<&'static str, Reply>) -> T {
+        T {
+            s: self.s.clone(),
+            fake: Fake::start(self.s.clone(), canned),
+        }
+    }
+
+    /// Run with the caller env of a shell in A/S1.
+    pub fn run(&self, args: &[&str]) -> (i32, String, String) {
+        self.run_env(args, &[])
+    }
+
+    /// `run` plus `extra` env.
+    pub fn run_env(&self, args: &[&str], extra: &[(&str, &str)]) -> (i32, String, String) {
+        let (a, s1) = (self.a(), self.s1());
+        let mut env = vec![
+            ("CMUX_WORKSPACE_ID", a.as_str()),
+            ("CMUX_SURFACE_ID", s1.as_str()),
+        ];
+        env.extend_from_slice(extra);
+        let out = self.fake.run(args, &env);
+        (out.code, out.stdout, out.stderr)
+    }
+
+    pub fn last(&self) -> (String, Value) {
+        self.fake.requests().last().cloned().expect("a request")
+    }
+}
+
+pub fn ok(out: (i32, String, String)) -> String {
+    assert_eq!(out.0, 0, "stderr: {}", out.2);
+    out.1
+}
+
+pub fn err(out: (i32, String, String)) -> String {
+    assert_eq!(out.0, 1, "stdout: {}", out.1);
+    out.2
+}

@@ -2,58 +2,9 @@ mod support;
 
 use std::collections::HashMap;
 
-use cmux_ipc::snapshot::Snapshot;
-use cmux_ipc::wire::{Reply, RpcError};
+use cmux_ipc::wire::RpcError;
 use serde_json::{Value, json};
-use support::{Fake, fixture};
-
-struct T {
-    s: Snapshot,
-    fake: Fake,
-}
-
-impl T {
-    fn new(canned: HashMap<&'static str, Reply>) -> T {
-        let s = fixture();
-        let fake = Fake::start(s.clone(), canned);
-        T { s, fake }
-    }
-
-    fn a(&self) -> String {
-        self.s.workspaces[0].handle.id.clone()
-    }
-
-    fn b(&self) -> String {
-        self.s.workspaces[1].handle.id.clone()
-    }
-
-    fn s1(&self) -> String {
-        self.s.workspaces[0].panes[0].surfaces[0].handle.id.clone()
-    }
-
-    /// Run with the caller env of a shell in A/S1.
-    fn run(&self, args: &[&str]) -> (i32, String, String) {
-        let (a, s1) = (self.a(), self.s1());
-        let out = self
-            .fake
-            .run(args, &[("CMUX_WORKSPACE_ID", &a), ("CMUX_SURFACE_ID", &s1)]);
-        (out.code, out.stdout, out.stderr)
-    }
-
-    fn last(&self) -> (String, Value) {
-        self.fake.requests().last().cloned().expect("a request")
-    }
-}
-
-fn ok(out: (i32, String, String)) -> String {
-    assert_eq!(out.0, 0, "stderr: {}", out.2);
-    out.1
-}
-
-fn err(out: (i32, String, String)) -> String {
-    assert_eq!(out.0, 1, "stdout: {}", out.1);
-    out.2
-}
+use support::{Fake, T, err, fixture, ok};
 
 #[test]
 fn list_workspaces_text() {
