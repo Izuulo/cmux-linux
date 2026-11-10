@@ -31,9 +31,15 @@ impl WindowView {
             selected,
             self.active_surface(ws, cx) == Some(surface),
         );
-        let added = self
-            .notifications
-            .add(ws, surface, title, body, focused, SystemTime::now());
+        let added = self.notifications.add(
+            ws,
+            surface,
+            title,
+            String::new(),
+            body,
+            focused,
+            SystemTime::now(),
+        );
         #[cfg(target_os = "linux")]
         if !focused && self.desktop.is_some() {
             // The new bubble reuses the replaced one's (replaces_id): don't close it.
