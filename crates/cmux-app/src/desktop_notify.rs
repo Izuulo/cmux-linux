@@ -425,6 +425,42 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    fn click_carries_the_token_sent_before_it() {
+        use std::collections::HashMap;
+        let sig = |member: &str, body: &(u32, &str)| {
+            zbus::Message::signal(
+                "/org/freedesktop/Notifications",
+                "org.freedesktop.Notifications",
+                member,
+            )
+            .unwrap()
+            .build(body)
+            .unwrap()
+        };
+        let mut pending = HashMap::new();
+        assert_eq!(pair(&mut pending, &sig("ActivationToken", &(7, "tok"))), None);
+        assert_eq!(
+            pair(&mut pending, &sig("ActionInvoked", &(7, "default"))),
+            Some(Signal::Activated { server: 7, token: Some("tok".into()) })
+        );
+        assert_eq!(
+            pair(&mut pending, &sig("ActionInvoked", &(8, "default"))),
+            Some(Signal::Activated { server: 8, token: None })
+        );
+        assert_eq!(pair(&mut pending, &sig("ActionInvoked", &(8, "other"))), None);
+        let closed = zbus::Message::signal(
+            "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications",
+            "NotificationClosed",
+        )
+        .unwrap()
+        .build(&(9u32, 2u32))
+        .unwrap();
+        assert_eq!(pair(&mut pending, &closed), Some(Signal::Closed(9)));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
     fn connect_without_bus_is_none() {
         let n = futures::executor::block_on(DesktopNotifier::connect(Some(
             "unix:path=/nonexistent/cmux-linux-test-bus",
