@@ -2,20 +2,88 @@
 //! the session bus. The id bookkeeping and text rules are plain code; the D-Bus client is Linux
 //! only.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cmux_core::{NotificationId, SurfaceId, WorkspaceId};
 
+/// What to do once a post's reply is in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Next {
+    Nothing,
+    /// Post the newest notification that queued up behind the reply.
+    Post {
+        id: NotificationId,
+        replaces: u32,
+    },
+    /// The posted notification was read or removed meanwhile: take its bubble down.
+    Close(u32),
+}
+
 /// Which desktop bubble (server id) shows which notification. One bubble per surface: a new
-/// notification there replaces the old bubble (`replaces_id`), as cmux withdraws it (rn §9).
+/// notification there reuses the old bubble (`replaces_id`), as cmux withdraws it (rn §9).
+/// At most one post per surface is out at a time; newer ones wait, and only the newest is
+/// posted when the reply comes back, so a flood of OSCs is a handful of D-Bus calls.
 #[derive(Debug, Default)]
 pub struct DesktopIds {
     by_local: HashMap<NotificationId, (u32, WorkspaceId, SurfaceId)>,
     by_server: HashMap<u32, NotificationId>,
     by_surface: HashMap<(WorkspaceId, SurfaceId), u32>,
+    in_flight: HashSet<(WorkspaceId, SurfaceId)>,
+    queued: HashMap<(WorkspaceId, SurfaceId), NotificationId>,
 }
 
 impl DesktopIds {
+    /// `id` wants a bubble. Some(replaces_id) = post it now; None = it waits for the reply
+    /// of the post already out for this surface.
+    pub fn want(&mut self, id: NotificationId, ws: WorkspaceId, s: SurfaceId) -> Option<u32> {
+        if !self.in_flight.insert((ws, s)) {
+            self.queued.insert((ws, s), id);
+            return None;
+        }
+        Some(self.replaces(ws, s))
+    }
+
+    /// The reply to `id`'s post (`server` None = it failed). `alive`: still unread in the store.
+    pub fn posted(
+        &mut self,
+        id: NotificationId,
+        ws: WorkspaceId,
+        s: SurfaceId,
+        server: Option<u32>,
+        alive: impl Fn(NotificationId) -> bool,
+    ) -> Next {
+        self.in_flight.remove(&(ws, s));
+        if let Some(server) = server {
+            self.record(id, ws, s, server);
+        }
+        if let Some(q) = self.queued.remove(&(ws, s))
+            && alive(q)
+        {
+            self.retire(id);
+            self.in_flight.insert((ws, s));
+            return Next::Post {
+                id: q,
+                replaces: self.replaces(ws, s),
+            };
+        }
+        if !alive(id)
+            && let Some(server) = self.forget(id)
+        {
+            return Next::Close(server);
+        }
+        Next::Nothing
+    }
+
+    /// `id` was replaced by a newer notification on its surface that reuses its bubble: drop
+    /// the mapping but keep the surface's bubble.
+    pub fn retire(&mut self, id: NotificationId) {
+        if let Some((server, _, _)) = self.by_local.remove(&id)
+            && self.by_server.get(&server) == Some(&id)
+        {
+            self.by_server.remove(&server);
+        }
+    }
+
     /// The bubble to replace for a new notification on this surface; 0 = a new bubble.
     pub fn replaces(&self, ws: WorkspaceId, s: SurfaceId) -> u32 {
         self.by_surface.get(&(ws, s)).copied().unwrap_or(0)
@@ -41,6 +109,7 @@ impl DesktopIds {
 
     /// Drops `id`'s bubble from the map; returns the server id to close.
     pub fn forget(&mut self, id: NotificationId) -> Option<u32> {
+        self.queued.retain(|_, q| *q != id);
         let (server, ws, s) = self.by_local.remove(&id)?;
         if self.by_server.get(&server) == Some(&id) {
             self.by_server.remove(&server);
@@ -284,6 +353,68 @@ mod tests {
         ids.record(NotificationId(3), W, S, 41);
         assert_eq!(ids.forget_server(41), Some(NotificationId(3)));
         assert_eq!(ids.server_of(NotificationId(3)), None);
+    }
+
+    const N1: NotificationId = NotificationId(1);
+    const N2: NotificationId = NotificationId(2);
+    const N3: NotificationId = NotificationId(3);
+
+    #[test]
+    fn replacement_keeps_the_bubble() {
+        let mut ids = DesktopIds::default();
+        assert_eq!(ids.want(N1, W, S), Some(0));
+        assert_eq!(ids.posted(N1, W, S, Some(40), |_| true), Next::Nothing);
+        // N2 replaces N1 in the store: N1's bubble is reused, not closed.
+        ids.retire(N1);
+        assert_eq!(ids.forget(N1), None);
+        assert_eq!(ids.want(N2, W, S), Some(40));
+        assert_eq!(ids.posted(N2, W, S, Some(40), |_| true), Next::Nothing);
+        assert_eq!(ids.local_of(40), Some(N2));
+        assert_eq!(ids.forget(N2), Some(40));
+    }
+
+    #[test]
+    fn one_post_in_flight_per_surface() {
+        let mut ids = DesktopIds::default();
+        assert_eq!(ids.want(N1, W, S), Some(0));
+        assert_eq!(ids.want(N2, W, S), None, "queued behind N1");
+        assert_eq!(ids.want(N3, W, S), None, "replaces N2 in the queue");
+        assert_eq!(
+            ids.posted(N1, W, S, Some(40), |_| true),
+            Next::Post {
+                id: N3,
+                replaces: 40
+            }
+        );
+        assert_eq!(ids.posted(N3, W, S, Some(40), |_| true), Next::Nothing);
+        assert_eq!(ids.local_of(40), Some(N3));
+        assert_eq!(ids.server_of(N1), None);
+    }
+
+    #[test]
+    fn posted_after_read_closes() {
+        let mut ids = DesktopIds::default();
+        ids.want(N1, W, S);
+        assert_eq!(ids.posted(N1, W, S, Some(40), |_| false), Next::Close(40));
+        assert_eq!(ids.replaces(W, S), 0);
+        assert_eq!(ids.local_of(40), None);
+    }
+
+    #[test]
+    fn queued_but_gone_is_dropped() {
+        let mut ids = DesktopIds::default();
+        ids.want(N1, W, S);
+        ids.want(N2, W, S);
+        assert_eq!(ids.posted(N1, W, S, Some(40), |_| false), Next::Close(40));
+        assert_eq!(ids.want(N3, W, S), Some(0), "nothing in flight any more");
+    }
+
+    #[test]
+    fn failed_post_frees_the_surface() {
+        let mut ids = DesktopIds::default();
+        ids.want(N1, W, S);
+        assert_eq!(ids.posted(N1, W, S, None, |_| true), Next::Nothing);
+        assert_eq!(ids.want(N2, W, S), Some(0));
     }
 
     #[test]

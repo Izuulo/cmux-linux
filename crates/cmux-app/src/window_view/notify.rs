@@ -31,14 +31,18 @@ impl WindowView {
             selected,
             self.active_surface(ws, cx) == Some(surface),
         );
-        #[cfg(target_os = "linux")]
-        let bubble = (!focused).then(|| (title.clone(), body.clone()));
         let added = self
             .notifications
             .add(ws, surface, title, body, focused, SystemTime::now());
         #[cfg(target_os = "linux")]
-        if let Some((summary, body)) = bubble {
-            self.post_desktop(added.id, ws, surface, summary, body, cx);
+        if !focused && self.desktop.is_some() {
+            // The new bubble reuses the replaced one's (replaces_id): don't close it.
+            for old in &added.replaced {
+                self.desktop_ids.retire(*old);
+            }
+            if let Some(replaces) = self.desktop_ids.want(added.id, ws, surface) {
+                self.post_desktop(added.id, ws, surface, replaces, cx);
+            }
         }
         if !focused {
             // rn §6 app.reorderOnNotification: the workspace moves to the top.
@@ -192,6 +196,9 @@ impl WindowView {
     }
 }
 
+#[cfg(target_os = "linux")]
+use crate::desktop_notify::Next;
+
 /// Linux desktop bubbles (plan M4 D9).
 #[cfg(target_os = "linux")]
 impl WindowView {
@@ -239,30 +246,31 @@ impl WindowView {
         })
     }
 
+    /// Posts `id`'s bubble; when the reply is in, posts whatever queued up behind it.
     fn post_desktop(
         &mut self,
         id: NotificationId,
         ws: WorkspaceId,
         surface: SurfaceId,
-        summary: String,
-        body: String,
+        replaces: u32,
         cx: &mut Context<Self>,
     ) {
-        let Some(notifier) = self.desktop.clone() else {
+        let (Some(notifier), Some(n)) = (self.desktop.clone(), self.notifications.get(id)) else {
             return;
         };
-        let replaces = self.desktop_ids.replaces(ws, surface);
+        let (summary, body) = (n.title.clone(), n.body.clone());
         cx.spawn(async move |this, cx| {
-            let Some(server) = notifier.post(&summary, &body, replaces).await else {
-                return;
-            };
+            let server = notifier.post(&summary, &body, replaces).await;
             let _ = this.update(cx, |this, cx| {
-                // Read or removed while the call was out: take the bubble down again.
-                if this.notifications.get(id).is_some_and(|n| !n.read) {
-                    this.desktop_ids.record(id, ws, surface, server);
-                } else {
-                    cx.spawn(async move |_, _| notifier.close(server).await)
-                        .detach();
+                let store = &this.notifications;
+                let alive = |q| store.get(q).is_some_and(|n| !n.read);
+                match this.desktop_ids.posted(id, ws, surface, server, alive) {
+                    Next::Nothing => {}
+                    Next::Post { id, replaces } => this.post_desktop(id, ws, surface, replaces, cx),
+                    Next::Close(server) => {
+                        cx.spawn(async move |_, _| notifier.close(server).await)
+                            .detach();
+                    }
                 }
             });
         })
