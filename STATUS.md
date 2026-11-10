@@ -4,8 +4,8 @@
      current version to docs/status-archive.md. -->
 
 **Updated:** 2026-11-10
-**Current milestone:** M4 notifications: built on branch `m4-notifications` (Tasks 1–8 and review fixes, Linux CI green); desktop checks (plan Task 9 Step 1) pending. M2 and M3 desktop exit checks also pending
-**Next action:** at the KDE desktop: M4 plan Task 9 Step 1 (exits 1–3, the "Run it" checks and screenshots of Tasks 4–6, blur re-check), M2 plan Task 11, M3 plan Task 12 Steps 1–3; record results in each journal, fix on the branch, then merge M4 and write the M5 plan.
+**Current milestone:** M4 notifications merged to `master` (PR #5) before its desktop checks (owner's call, 2026-11-10); M2, M3 and M4 desktop exit checks pending
+**Next action:** at the KDE desktop: M4 plan Task 9 Step 1 (exits 1–3, the "Run it" checks and screenshots of Tasks 4–6, blur re-check), M2 plan Task 11, M3 plan Task 12 Steps 1–3; record results in each journal and fix on `master`; then write `docs/milestones/m5-cli-socket/plan.md`.
 
 ## Where things are
 - Project design and milestone table: `docs/design.md`
@@ -20,7 +20,7 @@
 | M1 terminal | done; exit criterion 1 confirmed by user, 2–3 (Ghostty screenshot pair, latency trace) not yet measured |
 | M2 splits-tabs | merged (PR #3); exit checks (plan Task 11) pending at the desktop |
 | M3 workspaces-sidebar | merged (PR #4); exit checks (plan Task 12 Steps 1–3) pending at the desktop |
-| M4 notifications | built (branch `m4-notifications`), CI green; desktop checks pending |
+| M4 notifications | merged (PR #5); desktop checks (plan Task 9 Step 1) pending |
 | M5 cli-socket | not started |
 | M6 parity-release | not started |
 | M7 feed | not started (post-v1) |
