@@ -221,10 +221,11 @@ impl WindowView {
                         let Some(id) = this.desktop_ids.forget_server(server) else {
                             return;
                         };
-                        // shortcut: KWin refuses gpui's own activation for a background app;
-                        // Task 8 uses the notification's token instead.
-                        let _ = token;
-                        window.activate_window();
+                        let raised =
+                            token.is_some_and(|t| crate::activation::activate(window, cx, &t));
+                        if !raised {
+                            window.activate_window();
+                        }
                         this.jump_to(id, window, cx);
                     }
                     Signal::Closed(server) => {
