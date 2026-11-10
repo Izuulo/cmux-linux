@@ -9,6 +9,7 @@ use std::time::Instant;
 
 use cmux_core::{
     Closed, Direction, DividerRect, Layout, Orientation, PaneId, RESIZE_STEP, Rect, SurfaceId,
+    WorkspaceId,
 };
 use cmux_meta::PanelInput;
 use gpui::{
@@ -23,6 +24,7 @@ use crate::actions::*;
 use crate::chrome;
 use crate::style::TermStyle;
 use crate::terminal_view::{TerminalEvent, TerminalView};
+use crate::window_view::control::ShellEnv;
 
 /// Hit band each side of a 1 px divider (cmux `dividerHitExpansion`).
 const DIVIDER_HIT: f32 = 8.0;
@@ -40,6 +42,8 @@ struct Surface {
 }
 
 pub struct WorkspaceView {
+    id: WorkspaceId,
+    shell: Rc<ShellEnv>,
     layout: Layout,
     surfaces: HashMap<SurfaceId, Surface>,
     style: Rc<TermStyle>,
@@ -85,7 +89,9 @@ pub enum WorkspaceEvent {
 impl EventEmitter<WorkspaceEvent> for WorkspaceView {}
 
 impl WorkspaceView {
-    pub fn new(
+    pub(crate) fn new(
+        id: WorkspaceId,
+        shell: Rc<ShellEnv>,
         style: Rc<TermStyle>,
         cwd: Option<String>,
         window: &mut Window,
@@ -99,6 +105,8 @@ impl WorkspaceView {
             }
         });
         let mut this = Self {
+            id,
+            shell,
             layout: Layout::new(),
             surfaces: HashMap::new(),
             style,
@@ -183,6 +191,20 @@ impl WorkspaceView {
         self.surfaces.get(&surface).map(|s| &s.view)
     }
 
+    /// Focuses `pane` (the socket's `pane.focus`). False if it is gone.
+    pub fn focus_pane(
+        &mut self,
+        pane: PaneId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.layout.focus_pane(pane) {
+            return false;
+        }
+        self.focus_active(window, cx);
+        true
+    }
+
     /// Selects `surface`'s tab and focuses it (a jump). False if it is gone.
     pub fn focus_surface(
         &mut self,
@@ -247,7 +269,8 @@ impl WorkspaceView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let started = match TerminalView::start(&self.style, cwd.as_deref()) {
+        let env = self.shell.for_surface(self.id, surface);
+        let started = match TerminalView::start(&self.style, cwd.as_deref(), &env) {
             Ok(started) => started,
             Err(e) => {
                 eprintln!("cmux-linux: could not start a shell: {e}");

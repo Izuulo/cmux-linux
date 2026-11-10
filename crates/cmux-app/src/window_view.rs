@@ -20,6 +20,7 @@ use crate::actions::*;
 use crate::style::TermStyle;
 use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
+pub(crate) mod control;
 mod notify;
 mod panel;
 mod rename;
@@ -53,6 +54,10 @@ pub struct WindowView {
     prs: PrPoller,
     pr_in_flight: bool,
     notifications: Notifications,
+    /// Handles and env vars for new shells; shared with every `WorkspaceView`.
+    shell: Rc<control::ShellEnv>,
+    /// The control socket (M5), while it runs.
+    _server: Option<cmux_ipc::server::Server>,
     /// The notification panel is showing (Super+I, the bell).
     panel_open: bool,
     /// When a click outside last closed the panel (panel.rs REOPEN_GUARD).
@@ -86,6 +91,11 @@ impl WindowView {
         } else {
             None
         };
+        // Before the first shell starts: its env names the socket.
+        let (server, requests) = control::start_server().unzip();
+        let shell = Rc::new(control::ShellEnv::new(
+            server.as_ref().map(|s| s.path().to_path_buf()),
+        ));
         let mut this = Self {
             workspaces: Workspaces::new(),
             views: HashMap::new(),
@@ -104,6 +114,8 @@ impl WindowView {
             prs: PrPoller::new(),
             pr_in_flight: false,
             notifications: Notifications::new(),
+            shell,
+            _server: server,
             panel_open: false,
             panel_dismissed: None,
             _tasks: Vec::new(),
@@ -116,6 +128,19 @@ impl WindowView {
             _blur: blur,
         };
         this._tasks = vec![Self::meta_loop(cx), Self::pr_loop(cx)];
+        if let Some(mut requests) = requests {
+            this._tasks.push(cx.spawn_in(window, async move |this, cx| {
+                use futures::StreamExt;
+                while let Some(req) = requests.next().await {
+                    let reply = this.update_in(cx, |this, window, cx| {
+                        this.control(&req.method, &req.params, window, cx)
+                    });
+                    // The view is gone: dropping `req` fails the client with internal_error.
+                    let Ok(reply) = reply else { return };
+                    req.respond(reply);
+                }
+            }));
+        }
         #[cfg(target_os = "linux")]
         this._tasks.push(Self::desktop_loop(window, cx));
         // Coming back to the window reads what is in front of the user (rn §3).
@@ -143,8 +168,8 @@ impl WindowView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let style = self.style.clone();
-        let view = cx.new(|cx| WorkspaceView::new(style, cwd, window, cx));
+        let (style, shell) = (self.style.clone(), self.shell.clone());
+        let view = cx.new(|cx| WorkspaceView::new(id, shell, style, cwd, window, cx));
         if !view.read(cx).has_terminals() {
             return false;
         }

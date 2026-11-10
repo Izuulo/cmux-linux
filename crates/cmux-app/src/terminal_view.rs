@@ -119,14 +119,19 @@ pub struct TerminalView {
 }
 
 impl TerminalView {
-    /// Starts the user's shell, in `cwd` when it is an existing directory (else `$HOME`).
+    /// Starts the user's shell, in `cwd` when it is an existing directory (else `$HOME`), with
+    /// `env` added (the `CMUX_*` variables, M5 plan D8).
     /// Fallible so the caller can survive a failed spawn; pass the result to [`Self::new`].
     pub fn start(
         style: &TermStyle,
         cwd: Option<&str>,
+        env: &[(String, String)],
     ) -> std::io::Result<(Session, mpsc::UnboundedReceiver<PtyEvent>)> {
         let (tx, rx) = mpsc::unbounded::<PtyEvent>();
         let mut cmd = Session::shell_command();
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
         if let Some(dir) = cwd.filter(|d| std::path::Path::new(d).is_dir()) {
             cmd.cwd(dir);
         }

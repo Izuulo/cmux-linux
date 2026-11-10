@@ -878,6 +878,7 @@ dependencies = [
  "gpui",
  "libc",
  "raw-window-handle",
+ "serde_json",
  "wayland-backend",
  "wayland-client",
  "wayland-protocols 0.32.13",
