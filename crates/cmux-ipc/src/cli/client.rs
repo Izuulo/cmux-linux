@@ -88,7 +88,6 @@ impl Client {
         Ok(reply)
     }
 
-    #[allow(dead_code)] // the v2 commands arrive in plan Task 5
     /// A v2 call. A server error comes back as `Ok(Err(..))`.
     pub(crate) fn call(
         &mut self,

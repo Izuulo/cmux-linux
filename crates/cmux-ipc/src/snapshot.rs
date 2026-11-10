@@ -6,6 +6,7 @@ use serde_json::{Map, Value, json};
 use crate::handles::Handle;
 use crate::wire::{Reply, RpcError};
 
+#[derive(Clone)]
 pub struct Snapshot {
     pub window: Handle,
     /// Index into `workspaces`.
@@ -13,6 +14,7 @@ pub struct Snapshot {
     pub workspaces: Vec<WsSnap>,
 }
 
+#[derive(Clone)]
 pub struct WsSnap {
     pub key: u64,
     pub handle: Handle,
@@ -25,6 +27,7 @@ pub struct WsSnap {
     pub panes: Vec<PaneSnap>,
 }
 
+#[derive(Clone)]
 pub struct PaneSnap {
     pub key: u64,
     pub handle: Handle,
@@ -33,6 +36,7 @@ pub struct PaneSnap {
     pub surfaces: Vec<SurfSnap>,
 }
 
+#[derive(Clone)]
 pub struct SurfSnap {
     pub key: u64,
     pub handle: Handle,

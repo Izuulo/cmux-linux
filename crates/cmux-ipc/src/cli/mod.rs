@@ -12,6 +12,7 @@ use crate::wire::RpcError;
 
 mod args;
 mod client;
+mod commands;
 mod help;
 
 use args::Global;
@@ -106,6 +107,13 @@ fn run_inner(args: &[String], ctx: &Ctx) -> Result<String, CliError> {
     };
     match name.as_str() {
         "ping" => ping(&mut cmd),
+        "list-workspaces" => commands::list_workspaces(&mut cmd),
+        "current-workspace" => commands::current_workspace(&mut cmd),
+        "list-panes" => commands::list_panes(&mut cmd),
+        "list-pane-surfaces" => commands::list_pane_surfaces(&mut cmd),
+        "select-workspace" => commands::select_workspace(&mut cmd),
+        "focus-pane" => commands::focus_pane(&mut cmd),
+        "focus-panel" => commands::focus_panel(&mut cmd),
         other => fail(format!("{other} is not available yet")),
     }
 }
@@ -148,7 +156,6 @@ fn distance(a: &str, b: &str) -> usize {
 }
 
 /// One command's invocation: options, arguments and a lazily connected client.
-#[allow(dead_code)] // the v2 commands arrive in plan Task 5
 pub(crate) struct Cmd<'a> {
     pub ctx: &'a Ctx,
     pub g: Global,
@@ -156,7 +163,6 @@ pub(crate) struct Cmd<'a> {
     client: Option<Client>,
 }
 
-#[allow(dead_code)] // the v2 commands arrive in plan Task 5
 impl Cmd<'_> {
     /// A non-blank environment variable, trimmed.
     pub(crate) fn env(&self, key: &str) -> Option<&str> {
