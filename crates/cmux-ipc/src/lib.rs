@@ -2,4 +2,5 @@
 
 pub mod handles;
 pub mod json;
+pub mod snapshot;
 pub mod wire;
