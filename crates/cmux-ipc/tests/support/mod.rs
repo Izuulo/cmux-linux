@@ -1,8 +1,17 @@
 //! Shared test fixtures.
 #![allow(dead_code)]
 
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+use cmux_ipc::cli::{Ctx, Outcome, run};
 use cmux_ipc::handles::{Handles, Kind};
+use cmux_ipc::server::{Access, DEADLINE, Server};
 use cmux_ipc::snapshot::{PaneSnap, Snapshot, SurfSnap, WsSnap};
+use cmux_ipc::wire::{Reply, RpcError};
+use futures::StreamExt;
+use serde_json::Value;
 
 /// Workspace A (`workspace:1`, "Terminal", selected): pane P1 {S1 "zsh" selected, S2 "vim"},
 /// pane P2 {S3 "htop"}, P2 focused. Workspace B (`workspace:2`, custom title "Build"): one
@@ -74,4 +83,80 @@ pub fn temp_dir() -> std::path::PathBuf {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
+}
+
+/// A fake app on the real server: canned replies first, then the snapshot's reads, else
+/// `method_not_found`. Every request is recorded.
+pub struct Fake {
+    pub path: PathBuf,
+    pub requests: Arc<Mutex<Vec<(String, Value)>>>,
+    _server: Server,
+}
+
+impl Fake {
+    pub fn start(snap: Snapshot, canned: HashMap<&'static str, Reply>) -> Fake {
+        Fake::with_access(snap, canned, Access::AllowAll)
+    }
+
+    pub fn with_access(
+        snap: Snapshot,
+        canned: HashMap<&'static str, Reply>,
+        access: Access,
+    ) -> Fake {
+        let path = temp_dir().join("cmux.sock");
+        let (server, mut rx) = Server::start(&path, access, DEADLINE).unwrap();
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let log = requests.clone();
+        std::thread::spawn(move || {
+            while let Some(req) = futures::executor::block_on(rx.next()) {
+                log.lock()
+                    .unwrap()
+                    .push((req.method.clone(), Value::Object(req.params.clone())));
+                let reply = match canned.get(req.method.as_str()) {
+                    Some(r) => r.clone(),
+                    None => snap.read(&req.method, &req.params).unwrap_or_else(|| {
+                        Err(RpcError::new("method_not_found", "Unknown method"))
+                    }),
+                };
+                req.respond(reply);
+            }
+        });
+        Fake {
+            path,
+            requests,
+            _server: server,
+        }
+    }
+
+    /// `CMUX_SOCKET_PATH` = this fake, plus `env`; cwd `/work`.
+    pub fn ctx(&self, env: &[(&str, &str)]) -> Ctx {
+        let mut ctx = ctx(env);
+        ctx.env
+            .insert("CMUX_SOCKET_PATH".into(), self.path.display().to_string());
+        ctx
+    }
+
+    pub fn run(&self, args: &[&str], env: &[(&str, &str)]) -> Outcome {
+        cli(args, &self.ctx(env))
+    }
+
+    /// The recorded (method, params) pairs, in order.
+    pub fn requests(&self) -> Vec<(String, Value)> {
+        self.requests.lock().unwrap().clone()
+    }
+}
+
+pub fn ctx(env: &[(&str, &str)]) -> Ctx {
+    Ctx {
+        env: env
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect(),
+        cwd: PathBuf::from("/work"),
+    }
+}
+
+pub fn cli(args: &[&str], ctx: &Ctx) -> Outcome {
+    let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+    run(&args, ctx)
 }

@@ -1,0 +1,325 @@
+//! Help texts: cmux's (rc §9, `CLI/cmux.swift`, GPL) trimmed to what is ported (plan D10).
+
+/// (command, usage line, help text). Groups are cmux's task groups.
+pub(crate) const GROUPS: &[(&str, &[&str])] = &[
+    ("Start & Resume", &["new-workspace"]),
+    (
+        "Navigate & Arrange",
+        &["new-split", "focus-pane", "focus-panel", "select-workspace"],
+    ),
+    (
+        "Inspect",
+        &[
+            "list-workspaces",
+            "list-panes",
+            "list-pane-surfaces",
+            "current-workspace",
+        ],
+    ),
+    (
+        "Automation",
+        &["send", "send-key", "notify", "dismiss-notification"],
+    ),
+    ("Diagnostics / Advanced", &["ping", "version"]),
+];
+
+pub(crate) fn usage_line(cmd: &str) -> Option<&'static str> {
+    Some(match cmd {
+        "new-workspace" => {
+            "new-workspace [--name <title>] [--cwd <path>] [--command <text>] [--window <id|ref|index>] [--focus <true|false>]"
+        }
+        "new-split" => {
+            "new-split <left|right|up|down> [--workspace <id|ref|index>] [--surface <id|ref|index>] [--panel <id|ref|index>] [--window <id|ref|index>] [--command <text>] [--focus <true|false>]"
+        }
+        "focus-pane" => {
+            "focus-pane --pane <id|ref|index> [--workspace <id|ref|index>] [--window <id|ref|index>]"
+        }
+        "focus-panel" => {
+            "focus-panel --panel <id|ref|index> [--workspace <id|ref|index>] [--window <id|ref|index>]"
+        }
+        "select-workspace" => {
+            "select-workspace --workspace <id|ref|index> [--window <id|ref|index>]"
+        }
+        "list-workspaces" => "list-workspaces [--window <id|ref|index>]",
+        "list-panes" => "list-panes [--workspace <id|ref|index>] [--window <id|ref|index>]",
+        "list-pane-surfaces" => {
+            "list-pane-surfaces [--workspace <id|ref|index>] [--pane <id|ref|index>] [--window <id|ref|index>]"
+        }
+        "current-workspace" => "current-workspace [--window <id|ref|index>]",
+        "send" => {
+            "send [--workspace <id|ref|index>] [--surface <id|ref|index>] [--window <id|ref|index>] [--paste] <text>"
+        }
+        "send-key" => {
+            "send-key [--workspace <id|ref|index>] [--surface <id|ref|index>] [--window <id|ref|index>] <key>"
+        }
+        "notify" => {
+            "notify [--title <text>] [--subtitle <text>] [--body <text>] [--reply] [--desktop <true|false>] [--clear] [--workspace <id|ref|index>] [--surface <id|ref|index>] [--window <id|ref|index>]"
+        }
+        "dismiss-notification" => "dismiss-notification (--id <uuid> | --all-read)",
+        "ping" => "ping",
+        "version" => "version",
+        _ => return None,
+    })
+}
+
+pub(crate) fn top_level() -> String {
+    let mut out = String::from(
+        "cmux - control cmux via Unix socket
+
+Usage:
+  cmux [global-options] <command> [options]
+
+Targets:
+  Commands that accept a window, workspace, pane, or surface take a UUID, a short ref (window:1/workspace:2/pane:3/surface:4), or an index.
+  Output defaults to refs; pass --id-format uuids or --id-format both to include UUIDs.
+
+Socket Auth:
+  --password takes precedence, then CMUX_SOCKET_PASSWORD, then the socket-control-password file.
+
+Commands:
+",
+    );
+    for (i, (group, cmds)) in GROUPS.iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        out.push_str(&format!("  {group}:\n"));
+        for cmd in *cmds {
+            out.push_str(&format!("    {}\n", usage_line(cmd).unwrap_or(cmd)));
+        }
+    }
+    out.push_str(
+        "
+Environment:
+  CMUX_WORKSPACE_ID   Auto-set in cmux terminals. Used as default --workspace for
+                      ALL commands (send, list-panes, new-split, notify, etc.).
+  CMUX_SURFACE_ID     Auto-set in cmux terminals. Used as default --surface.
+  CMUX_SOCKET_PATH    Override the Unix socket path. Without this, the CLI defaults
+                      to ~/.local/state/cmux-linux/cmux.sock.
+",
+    );
+    out
+}
+
+/// `cmux <cmd> --help`: the command name, a blank line, then the help text.
+pub(crate) fn command(cmd: &str) -> Option<String> {
+    let text = match cmd {
+        "notify" => NOTIFY,
+        "dismiss-notification" => DISMISS,
+        "new-workspace" => NEW_WORKSPACE,
+        "new-split" => NEW_SPLIT,
+        "send" => SEND,
+        "send-key" => SEND_KEY,
+        "list-workspaces" => LIST_WORKSPACES,
+        "current-workspace" => CURRENT_WORKSPACE,
+        "list-panes" => LIST_PANES,
+        "list-pane-surfaces" => LIST_PANE_SURFACES,
+        "select-workspace" => SELECT_WORKSPACE,
+        "focus-pane" => FOCUS_PANE,
+        "focus-panel" => FOCUS_PANEL,
+        "ping" => PING,
+        _ => return None,
+    };
+    Some(format!("cmux {cmd}\n\n{text}"))
+}
+
+const NOTIFY: &str = r#"Usage: cmux notify [flags]
+
+Send a notification to a workspace/surface, or clear that resolved target with --clear.
+
+Flags:
+  --title <text>         Notification title (default: "Notification")
+  --subtitle <text>      Notification subtitle
+  --body <text>          Notification body
+  --reply                Accepted for compatibility; inline replies are not supported
+  --desktop <true|false> Post a desktop notification (default: true). false keeps the entry in the Notifications panel, sidebar badge and pane ring without a desktop notification
+  --clear                Clear notifications for the resolved caller/target instead of posting
+  --workspace <id|ref|index>   Target workspace, except explicit surface UUIDs resolve globally
+  --surface <id|ref|index>     Target surface (refs/indexes use workspace/window context)
+  --window <id|ref|index>      Window context for workspace/surface refs and indexes
+  --json                 Print the response payload as JSON
+  --id-format <mode>     refs, uuids, or both for human-readable ids
+
+The response includes the created notification id. Use cmux dismiss-notification --id <uuid|notification:<uuid>> to remove it.
+--desktop has no effect with --clear.
+
+Example:
+  cmux notify --title "Build done" --body "All tests passed"
+  cmux notify --title "Error" --subtitle "test.swift" --body "Line 42: syntax error"
+  cmux notify --surface <uuid> --title "Build done"
+  cmux notify --title "Deploy finished" --desktop false
+  cmux notify --clear
+"#;
+
+const DISMISS: &str = "Usage: cmux dismiss-notification (--id <uuid> | --all-read)
+
+Remove one notification, or remove every already-read notification.
+
+Flags:
+  --id <uuid|notification:<uuid>>  Notification id or notify handle to remove
+  --all-read            Remove every already-read notification
+  --json                Print JSON
+  --id-format <mode>    refs, uuids, or both
+";
+
+const NEW_WORKSPACE: &str = r#"Usage: cmux new-workspace [--name <title>] [--cwd <path>] [--command <text>] [--window <id|ref|index>] [--focus <true|false>]
+
+Create a new workspace in the caller's window.
+
+Flags:
+  --name <title>       Set a custom name for the new workspace
+  --cwd <path>         Set the working directory for the new workspace
+  --command <text>     Run this as the new terminal's initial command
+  --window <id|ref|index> Target window (default: caller's window)
+  --focus <true|false> Focus the new workspace (default: false)
+
+Example:
+  cmux new-workspace
+  cmux new-workspace --name "Build Server"
+  cmux new-workspace --cwd ~/projects/myapp
+  cmux new-workspace --cwd . --command "npm test"
+"#;
+
+const NEW_SPLIT: &str = "Usage: cmux new-split <left|right|up|down> [flags]
+
+Split the current pane in the given direction.
+
+Flags:
+  --workspace <id|ref>   Target workspace (default: $CMUX_WORKSPACE_ID)
+  --surface <id|ref>     Surface to split from (default: $CMUX_SURFACE_ID)
+  --panel <id|ref>       Alias for --surface
+  --window <id|ref|index>
+                          Window context for workspace/surface refs and indexes
+  --command <text>     Run this as the new terminal's initial command
+  --focus <true|false>   Focus the new split (default: false)
+
+Example:
+  cmux new-split right
+  cmux new-split down --workspace workspace:1
+";
+
+const SEND: &str = r#"Usage: cmux send [flags] [--] <text>
+
+Send text to a terminal surface as keystrokes. Escape sequences: \n and \r send Enter, \t sends Tab.
+
+For large text (for example over 4 KB, or several lines going to an agent), use --paste. Keystrokes press Enter at every newline, which can submit each line on its own.
+
+With --paste, the text goes through the paste path, unchanged: escape sequences such as \n are not interpreted, and control characters such as Esc and Ctrl-C are replaced with spaces. --paste must come before the text.
+
+Flags:
+  --workspace <id|ref|index>   Target workspace (default: $CMUX_WORKSPACE_ID)
+  --surface <id|ref|index>     Target surface (default: $CMUX_SURFACE_ID)
+  --window <id|ref|index>      Window context for workspace/surface refs and indexes
+  --paste                      Paste the text instead of typing it
+
+Example:
+  cmux send "echo hello"
+  cmux send --surface surface:2 "ls -la\n"
+  cmux send --paste --surface surface:2 "$(cat notes.md)"
+"#;
+
+const SEND_KEY: &str = "Usage: cmux send-key [flags] [--] <key>
+
+Send a key event to a terminal surface.
+
+Flags:
+  --workspace <id|ref|index>   Target workspace (default: $CMUX_WORKSPACE_ID)
+  --surface <id|ref|index>     Target surface (default: $CMUX_SURFACE_ID)
+  --window <id|ref|index>      Window context for workspace/surface refs and indexes
+
+Example:
+  cmux send-key enter
+  cmux send-key --surface surface:2 ctrl+c
+";
+
+const LIST_WORKSPACES: &str = "Usage: cmux list-workspaces [--window <id|ref|index>]
+
+List workspaces in a window.
+
+Flags:
+  --window <id|ref|index>   Target window (default: caller/current window)
+
+Example:
+  cmux list-workspaces
+";
+
+const CURRENT_WORKSPACE: &str = "Usage: cmux current-workspace [--window <id|ref|index>]
+
+Print the selected workspace ID for a window.
+";
+
+const LIST_PANES: &str =
+    "Usage: cmux list-panes [--workspace <id|ref|index>] [--window <id|ref|index>]
+
+List panes in a workspace.
+
+Flags:
+  --workspace <id|ref|index>   Workspace context (default: $CMUX_WORKSPACE_ID)
+  --window <id|ref|index>      Window context for workspace refs and indexes
+
+Example:
+  cmux list-panes
+  cmux list-panes --workspace workspace:2
+";
+
+const LIST_PANE_SURFACES: &str = "Usage: cmux list-pane-surfaces [--workspace <id|ref|index>] [--pane <id|ref|index>] [--window <id|ref|index>]
+
+List surfaces in a pane.
+
+Flags:
+  --workspace <id|ref|index>   Workspace context (default: $CMUX_WORKSPACE_ID)
+  --pane <id|ref|index>        Restrict to a specific pane (default: focused pane)
+  --window <id|ref|index>      Window context for workspace/pane refs and indexes
+
+Example:
+  cmux list-pane-surfaces
+  cmux list-pane-surfaces --workspace workspace:2 --pane pane:1
+";
+
+const SELECT_WORKSPACE: &str =
+    "Usage: cmux select-workspace --workspace <id|ref|index> [--window <id|ref|index>]
+
+Select (switch to) the specified workspace.
+
+Flags:
+  --workspace <id|ref|index>   Workspace to select (required)
+  --window <id|ref|index>      Window context for workspace refs and indexes
+
+Example:
+  cmux select-workspace --workspace workspace:2
+  cmux select-workspace --workspace 0
+";
+
+const FOCUS_PANE: &str = "Usage: cmux focus-pane [--pane <id|ref|index> | <id|ref|index>] [flags]
+
+Focus the specified pane.
+
+Flags:
+  --pane <id|ref|index>       Pane to focus (required unless passed positionally)
+  --workspace <id|ref|index>  Workspace context (default: $CMUX_WORKSPACE_ID)
+  --window <id|ref|index>     Window context for workspace/pane refs and indexes
+
+Example:
+  cmux focus-pane --pane pane:2
+  cmux focus-pane pane:1
+  cmux focus-pane --pane pane:1 --workspace workspace:2
+";
+
+const FOCUS_PANEL: &str = "Usage: cmux focus-panel --panel <id|ref|index> [--workspace <id|ref|index>] [--window <id|ref|index>]
+
+Focus a specific panel (surface).
+
+Flags:
+  --panel <id|ref|index>       Panel/surface to focus (required)
+  --workspace <id|ref|index>   Workspace context (default: $CMUX_WORKSPACE_ID)
+  --window <id|ref|index>      Window context for workspace/panel refs and indexes
+
+Example:
+  cmux focus-panel --panel surface:2
+  cmux focus-panel --panel surface:5 --workspace workspace:2
+";
+
+const PING: &str = "Usage: cmux ping
+
+Check that cmux is running and reachable over its socket. Prints PONG.
+";
