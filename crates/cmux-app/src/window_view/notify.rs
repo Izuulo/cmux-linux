@@ -31,9 +31,15 @@ impl WindowView {
             selected,
             self.active_surface(ws, cx) == Some(surface),
         );
+        #[cfg(target_os = "linux")]
+        let bubble = (!focused).then(|| (title.clone(), body.clone()));
         let added = self
             .notifications
             .add(ws, surface, title, body, focused, SystemTime::now());
+        #[cfg(target_os = "linux")]
+        if let Some((summary, body)) = bubble {
+            self.post_desktop(added.id, ws, surface, summary, body, cx);
+        }
         if !focused {
             // rn §6 app.reorderOnNotification: the workspace moves to the top.
             self.workspaces.move_to(ws, 0);
@@ -148,7 +154,11 @@ impl WindowView {
     }
 
     /// After any store change. `gone`: ids read or removed, whose desktop bubbles go (M4 D9).
-    pub(super) fn after_change(&mut self, _gone: Vec<NotificationId>, cx: &mut Context<Self>) {
+    pub(super) fn after_change(&mut self, gone: Vec<NotificationId>, cx: &mut Context<Self>) {
+        #[cfg(target_os = "linux")]
+        self.withdraw_desktop(gone, cx);
+        #[cfg(not(target_os = "linux"))]
+        let _ = gone;
         self.push_attention(cx);
         cx.notify();
     }
@@ -179,5 +189,102 @@ impl WindowView {
 
     fn active_surface(&self, ws: WorkspaceId, cx: &Context<Self>) -> Option<SurfaceId> {
         Some(self.views.get(&ws)?.read(cx).layout().active_surface())
+    }
+}
+
+/// Linux desktop bubbles (plan M4 D9).
+#[cfg(target_os = "linux")]
+impl WindowView {
+    /// Connects to the notification server and follows its clicks for the window's lifetime.
+    pub(super) fn desktop_loop(window: &mut Window, cx: &mut Context<Self>) -> gpui::Task<()> {
+        use futures::StreamExt;
+
+        use crate::desktop_notify::{DesktopNotifier, Signal};
+
+        cx.spawn_in(window, async move |this, cx| {
+            let Some(notifier) = DesktopNotifier::connect(None).await else {
+                return;
+            };
+            let notifier = std::rc::Rc::new(notifier);
+            let Some(mut signals) = notifier.signals().await else {
+                return;
+            };
+            if this
+                .update(cx, |this, _| this.desktop = Some(notifier.clone()))
+                .is_err()
+            {
+                return;
+            }
+            while let Some(signal) = signals.next().await {
+                let alive = this.update_in(cx, |this, window, cx| match signal {
+                    Signal::Activated { server, token } => {
+                        let Some(id) = this.desktop_ids.forget_server(server) else {
+                            return;
+                        };
+                        // shortcut: KWin refuses gpui's own activation for a background app;
+                        // Task 8 uses the notification's token instead.
+                        let _ = token;
+                        window.activate_window();
+                        this.jump_to(id, window, cx);
+                    }
+                    Signal::Closed(server) => {
+                        this.desktop_ids.forget_server(server);
+                    }
+                });
+                if alive.is_err() {
+                    break;
+                }
+            }
+        })
+    }
+
+    fn post_desktop(
+        &mut self,
+        id: NotificationId,
+        ws: WorkspaceId,
+        surface: SurfaceId,
+        summary: String,
+        body: String,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(notifier) = self.desktop.clone() else {
+            return;
+        };
+        let replaces = self.desktop_ids.replaces(ws, surface);
+        cx.spawn(async move |this, cx| {
+            let Some(server) = notifier.post(&summary, &body, replaces).await else {
+                return;
+            };
+            let _ = this.update(cx, |this, cx| {
+                // Read or removed while the call was out: take the bubble down again.
+                if this.notifications.get(id).is_some_and(|n| !n.read) {
+                    this.desktop_ids.record(id, ws, surface, server);
+                } else {
+                    cx.spawn(async move |_, _| notifier.close(server).await)
+                        .detach();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Read or removed notifications lose their bubbles (rn §9).
+    fn withdraw_desktop(&mut self, gone: Vec<NotificationId>, cx: &mut Context<Self>) {
+        let Some(notifier) = self.desktop.clone() else {
+            return;
+        };
+        let servers: Vec<u32> = gone
+            .into_iter()
+            .filter_map(|id| self.desktop_ids.forget(id))
+            .collect();
+        if servers.is_empty() {
+            return;
+        }
+        cx.spawn(async move |_, _| {
+            for s in servers {
+                notifier.close(s).await;
+            }
+        })
+        .detach();
     }
 }

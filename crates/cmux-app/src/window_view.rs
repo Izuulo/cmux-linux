@@ -59,6 +59,11 @@ pub struct WindowView {
     panel_dismissed: Option<Instant>,
     _tasks: Vec<Task<()>>,
     _activation: Option<Subscription>,
+    /// The notification server, once connected (Linux; plan M4 D9).
+    #[cfg(target_os = "linux")]
+    desktop: Option<Rc<crate::desktop_notify::DesktopNotifier>>,
+    #[cfg(target_os = "linux")]
+    desktop_ids: crate::desktop_notify::DesktopIds,
     /// Whole-window KWin blur, dropped with the view. gpui may destroy the surface first; the
     /// effect is then inert and its destroy is still allowed (blur.rs).
     #[cfg(target_os = "linux")]
@@ -104,9 +109,15 @@ impl WindowView {
             _tasks: Vec::new(),
             _activation: None,
             #[cfg(target_os = "linux")]
+            desktop: None,
+            #[cfg(target_os = "linux")]
+            desktop_ids: Default::default(),
+            #[cfg(target_os = "linux")]
             _blur: blur,
         };
         this._tasks = vec![Self::meta_loop(cx), Self::pr_loop(cx)];
+        #[cfg(target_os = "linux")]
+        this._tasks.push(Self::desktop_loop(window, cx));
         // Coming back to the window reads what is in front of the user (rn §3).
         this._activation = Some(cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active() {
