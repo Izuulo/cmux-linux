@@ -4,8 +4,8 @@
      current version to docs/status-archive.md. -->
 
 **Updated:** 2026-11-10
-**Current milestone:** M4 notifications merged to `master` (PR #5) before its desktop checks (owner's call, 2026-11-10); M2, M3 and M4 desktop exit checks pending
-**Next action:** at the KDE desktop: M4 plan Task 9 Step 1 (exits 1–3, the "Run it" checks and screenshots of Tasks 4–6, blur re-check), M2 plan Task 11, M3 plan Task 12 Steps 1–3; record results in each journal and fix on `master`; then write `docs/milestones/m5-cli-socket/plan.md`.
+**Current milestone:** M5 cli-socket: research and plan written (`docs/milestones/m5-cli-socket/`), awaiting the owner's review; M2, M3 and M4 desktop exit checks still pending
+**Next action:** owner reviews M5 `plan.md` and picks an execution mode, then branch `m5-cli-socket` and Task 1. At the KDE desktop whenever possible: M4 plan Task 9 Step 1, M2 plan Task 11, M3 plan Task 12 Steps 1–3 (record in each journal, fix on `master`).
 
 ## Where things are
 - Project design and milestone table: `docs/design.md`
@@ -21,7 +21,7 @@
 | M2 splits-tabs | merged (PR #3); exit checks (plan Task 11) pending at the desktop |
 | M3 workspaces-sidebar | merged (PR #4); exit checks (plan Task 12 Steps 1–3) pending at the desktop |
 | M4 notifications | merged (PR #5); desktop checks (plan Task 9 Step 1) pending |
-| M5 cli-socket | not started |
+| M5 cli-socket | planned (research + plan, not yet reviewed); criterion 1 = `cmux notify` hooks (owner's ruling) |
 | M6 parity-release | not started |
 | M7 feed | not started (post-v1) |
 | M8 groups-dock | not started (post-v1) |
