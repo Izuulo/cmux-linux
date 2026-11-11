@@ -4,8 +4,8 @@
      current version to docs/status-archive.md. -->
 
 **Updated:** 2026-11-11
-**Current milestone:** M6 parity-release on branch `m6-parity-release` (pushed, CI green on linux/macos/arch). Plan Tasks 1–7 done and reviewed on the macOS host; Task 8 (KDE desktop) left.
-**Next action:** at the CachyOS desktop, M6 plan Task 8: install with `cd packaging/arch && makepkg -si` (needs `rustup`, not `rust`), Steps 1–4 (installed-app checks, `scripts/perf-panes.sh` on KDE = also M1 exit 3, parity spot check, the pending M2–M5 desktop checks), then Step 5 docs, PR and merge.
+**Current milestone:** M7 feed: plan written on branch `m7-feed` (cut from the unmerged `m6-parity-release`), awaiting the owner's review. M6 Tasks 1–7 done; M6 Task 8 (KDE desktop) still left.
+**Next action:** owner reviews `docs/milestones/m7-feed/plan.md` and picks an execution method. Separately, at the CachyOS desktop, M6 plan Task 8: install with `cd packaging/arch && makepkg -si` (needs `rustup`, not `rust`), Steps 1–4 (installed-app checks, `scripts/perf-panes.sh` on KDE = also M1 exit 3, parity spot check, the pending M2–M5 desktop checks), then Step 5 docs, PR and merge.
 
 ## Where things are
 - Project design and milestone table: `docs/design.md`
@@ -23,7 +23,7 @@
 | M4 notifications | merged (PR #5); desktop checks (plan Task 9 Step 1) pending |
 | M5 cli-socket | merged (PR #6); criterion 1 = `cmux notify` hooks (owner's ruling), automated by `hook_commands_work_unchanged`; KDE desktop check pending |
 | M6 parity-release | Tasks 1–7 done (macOS); Task 8 at the KDE desktop pending; exit 2 (CachyOS install) and Linux perf not yet run |
-| M7 feed | not started (post-v1) |
+| M7 feed | plan written (`docs/milestones/m7-feed/plan.md`), not started |
 | M8 groups-dock | not started (post-v1) |
 | M9 agent-coordination | not started (post-v1) |
 | M10 persistence | not started (post-v1) |
