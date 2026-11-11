@@ -71,7 +71,6 @@ jobs:
           pacman -Syu --noconfirm git rustup clang namcap desktop-file-utils sudo \
             fontconfig freetype2 libxkbcommon libxkbcommon-x11 wayland vulkan-icd-loader \
             libx11 libxcb
-          rustup default 1.99.0
       - uses: actions/checkout@v4
         with:
           submodules: false
@@ -82,6 +81,7 @@ jobs:
           cp -r "$GITHUB_WORKSPACE" /home/builder/repo
           chown -R builder /home/builder/repo
           sudo -u builder git config --global --add safe.directory '*'
+          sudo -u builder rustup default 1.99.0
           sudo -u builder bash -c 'cd /home/builder/repo/packaging/arch &&
             _repo="file:///home/builder/repo" makepkg -s --noconfirm'
       - name: Check the package
