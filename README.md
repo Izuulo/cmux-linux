@@ -223,8 +223,9 @@ Two things can keep a hook from reaching the app:
 
 The Feed is a right sidebar that collects what a coding agent is waiting on, so you can answer
 from any workspace. Claude Code's permission prompts, plan approvals and questions appear as
-cards, newest first; the answer goes back to Claude and its own prompt never shows. Open it
-with Super+Alt+B, or move focus into it with Super+Shift+E.
+cards, newest first; an answer given here goes back to Claude. You can still answer in Claude's
+own terminal prompt instead; the card then stays pending until the 115 s wait ends and dims.
+Open it with Super+Alt+B, or move focus into it with Super+Shift+E.
 
 Install the hook once:
 
@@ -234,12 +235,14 @@ cmux hooks uninstall   # removes only that entry
 ```
 
 The settings file is `--settings-file <path>`, else `$CLAUDE_CONFIG_DIR/settings.json`, else
-`~/.claude/settings.json`. Both commands are idempotent and touch only our own entry. Restart
+`~/.claude/settings.json`. Both commands are idempotent; setup rewrites the file only when our
+entry changes (a write re-indents to 2 spaces, key order is kept). Restart
 running Claude Code sessions to pick the hook up.
 
 What the buttons send back to Claude:
 - **Permission:** Deny refuses, Allow Once allows this call, Always Allow and All tools allow
-  it and apply Claude's own permission suggestions (so later calls aren't asked).
+  it and apply Claude's own permission suggestions (so later calls aren't asked). The two send
+  the same thing to Claude Code, as in cmux; All tools does not allow every tool.
 - **Plan:** Manual approves and keeps asking for each edit, Auto approves and switches to
   auto-accept, Send feedback rejects the plan with your text.
 - **Question:** pick an option for every question, then Submit All Answers (multi-select
@@ -255,7 +258,8 @@ installed.
 
 Keys, all remappable under `[keybindings]`: `toggleRightSidebar` (Super+Alt+B),
 `focusRightSidebar` (Super+Shift+E), `switchRightSidebarToFeed` (Ctrl+4, only while the
-sidebar has focus; in a terminal it still selects tab 4). In the sidebar, j/k or Down/Up
+sidebar has focus; in a terminal it still selects tab 4, and a remapped binding also acts only
+inside the sidebar). In the sidebar, j/k or Down/Up
 choose a card, Enter jumps to its terminal and Escape returns to the terminal.
 
 ## Contributing

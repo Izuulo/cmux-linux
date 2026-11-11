@@ -130,7 +130,7 @@ fn settings(cmd: &mut Cmd, install_it: bool) -> Result<String, CliError> {
         _ => String::new(),
     };
     // Follow a symlink so the link stays a link.
-    let target = std::fs::canonicalize(&path).unwrap_or(path.clone());
+    let target = std::fs::canonicalize(&path).unwrap_or_else(|_| dangling_target(&path));
     let p = path.display();
     let old = match std::fs::read_to_string(&target) {
         Ok(t) if t.trim().is_empty() => Value::Object(Default::default()),
@@ -162,6 +162,14 @@ fn settings(cmd: &mut Cmd, install_it: bool) -> Result<String, CliError> {
         (false, true) => format!("cmux: removed Feed hooks from {p}\n"),
         (false, false) => format!("cmux: no Feed hooks installed in {p}\n"),
     })
+}
+
+/// Where a dangling symlink points (so the link stays a link); `path` itself otherwise.
+fn dangling_target(path: &Path) -> PathBuf {
+    match std::fs::read_link(path) {
+        Ok(t) => path.parent().map_or(t.clone(), |d| d.join(&t)),
+        Err(_) => path.to_path_buf(),
+    }
 }
 
 fn write_atomic(target: &Path, value: &Value) -> std::io::Result<()> {

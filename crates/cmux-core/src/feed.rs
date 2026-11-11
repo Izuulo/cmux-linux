@@ -53,15 +53,22 @@ pub enum FeedKind {
     },
 }
 
+/// The answer that tells Claude to stop interviewing and write the plan.
+pub const SKIP_INTERVIEW: &str = "Skip interview and plan immediately";
+
 impl FeedKind {
     /// Whether `d` answers this kind of prompt (a question reply never answers a permission).
     pub fn accepts(&self, d: &Decision) -> bool {
-        matches!(
-            (self, d),
+        match (self, d) {
             (FeedKind::Permission { .. }, Decision::Permission(_))
-                | (FeedKind::ExitPlan { .. }, Decision::ExitPlan { .. })
-                | (FeedKind::Question { .. }, Decision::Question { .. })
-        )
+            | (FeedKind::ExitPlan { .. }, Decision::ExitPlan { .. }) => true,
+            // One answer per question; the one-string skip reply (socket only) also passes.
+            (FeedKind::Question { prompts }, Decision::Question { selections }) => {
+                selections.len() == prompts.len()
+                    || (selections.len() == 1 && selections[0] == SKIP_INTERVIEW)
+            }
+            _ => false,
+        }
     }
 }
 
@@ -422,6 +429,20 @@ mod tests {
             plan_file: None,
         };
         let question = FeedKind::Question { prompts: vec![] };
+        let one = FeedKind::Question {
+            prompts: vec![QuestionPrompt {
+                header: String::new(),
+                question: "Q".into(),
+                options: vec![],
+                multi_select: false,
+            }],
+        };
+        let sel = |v: &[&str]| Decision::Question {
+            selections: v.iter().map(|s| s.to_string()).collect(),
+        };
+        assert!(one.accepts(&sel(&["a"])));
+        assert!(!one.accepts(&sel(&[])) && !one.accepts(&sel(&["a", "b"])));
+        assert!(one.accepts(&sel(&[SKIP_INTERVIEW])));
         let p = Decision::Permission(PermissionMode::Once);
         let e = Decision::ExitPlan {
             mode: PlanMode::Manual,

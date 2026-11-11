@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use cmux_core::{
     Decision, FeedKind, PermissionMode, PlanMode, Preview, QuestionOption, QuestionPrompt,
+    SKIP_INTERVIEW,
 };
 use serde_json::{Map, Value, json};
 
@@ -309,7 +310,7 @@ pub fn hook_output(stdin: &Value, d: &Decision) -> Value {
             PlanMode::Manual | PlanMode::BypassPermissions => allow_input(),
         },
         Decision::Question { selections }
-            if selections.len() == 1 && selections[0] == "Skip interview and plan immediately" =>
+            if selections.len() == 1 && selections[0] == SKIP_INTERVIEW =>
         {
             deny(
                 "User chose Skip interview and plan immediately via cmux Feed. Do not ask more interview questions. Write the plan now.",

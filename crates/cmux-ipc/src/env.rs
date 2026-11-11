@@ -21,6 +21,8 @@ pub fn terminal_env(
         ("CMUX_LINUX", "1"),
         // Blanked as cmux does, so an inherited value can't conflict with CMUX_SOCKET_PATH.
         ("CMUX_SOCKET", ""),
+        // Opts out of cmux.app's `claude` wrapper if it is on an inherited PATH (it would add a second hook).
+        ("CMUX_CLAUDE_HOOKS_DISABLED", "1"),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -65,6 +67,7 @@ mod tests {
                 ("CMUX_PANEL_ID", "S"),
                 ("CMUX_LINUX", "1"),
                 ("CMUX_SOCKET", ""),
+                ("CMUX_CLAUDE_HOOKS_DISABLED", "1"),
                 ("CMUX_SOCKET_PATH", "/s/cmux.sock"),
                 ("PATH", "/app/bin:/usr/bin:/bin"),
             ]

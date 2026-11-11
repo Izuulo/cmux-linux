@@ -271,6 +271,22 @@ mod setup {
     }
 
     #[test]
+    fn install_through_dangling_symlink_keeps_link() {
+        let d = temp_dir();
+        let target = d.join("real.json");
+        let link = d.join("settings.json");
+        std::os::unix::fs::symlink("real.json", &link).unwrap();
+        run("setup", &link);
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(read(&target)["hooks"]["PermissionRequest"].is_array());
+    }
+
+    #[test]
     fn refuses_non_object() {
         for (body, msg) in [
             ("[]", "is not a JSON object"),
