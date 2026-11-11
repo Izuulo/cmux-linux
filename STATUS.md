@@ -4,8 +4,8 @@
      current version to docs/status-archive.md. -->
 
 **Updated:** 2026-11-10
-**Current milestone:** M5 cli-socket merged to `master` (PR #6). Its Run-it steps (Tasks 9–11) passed on the macOS host with a release build; KDE desktop checks for M2–M5 pending
-**Next action:** at the KDE desktop: M5 plan Task 12 Step 1 (real Claude Code hook, `command -v cmux`, tmux denial, second instance), M4 plan Task 9 Step 1, M2 plan Task 11, M3 plan Task 12 Steps 1–3; record in each journal. Then write `docs/milestones/m6-parity-release/plan.md`.
+**Current milestone:** M6 parity-release, plan written (`docs/milestones/m6-parity-release/plan.md`), branch `m6-parity-release`. KDE desktop checks for M2–M5 pending (folded into M6 Task 8)
+**Next action:** owner reviews the M6 plan and picks an execution mode; then M6 Task 1 (macOS Zig rows + macOS CI job). Tasks 1–7 run on the Mac; Task 8 (install, perf, parity spot check, pending M2–M5 desktop checks) at the KDE desktop.
 
 ## Where things are
 - Project design and milestone table: `docs/design.md`
@@ -22,7 +22,7 @@
 | M3 workspaces-sidebar | merged (PR #4); exit checks (plan Task 12 Steps 1–3) pending at the desktop |
 | M4 notifications | merged (PR #5); desktop checks (plan Task 9 Step 1) pending |
 | M5 cli-socket | merged (PR #6); criterion 1 = `cmux notify` hooks (owner's ruling), automated by `hook_commands_work_unchanged`; KDE desktop check pending |
-| M6 parity-release | not started |
+| M6 parity-release | plan written, not started |
 | M7 feed | not started (post-v1) |
 | M8 groups-dock | not started (post-v1) |
 | M9 agent-coordination | not started (post-v1) |
