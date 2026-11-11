@@ -2,12 +2,9 @@
 //! clean-up (`CLI/CMUXCLI+AutoNaming.swift`), and the pass that runs the user's command.
 
 use std::path::Path;
-use std::process::Command;
 use std::time::Duration;
 
 use serde_json::Value;
-
-use crate::pr::run_with_deadline;
 
 /// cmux's `AutoNamingConfig` defaults.
 const MIN_TRANSCRIPT_LINES: usize = 12;
@@ -171,19 +168,7 @@ pub fn pass(command: &str, transcript: &Path, state: NamingState, current: Optio
 }
 
 fn run(command: &str, prompt: &str, deadline: Duration) -> Option<String> {
-    let mut cmd = Command::new("sh");
-    // Away from any project, so the summarizer loads no project settings or session.
-    cmd.arg("-c").arg(command).current_dir(std::env::temp_dir());
-    // Without these its own Stop hook does nothing: no naming loop (plan N6).
-    for (key, _) in std::env::vars_os() {
-        if key.to_string_lossy().starts_with("CMUX_") {
-            cmd.env_remove(key);
-        }
-    }
-    // shortcut: on the deadline only `sh` is killed, a child it started runs on until it ends;
-    // kill the process group if stuck summarizers are ever seen.
-    let out = run_with_deadline(cmd, prompt.as_bytes().to_vec(), deadline).ok()?;
-    Some(String::from_utf8_lossy(&out.stdout).into_owned())
+    crate::sh(command, &[], prompt, deadline)
 }
 
 #[cfg(test)]
