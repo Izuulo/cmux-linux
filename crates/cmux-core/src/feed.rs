@@ -53,6 +53,18 @@ pub enum FeedKind {
     },
 }
 
+impl FeedKind {
+    /// Whether `d` answers this kind of prompt (a question reply never answers a permission).
+    pub fn accepts(&self, d: &Decision) -> bool {
+        matches!(
+            (self, d),
+            (FeedKind::Permission { .. }, Decision::Permission(_))
+                | (FeedKind::ExitPlan { .. }, Decision::ExitPlan { .. })
+                | (FeedKind::Question { .. }, Decision::Question { .. })
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionMode {
     Once,
@@ -396,6 +408,29 @@ mod tests {
         n.cwd.clear();
         let e = s.push(n).unwrap();
         assert_eq!(s.get(e).unwrap().title(), "Bash");
+    }
+
+    #[test]
+    fn kinds_accept_only_their_own_decision() {
+        let perm = FeedKind::Permission {
+            tool: "Bash".into(),
+            preview: Preview::Raw(String::new()),
+        };
+        let plan = FeedKind::ExitPlan {
+            plan: String::new(),
+            allowed_prompts: vec![],
+            plan_file: None,
+        };
+        let question = FeedKind::Question { prompts: vec![] };
+        let p = Decision::Permission(PermissionMode::Once);
+        let e = Decision::ExitPlan {
+            mode: PlanMode::Manual,
+            feedback: None,
+        };
+        let q = Decision::Question { selections: vec![] };
+        assert!(perm.accepts(&p) && !perm.accepts(&e) && !perm.accepts(&q));
+        assert!(plan.accepts(&e) && !plan.accepts(&p) && !plan.accepts(&q));
+        assert!(question.accepts(&q) && !question.accepts(&p) && !question.accepts(&e));
     }
 
     #[test]

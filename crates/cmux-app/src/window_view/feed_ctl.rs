@@ -132,15 +132,15 @@ impl WindowView {
         self.after_change(gone, cx);
     }
 
-    /// A Feed button (Task 7): answers the card's request if it still waits.
-    #[allow(dead_code)] // shortcut: unused until Task 7's Feed buttons call it.
+    /// A Feed button: answers the card's request if it still waits and `decision` fits its kind.
     pub(super) fn feed_answer(
         &mut self,
         id: FeedItemId,
         decision: Decision,
         cx: &mut Context<Self>,
     ) {
-        if let Some(rid) = self.feed.get(id).map(|i| i.request_id.clone()) {
+        let item = self.feed.get(id).filter(|i| i.kind.accepts(&decision));
+        if let Some(rid) = item.map(|i| i.request_id.clone()) {
             self.feed_finish(&rid, FeedEnd::Answer(decision), cx);
         }
     }

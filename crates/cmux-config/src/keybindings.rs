@@ -10,12 +10,14 @@
 use std::path::Path;
 
 /// One gpui binding: `keystroke` runs `action`; `number` is the digit for
-/// `selectSurfaceByNumber`, whose chord binds the same modifiers with each of 1-9.
+/// `selectSurfaceByNumber`, whose chord binds the same modifiers with each of 1-9. `context`
+/// is the gpui key context the binding is limited to (None: everywhere).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Binding {
     pub action: &'static str,
     pub keystroke: String,
     pub number: Option<u8>,
+    pub context: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -68,9 +70,19 @@ pub const DEFAULTS: &[(&str, &[&str])] = &[
     ("jumpToUnread", &["super+shift+u"]),
     ("markAllNotificationsRead", &[]),
     ("clearAllNotifications", &[]),
+    // Right sidebar: research-cmux.md §5 (M7).
+    ("toggleRightSidebar", &["super+opt+b"]),
+    ("focusRightSidebar", &["super+shift+e"]),
+    ("switchRightSidebarToFeed", &["ctrl+4"]),
 ];
 
 const NUMBERED: &[&str] = &["selectSurfaceByNumber", "selectWorkspaceByNumber"];
+
+/// Actions that only fire while focus is inside a gpui key context; a deeper context beats
+/// the contextless bindings, so Ctrl+4 still selects tab 4 in a terminal (plan M7 D7).
+fn context(action: &str) -> Option<&'static str> {
+    (action == "switchRightSidebarToFeed").then_some("RightSidebar")
+}
 
 /// What a US-layout Shift turns a key into. gpui on Linux reports Shift+] as key `}` with
 /// Shift cleared (platform/linux/platform.rs `from_xkb`), so the binding must say `}` too.
@@ -198,6 +210,7 @@ fn expand(action: &'static str, chords: &[String]) -> Result<Vec<Binding>, Strin
                     action,
                     keystroke: chord_to_gpui(&format!("{mods}{n}"))?,
                     number: Some(n),
+                    context: context(action),
                 });
             }
         } else {
@@ -205,6 +218,7 @@ fn expand(action: &'static str, chords: &[String]) -> Result<Vec<Binding>, Strin
                 action,
                 keystroke: chord_to_gpui(chord)?,
                 number: None,
+                context: context(action),
             });
         }
     }
@@ -450,6 +464,39 @@ mod tests {
         assert!(k.warnings.is_empty(), "{:?}", k.warnings);
         assert_eq!(chord(&k, "markAllNotificationsRead"), vec!["ctrl-m"]);
         assert_eq!(chord(&k, "clearAllNotifications"), vec!["ctrl-shift-m"]);
+    }
+
+    #[test]
+    fn right_sidebar_defaults_bind_like_cmux() {
+        let k = keybindings(None, "config.toml");
+        assert_eq!(keys_for(&k, "toggleRightSidebar"), vec!["alt-super-b"]);
+        assert_eq!(keys_for(&k, "focusRightSidebar"), vec!["shift-super-e"]);
+        assert_eq!(keys_for(&k, "switchRightSidebarToFeed"), vec!["ctrl-4"]);
+        let ctx = |a: &str, key: &str| {
+            k.bindings
+                .iter()
+                .find(|b| b.action == a && b.keystroke == key)
+                .map(|b| b.context)
+        };
+        // Ctrl+4 shows the Feed only inside the right sidebar; elsewhere it selects tab 4.
+        assert_eq!(
+            ctx("switchRightSidebarToFeed", "ctrl-4"),
+            Some(Some("RightSidebar"))
+        );
+        assert_eq!(ctx("selectSurfaceByNumber", "ctrl-4"), Some(None));
+        assert_eq!(ctx("toggleRightSidebar", "alt-super-b"), Some(None));
+        let user = "[keybindings]\nswitchRightSidebarToFeed = \"ctrl+f\"\n";
+        let k = keybindings(Some(user), "config.toml");
+        assert!(k.warnings.is_empty(), "{:?}", k.warnings);
+        let b = k
+            .bindings
+            .iter()
+            .find(|b| b.action == "switchRightSidebarToFeed")
+            .unwrap();
+        assert_eq!(
+            (b.keystroke.as_str(), b.context),
+            ("ctrl-f", Some("RightSidebar"))
+        );
     }
 
     #[test]

@@ -232,6 +232,13 @@ impl WindowView {
             // Unknown or already-answered ids are not an error (plan M7 D5).
             "feed.permission.reply" | "feed.exit_plan.reply" | "feed.question.reply" => {
                 let (request_id, d) = cmux_ipc::feed::parse_reply(method, params)?;
+                let pending = self.feed.items().find(|i| {
+                    i.request_id == request_id && i.status == cmux_core::FeedStatus::Pending
+                });
+                if pending.is_some_and(|i| !i.kind.accepts(&d)) {
+                    let msg = format!("{method} decision does not match the pending item");
+                    return Err(RpcError::new("invalid_params", msg));
+                }
                 self.feed_finish(&request_id, super::feed_ctl::FeedEnd::Answer(d), cx);
                 Ok(json!({ "delivered": true }))
             }
