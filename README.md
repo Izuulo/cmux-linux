@@ -68,6 +68,27 @@ Full design: [`docs/design.md`](docs/design.md).
 
 Each milestone has a spec, plan and journal under [`docs/milestones/`](docs/milestones).
 
+## Install
+
+Arch / CachyOS: build and install the package from this checkout (it builds Ghostty's Zig
+library too, so it needs network access):
+
+```sh
+cd packaging/arch && makepkg -si
+```
+
+It installs `cmux-linux` and the `cmux` CLI side by side in `/usr/lib/cmux-linux/`, with
+symlinks in `/usr/bin` and a `.desktop` entry.
+
+macOS: build a release binary (a debug build of the app hangs) and run it:
+
+```sh
+scripts/install-zig.sh
+export PATH="$PWD/.tools/zig:$PATH"
+cargo build --release --locked --features gpui/runtime_shaders
+target/release/cmux-app
+```
+
 ## Building
 
 ```sh
