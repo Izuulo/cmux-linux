@@ -46,3 +46,23 @@ Source: cmux `docs/workspace-auto-naming.md` and `CLI/CMUXCLI+AutoNaming.swift` 
 **Checked (exit 3)**
 - Against the running app on KDE with a fake command and a 14-line transcript, the hook run by hand: with `enabled = false` nothing runs and the title stays; after flipping to `true` (no restart) the next `Stop` renames the workspace to "Fix Login Bug", and the command got cmux's prompt with the 2 first user messages and the last 4; a second `Stop` right away does not run the command (cooldown); a workspace created with `--name` is not renamed and the command is not run.
 - Not checked: the default `claude -p` line under a real Claude Code session (spends usage; goes with the owner's real-Claude run).
+
+## 2026-11-11 — Part 3 built: automations (plan A1–A7)
+
+Source: cmux `docs/automations.md`, `docs/events.md`; from the Swift only the `where` alias keys (`AutomationRule.swift`) and the `run` variable names (`AutomationEngine.swift`) were read.
+
+**What exists**
+- `cmux-ipc::automation`: `parse` (bad rules left out with a warning), `Rules::fire` (pattern, `where`, sliding-window rate limit, templates), `event`.
+- `cmux-meta::sh`: the shell runner auto-naming already had, now shared.
+- App `window_view/automation_ctl.rs`: `emit`, the `notify` and `run` actions, `automation.list` and `automation.reload`. Emit points: `make_view` (`workspace.created`), `close_now` (`workspace.closed`), `on_notify` (`notification.created`), `feed_push` (`feed.item.received`), `message_send` (`agent.message.queued`), `auto_name_from_socket` (`agent.hook.Stop`).
+- CLI `cmux automation list|reload`.
+
+**Deviations from cmux**
+- No `rpc` or `webhook` action, no rule chain: a rule's own notification emits nothing (A6); loops through `run` are only rate-limited.
+- Six events, no stream (`cmux events`), no `events.jsonl`, no redaction: notification text is in the payload, which only rules see.
+- No concurrency cap or firing log; a firing's actions run one after another, firings side by side.
+- `workspace.created` carries the title at creation ("Terminal"), before `new-workspace --name` sets it.
+- `agent.hook.Stop` exists only because the message hook reports the turn's end; other hook events are not events.
+
+**Checked (exit 4)**
+- Against the running app on KDE: a `workspace.created` rule fired at start and on `cmux new-workspace`; its `notify` put an unread badge on the new workspace (screenshot) and its `run` then wrote the rule id, event name and event JSON from the `CMUX_AUTOMATION_*` variables. An `agent.hook.*` rule with `where workspace.title prefix "build"` fired for the `Stop` hook run in "Build API" and not for the one in the other workspace. A `category: notification` rule did not fire on the first rule's notification. A rule with an `rpc` action was left out, with the warning on stderr and in `cmux automation list`; `reload` picked up an edit.
