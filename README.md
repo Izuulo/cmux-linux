@@ -385,6 +385,55 @@ minutes since the last try.
 
 Not ported from cmux: naming the agent's tab, and agents other than Claude Code.
 
+## Automations
+
+Rules in `~/.config/cmux-linux/automations.json` run actions when something happens in the app.
+
+```json
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "agent-done-in-build",
+      "when": { "event": "agent.hook.Stop" },
+      "where": { "workspace.title": { "prefix": "build" } },
+      "rate_limit": { "interval_seconds": 30, "maximum": 1 },
+      "then": [
+        { "action": "notify", "title": "Agent finished", "body": "in {{payload.workspace_title}}" },
+        { "action": "run", "command": "paplay /usr/share/sounds/freedesktop/stereo/complete.oga" }
+      ]
+    }
+  ]
+}
+```
+
+Events: `workspace.created`, `workspace.closed`, `notification.created` (`title`, `subtitle`,
+`body`), `feed.item.received` (`source`, `request_id`, `title`), `agent.message.queued` (`id`,
+`sender_name`, `body_length`) and `agent.hook.Stop` (`source`, `transcript_path`; needs
+`cmux hooks setup`). Every payload also has `workspace_id`, `workspace_title` and, when there
+is one, `surface_id`.
+
+- `when.event` and `when.category` (the name's first part) take a name or a list; `*` at
+  either end is a wildcard.
+- `where` compares payload values, ignoring case: a plain value must be equal, or use an
+  object of `equals`, `contains`, `prefix`, `suffix`, `in`, `not`. `workspace.title` (or
+  `title`), `agent` and `surface.kind` are cmux's aliases.
+- `rate_limit` defaults to one firing a second. `"enabled": false` keeps a rule without
+  running it.
+- Actions run in order, each after the last has ended. `notify` takes `title`, `subtitle` and
+  `body` with `{{event.name}}`, `{{event.category}}`, `{{event.source}}` and
+  `{{payload.<key>}}`. `run` takes `command` for `sh -c` (in the temp directory, 60 seconds,
+  `timeout_seconds` up to 300) with the event as JSON in `CMUX_AUTOMATION_EVENT`, plus
+  `CMUX_AUTOMATION_EVENT_NAME`, `CMUX_AUTOMATION_EVENT_CATEGORY` and `CMUX_AUTOMATION_RULE_ID`.
+
+The file is read at start. `cmux automation reload` reads it again and `cmux automation list`
+shows the loaded rules, how often each fired, and any rule left out with the reason.
+
+Not ported from cmux: the `rpc` and `webhook` actions (call `cmux ...` or `curl` from `run`;
+a rule using them is left out), `workspace.tag`, `cmux events`, and `automation
+show|test|enable|disable|logs`. A notification made by a rule triggers no rule, but a `run`
+that calls `cmux notify` can: give such rules a rate limit.
+
 ## Contributing
 
 Issues and ideas are welcome. Before working on code, read [`STATUS.md`](STATUS.md)
