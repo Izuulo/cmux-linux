@@ -100,6 +100,7 @@ fn feed_hook_without_socket_prints_empty() {
         &[LINUX, ("CMUX_SOCKET_PATH", "/nonexistent/cmux.sock")],
     );
     assert_eq!(v, json!({}));
+    assert!(t.fake.requests().is_empty());
 }
 
 #[test]

@@ -232,6 +232,10 @@ impl T {
         ];
         env.extend_from_slice(extra);
         let mut ctx = self.fake.ctx(&env);
+        // The caller's env wins over the fake's socket path.
+        for (k, v) in extra {
+            ctx.env.insert(k.to_string(), v.to_string());
+        }
         ctx.stdin = Some(stdin.to_string());
         let out = cli(args, &ctx);
         (out.code, out.stdout, out.stderr)
