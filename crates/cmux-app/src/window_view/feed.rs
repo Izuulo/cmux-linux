@@ -16,11 +16,7 @@ use super::WindowView;
 use super::sidebar::clip_message;
 use crate::chrome::{self, SidebarPalette};
 
-/// cmux's minimum right-sidebar width; fixed here (no resizing).
-pub const RIGHT_SIDEBAR_W: f32 = 295.0;
 // rf §5 metrics.
-const HEADER_H: f32 = 28.0;
-const HEADER_PAD_X: f32 = 12.0;
 const ROW_PAD_X: f32 = 12.0;
 const ROW_PAD_Y: f32 = 10.0;
 pub(super) const ROW_GAP: f32 = 10.0;
@@ -35,7 +31,7 @@ const KIND_BOX: f32 = 14.0;
 const CHIP_PX: f32 = 10.0;
 const CHIP_RADIUS: f32 = 4.0;
 pub(super) const CLAUDE_CHIP_ALPHA: f32 = 0.18;
-const BADGE_ALPHA: f32 = 0.2;
+pub(super) const BADGE_ALPHA: f32 = 0.2;
 pub(super) const CODE_PAD: f32 = 10.0;
 pub(super) const CODE_RADIUS: f32 = 6.0;
 pub(super) const CODE_FILL_ALPHA: f32 = 0.05;
@@ -183,7 +179,7 @@ pub(super) struct FeedColors {
 }
 
 impl FeedColors {
-    fn new(p: SidebarPalette) -> Self {
+    pub(super) fn new(p: SidebarPalette) -> Self {
         let light = chrome::wcag_is_light(p.bg);
         let pick = |l: u32, d: u32| if light { rgb(l) } else { rgb(d) };
         Self {
@@ -199,34 +195,7 @@ impl FeedColors {
 }
 
 impl WindowView {
-    pub(super) fn right_sidebar_px(&self) -> f32 {
-        if self.right_sidebar_open {
-            RIGHT_SIDEBAR_W
-        } else {
-            0.
-        }
-    }
-
-    /// `toggleRightSidebar`: closing it hands focus back to the terminal.
-    pub(super) fn toggle_right_sidebar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.right_sidebar_open = !self.right_sidebar_open;
-        if !self.right_sidebar_open && self.feed_focus.contains_focused(window, cx) {
-            self.focus_terminal(window, cx);
-        }
-        cx.notify();
-    }
-
-    /// `focusRightSidebar` / `switchRightSidebarToFeed`: shows the Feed and focuses its first
-    /// card (never toggles off).
-    pub(super) fn focus_right_sidebar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.right_sidebar_open = true;
-        self.feed_selected = self.feed.items().next().map(|i| i.id);
-        self.feed_scroll.scroll_to_item(0);
-        window.focus(&self.feed_focus);
-        cx.notify();
-    }
-
-    fn focus_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn focus_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(v) = self.views.get(&self.workspaces.selected()).cloned() {
             v.update(cx, |v, cx| v.focus_active(window, cx));
         }
@@ -272,7 +241,8 @@ impl WindowView {
         }
     }
 
-    pub(super) fn render_right_sidebar(
+    /// The Feed's cards (the right sidebar's bar and frame are in `dock.rs`).
+    pub(super) fn render_feed(
         &self,
         window: &Window,
         cx: &Context<Self>,
@@ -302,50 +272,14 @@ impl WindowView {
                 .children(rows)
                 .into_any_element()
         };
-        let badge = badge_label(self.feed.pending_count()).map(|label| {
-            div()
-                .px(px(5.))
-                .py(px(1.))
-                .rounded_full()
-                .bg(with_alpha(c.orange, BADGE_ALPHA))
-                .text_color(c.orange)
-                .text_size(px(10.))
-                .font_weight(FontWeight::BOLD)
-                .font_family(self.style.font.family.clone())
-                .child(label)
-        });
         div()
             .key_context("RightSidebar")
             .track_focus(&self.feed_focus)
             .on_key_down(cx.listener(Self::on_feed_key))
             .flex()
             .flex_col()
-            .flex_none()
-            .w(px(RIGHT_SIDEBAR_W))
-            .h_full()
-            .bg(p.bg)
-            .border_l_1()
-            .border_color(p.border)
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .flex_none()
-                    .items_center()
-                    .gap(px(6.))
-                    .h(px(HEADER_H))
-                    .px(px(HEADER_PAD_X))
-                    .border_b_1()
-                    .border_color(p.border)
-                    .child(
-                        div()
-                            .text_size(px(12.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(p.title)
-                            .child("Feed"),
-                    )
-                    .children(badge),
-            )
+            .flex_1()
+            .min_h(px(0.))
             .child(body)
     }
 

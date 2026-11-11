@@ -55,8 +55,13 @@ pub struct WorkspaceView {
     drop_target: Option<(PaneId, usize)>,
     /// Width the sidebar takes from the left of the window.
     left_inset: f32,
-    /// Width the right sidebar (Feed) takes from the right.
+    /// Width the right sidebar takes from the right.
     right_inset: f32,
+    /// Height above the view (the Dock sits under the right sidebar's mode bar).
+    top_inset: f32,
+    /// This is the window's Dock (M8 plan D13), not a listed workspace: it leaves the window
+    /// title alone, never pulls lost focus back, and its shells carry the window's id.
+    dock: bool,
     /// Only the active workspace pulls focus back after a focus loss.
     active: bool,
     has_terminals: bool,
@@ -106,10 +111,37 @@ impl WorkspaceView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        Self::build(id, false, shell, style, cwd, window, cx)
+    }
+
+    /// The window's Dock: the same panes, tabs and splits under the right sidebar's bar.
+    pub(crate) fn new_dock(
+        shell: Rc<ShellEnv>,
+        style: Rc<TermStyle>,
+        cwd: Option<String>,
+        top_inset: f32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        // No listed workspace has id 0.
+        let mut this = Self::build(WorkspaceId(0), true, shell, style, cwd, window, cx);
+        this.top_inset = top_inset;
+        this
+    }
+
+    fn build(
+        id: WorkspaceId,
+        dock: bool,
+        shell: Rc<ShellEnv>,
+        style: Rc<TermStyle>,
+        cwd: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         // Nothing focused (a closed tab's handle is gone) means keys reach only the root:
         // put focus back on the active terminal (research-gpui.md §1.4).
         let lost = cx.on_focus_lost(window, |this, window, cx| {
-            if this.active {
+            if this.active && !this.dock {
                 this.focus_active(window, cx);
             }
         });
@@ -125,6 +157,8 @@ impl WorkspaceView {
             drop_target: None,
             left_inset: 0.0,
             right_inset: 0.0,
+            top_inset: 0.0,
+            dock,
             active: true,
             has_terminals: true,
             attention: HashSet::new(),
@@ -280,7 +314,11 @@ impl WorkspaceView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let env = self.shell.for_surface(self.id, surface);
+        let env = if self.dock {
+            self.shell.for_dock(surface)
+        } else {
+            self.shell.for_surface(self.id, surface)
+        };
         let started = match TerminalView::start(&self.style, cwd.as_deref(), &env) {
             Ok(started) => started,
             Err(e) => {
@@ -360,7 +398,7 @@ impl WorkspaceView {
         let size = window.viewport_size();
         (
             (f32::from(size.width) - self.left_inset - self.right_inset).max(0.0),
-            f32::from(size.height),
+            (f32::from(size.height) - self.top_inset).max(0.0),
             window.scale_factor(),
         )
     }
@@ -390,22 +428,26 @@ impl WorkspaceView {
     }
 
     /// The socket's `surface.split` (M5 plan D6): splits `surface`'s pane towards `dir`, moving
-    /// focus only when `focus`, and types `input` into the new shell. The new surface, or why not.
+    /// focus only when `focus`, and types `input` into the new shell, which starts in `cwd` (else
+    /// the source's directory, if the config inherits it). The new surface, or why not.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn split_surface(
         &mut self,
         surface: SurfaceId,
         dir: Direction,
         focus: bool,
         input: Option<&str>,
+        cwd: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<SurfaceId, SplitFailed> {
         let (w, h, scale) = self.container(window);
-        let cwd = self
-            .surfaces
-            .get(&surface)
-            .filter(|_| self.style.cfg.split_inherit_working_directory)
-            .and_then(|s| s.view.read(cx).cwd());
+        let cwd = cwd.or_else(|| {
+            self.surfaces
+                .get(&surface)
+                .filter(|_| self.style.cfg.split_inherit_working_directory)
+                .and_then(|s| s.view.read(cx).cwd())
+        });
         let new = self
             .layout
             .try_split_surface(surface, dir, focus, w, h, scale)
@@ -486,6 +528,9 @@ impl WorkspaceView {
     }
 
     fn update_window_title(&mut self, window: &mut Window, cx: &Context<Self>) {
+        if self.dock {
+            return;
+        }
         let title = self
             .surfaces
             .get(&self.layout.active_surface())

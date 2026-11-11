@@ -12,6 +12,20 @@ pub struct Snapshot {
     /// Index into `workspaces`.
     pub selected: usize,
     pub workspaces: Vec<WsSnap>,
+    /// Workspace groups in sidebar order (M8).
+    pub groups: Vec<GroupSnap>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GroupSnap {
+    pub key: u64,
+    pub handle: Handle,
+    pub name: String,
+    pub collapsed: bool,
+    pub pinned: bool,
+    pub generated_anchor: bool,
+    /// Workspace keys, the anchor first.
+    pub members: Vec<u64>,
 }
 
 #[derive(Clone)]
@@ -111,6 +125,9 @@ impl Snapshot {
                     "workspace": self.workspace_row(i, ws),
                 }))
             }),
+            "workspace.group.list" => Ok(self.with_window(json!({
+                "groups": self.groups.iter().map(|g| self.group_payload(g)).collect::<Vec<_>>(),
+            }))),
             "pane.list" => self.workspace(params).map(|ws| {
                 let panes: Vec<Value> = ws
                     .panes
@@ -260,7 +277,41 @@ impl Snapshot {
         v
     }
 
-    fn find_workspace(&self, h: &str) -> Option<&WsSnap> {
+    /// `group_id` (required): a UUID or a `workspace_group:N` ref (research-groups.md §12).
+    pub fn group(&self, params: &Map<String, Value>) -> Result<&GroupSnap, RpcError> {
+        let invalid = || RpcError::new("invalid_params", "Missing or invalid group_id");
+        let h = param(params, "group_id")?.ok_or_else(invalid)?;
+        match self.groups.iter().find(|g| matches(&g.handle, h)) {
+            Some(g) => Ok(g),
+            // cmux: an unresolvable ref is a bad parameter, an unknown id a missing group.
+            None if h.contains(':') || h.is_empty() => Err(invalid()),
+            None => Err(not_found("Group").with_data(json!({ "group_id": h }))),
+        }
+    }
+
+    /// cmux's group payload (rg §12.2), without colour, icon and external ids.
+    pub fn group_payload(&self, g: &GroupSnap) -> Value {
+        let members: Vec<&Handle> = g
+            .members
+            .iter()
+            .filter_map(|k| self.workspaces.iter().find(|ws| ws.key == *k))
+            .map(|ws| &ws.handle)
+            .collect();
+        let anchor = members.first();
+        json!({
+            "id": g.handle.id, "ref": g.handle.r#ref, "name": g.name,
+            "is_collapsed": g.collapsed, "is_pinned": g.pinned, "is_empty": false,
+            "anchor_workspace_id": anchor.map(|h| &h.id),
+            "anchor_workspace_ref": anchor.map(|h| &h.r#ref),
+            "member_workspace_ids": members.iter().map(|h| &h.id).collect::<Vec<_>>(),
+            "member_workspace_refs": members.iter().map(|h| &h.r#ref).collect::<Vec<_>>(),
+            "member_count": members.len(),
+            "anchor_workspace_provenance": if g.generated_anchor { "generated" } else { "user" },
+            "anchor_workspace_is_generated": g.generated_anchor,
+        })
+    }
+
+    pub fn find_workspace(&self, h: &str) -> Option<&WsSnap> {
         self.workspaces.iter().find(|ws| matches(&ws.handle, h))
     }
 

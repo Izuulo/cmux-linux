@@ -44,6 +44,9 @@ gpui::actions!(
         ToggleRightSidebar,
         FocusRightSidebar,
         SwitchRightSidebarToFeed,
+        SwitchRightSidebarToDock,
+        NewWorkspaceGroup,
+        ToggleWorkspaceGroupCollapsed,
     ]
 );
 
@@ -99,6 +102,9 @@ pub fn action_for(b: &Binding) -> Option<Box<dyn Action>> {
         "toggleRightSidebar" => Box::new(ToggleRightSidebar),
         "focusRightSidebar" => Box::new(FocusRightSidebar),
         "switchRightSidebarToFeed" => Box::new(SwitchRightSidebarToFeed),
+        "switchRightSidebarToDock" => Box::new(SwitchRightSidebarToDock),
+        "newWorkspaceGroup" => Box::new(NewWorkspaceGroup),
+        "toggleFocusedWorkspaceGroupCollapsed" => Box::new(ToggleWorkspaceGroupCollapsed),
         "selectWorkspaceByNumber" => Box::new(SelectWorkspaceByNumber(b.number?)),
         "selectSurfaceByNumber" => Box::new(SelectSurfaceByNumber(b.number?)),
         _ => return None,

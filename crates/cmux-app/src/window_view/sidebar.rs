@@ -1,14 +1,15 @@
 //! The workspace sidebar (plan D2, D3): top band, one row per workspace, resize band.
 
-use cmux_core::WorkspaceId;
+use cmux_core::{GroupId, Row, WorkspaceId};
 use cmux_meta::WorkspaceMeta;
 use cmux_meta::pr::{Pr, PrState};
 use gpui::{
     AppContext, ClickEvent, Context, CursorStyle, DragMoveEvent, EmptyView, FontWeight,
-    InteractiveElement, IntoElement, ParentElement, Pixels, Render, Rgba, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, prelude::*, px, svg,
+    InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Render,
+    Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*, px, svg,
 };
 
+use super::menu::{self, MenuAction};
 use super::rename::{RenameEvent, RenameInput, RenameStyle};
 use super::{CONTENT_MIN, SIDEBAR_MAX, SIDEBAR_MIN, WindowView};
 use crate::chrome::{self, SidebarPalette};
@@ -53,6 +54,22 @@ const CLOSE_ALPHA: f32 = 0.7;
 /// The resize band reaches this far into the sidebar and into the content.
 const RESIZE_IN: f32 = 6.0;
 const RESIZE_OUT: f32 = 4.0;
+
+// Group header (research-groups.md §5.8) and the indent of its member rows.
+const HEADER_PAD_Y: f32 = 5.0;
+const HEADER_RADIUS: f32 = 4.0;
+const HEADER_TRAIL: f32 = 10.0;
+const HEADER_PX: f32 = 11.0;
+const HEADER_BOX: f32 = 14.0;
+const CHEVRON_ICON: f32 = 9.0;
+const HEADER_ICON: f32 = 11.0;
+const HEADER_PLUS_BOX: f32 = 16.0;
+const HEADER_GAP: f32 = 4.0;
+const HEADER_NAME_GAP: f32 = 6.0;
+/// The name: primary at this alpha, full when the anchor is selected.
+const HEADER_NAME_ALPHA: f32 = 0.9;
+const HEADER_SELECTED_FILL: f32 = 0.08;
+const MEMBER_INDENT: f32 = 12.0;
 
 /// The sidebar edge being dragged.
 #[derive(Clone, Copy)]
@@ -151,7 +168,7 @@ pub(crate) fn drop_gap(row_mids: &[f32], y: f32) -> usize {
 impl WindowView {
     /// The drawn sidebar width, or `None` when hidden.
     pub(super) fn sidebar_px(&self, window: &Window) -> Option<f32> {
-        let window_w = f32::from(window.viewport_size().width) - self.right_sidebar_px();
+        let window_w = f32::from(window.viewport_size().width) - self.right_sidebar_px(window);
         self.sidebar_visible
             .then(|| clamp_width(self.sidebar_width, window_w))
     }
@@ -207,23 +224,41 @@ impl WindowView {
         cx.notify();
     }
 
-    /// Commits the open rename, if any, without refocusing.
-    pub(super) fn commit_rename(&mut self, cx: &mut Context<Self>) {
-        if let Some(r) = self.rename.take()
-            && let (id, Some(text)) = r.read(cx).snapshot()
-        {
-            self.workspaces.rename(id, &text);
+    /// Stores a finished rename: a group's name or a workspace's title.
+    fn apply_rename(&mut self, id: WorkspaceId, text: Option<&str>) {
+        match (self.rename_group.take(), text) {
+            (Some(g), Some(t)) => {
+                self.workspaces.rename_group(g, t);
+            }
+            (None, Some(t)) => {
+                self.workspaces.rename(id, t);
+            }
+            (_, None) => {}
         }
     }
 
+    /// Commits the open rename, if any, without refocusing.
+    pub(super) fn commit_rename(&mut self, cx: &mut Context<Self>) {
+        if let Some(r) = self.rename.take() {
+            let (id, text) = r.read(cx).snapshot();
+            self.apply_rename(id, text.as_deref());
+        }
+    }
+
+    /// Renames the workspace inline; for a group's anchor, which has no row, the group.
     pub(super) fn start_rename(
         &mut self,
         id: WorkspaceId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.commit_rename(cx);
-        self.sidebar_visible = true;
+        if let Some(g) = self
+            .workspaces
+            .group_of(id)
+            .filter(|_| self.workspaces.is_anchor(id))
+        {
+            return self.start_group_rename(g, window, cx);
+        }
         let p = self.palette();
         let text = if id == self.workspaces.selected() {
             p.selected_title
@@ -237,21 +272,56 @@ impl WindowView {
         };
         let current = self.title_of(id);
         let custom = self.workspaces.custom_title(id).is_some();
-        let input = cx.new(|cx| RenameInput::new(id, &current, custom, style, window, cx));
+        self.open_rename(id, None, &current, custom, style, window, cx);
+    }
+
+    /// Renames the group inline in its header (plan D9).
+    pub(super) fn start_group_rename(
+        &mut self,
+        g: GroupId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((anchor, name)) = self.workspaces.group(g).map(|g| (g.anchor, g.name.clone()))
+        else {
+            return;
+        };
+        let p = self.palette();
+        let style = RenameStyle {
+            size: HEADER_PX,
+            text: p.title,
+            hint: p.detail,
+        };
+        self.open_rename(anchor, Some(g), &name, true, style, window, cx);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn open_rename(
+        &mut self,
+        id: WorkspaceId,
+        group: Option<GroupId>,
+        current: &str,
+        custom: bool,
+        style: RenameStyle,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.commit_rename(cx);
+        self.sidebar_visible = true;
+        let input = cx.new(|cx| RenameInput::new(id, current, custom, style, window, cx));
         cx.subscribe_in(&input, window, |this, input, ev, window, cx| {
             let RenameEvent::Done(id, text) = ev;
             if this.rename.as_ref() != Some(input) {
                 return;
             }
             this.rename = None;
-            if let Some(t) = text {
-                this.workspaces.rename(*id, t);
-            }
+            this.apply_rename(*id, text.as_deref());
             let sel = this.workspaces.selected();
             this.select(sel, window, cx);
         })
         .detach();
         self.rename = Some(input);
+        self.rename_group = group;
         cx.notify();
     }
 
@@ -310,12 +380,20 @@ impl WindowView {
                     |this, _: &ClickEvent, window, cx| this.new_workspace(false, window, cx),
                 )),
             );
-        let list = self.workspaces.list();
         let selected = self.workspaces.selected();
-        let closable = list.len() > 1;
-        let rows: Vec<_> = list
-            .iter()
-            .map(|w| self.render_row(w.id, w.id == selected, closable, p, cx))
+        let closable = self.workspaces.len() > 1;
+        let rows: Vec<_> = self
+            .workspaces
+            .rows()
+            .into_iter()
+            .map(|row| match row {
+                Row::Header { group, anchor } => self
+                    .render_header(group, anchor == selected, p, cx)
+                    .into_any_element(),
+                Row::Workspace { id, member } => self
+                    .render_row(id, id == selected, closable, member, p, cx)
+                    .into_any_element(),
+            })
             .collect();
         let n = rows.len();
         let bounds = self.row_bounds.clone();
@@ -364,13 +442,24 @@ impl WindowView {
                     .children(rows)
                     .child(
                         // Empty space below the rows: double-click adds a workspace at the end.
-                        div().id("ws-list-empty").flex_1().on_click(cx.listener(
-                            |this, ev: &ClickEvent, window, cx| {
+                        div()
+                            .id("ws-list-empty")
+                            .flex_1()
+                            .on_click(cx.listener(|this, ev: &ClickEvent, window, cx| {
                                 if ev.click_count() == 2 {
                                     this.new_workspace(true, window, cx);
                                 }
-                            },
-                        )),
+                            }))
+                            .on_mouse_down(
+                                MouseButton::Right,
+                                cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+                                    let items = vec![Some((
+                                        "New Empty Workspace Group".to_string(),
+                                        MenuAction::NewEmptyGroup,
+                                    ))];
+                                    this.open_menu(ev.position, items, cx);
+                                }),
+                            ),
                     ),
             )
             .when_some(line_y, |d, y| {
@@ -436,6 +525,7 @@ impl WindowView {
         id: WorkspaceId,
         selected: bool,
         closable: bool,
+        member: bool,
         p: SidebarPalette,
         cx: &Context<Self>,
     ) -> impl IntoElement + use<> {
@@ -499,7 +589,10 @@ impl WindowView {
                     }
                 }))
         });
-        let renaming = self.rename.as_ref().filter(|r| r.read(cx).id() == id);
+        let renaming = self
+            .rename
+            .as_ref()
+            .filter(|r| self.rename_group.is_none() && r.read(cx).id() == id);
         let dragging = self.dragging == Some(id) && cx.has_active_drag();
         let ghost = DraggedWorkspace {
             id,
@@ -650,8 +743,22 @@ impl WindowView {
             .px(px(ROW_PAD_X))
             .py(px(ROW_PAD_Y))
             .rounded(px(RADIUS))
+            .when(member, |d| d.ml(px(MEMBER_INDENT)))
             .when(selected, |d| d.bg(p.selected_fill))
             .when(dragging, |d| d.opacity(0.6))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
+                    let own = this.workspaces.group_of(id);
+                    let groups: Vec<_> = this
+                        .workspaces
+                        .groups()
+                        .iter()
+                        .map(|g| (g.id, g.name.clone()))
+                        .collect();
+                    this.open_menu(ev.position, menu::workspace_items(id, own, &groups), cx);
+                }),
+            )
             .when(renaming.is_none(), |d| {
                 d.on_drag(ghost, |g, _, _, cx| cx.new(|_| g.clone()))
             })
@@ -666,6 +773,132 @@ impl WindowView {
             .children(block(dirs))
             .children(block(prs))
             .children(ports)
+    }
+}
+
+impl WindowView {
+    /// A group's header (rg §5): chevron, folder, name, unread badge, and `+` on hover. It is
+    /// the anchor workspace's row.
+    fn render_header(
+        &self,
+        g: GroupId,
+        selected: bool,
+        p: SidebarPalette,
+        cx: &Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let group = self.workspaces.group(g).expect("rows come from the model");
+        let (anchor, collapsed, pinned) = (group.anchor, group.collapsed, group.pinned);
+        let hover = SharedString::from(format!("ws-group-{}", g.0));
+        let glyph = |icon: &'static str, size: f32, frame: f32| {
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .justify_center()
+                .size(px(frame))
+                .child(svg().path(icon).size(px(size)).text_color(p.detail))
+        };
+        let chevron = if collapsed {
+            "icons/chevron-right.svg"
+        } else {
+            "icons/chevron-down.svg"
+        };
+        let renaming = self
+            .rename
+            .as_ref()
+            .filter(|_| self.rename_group == Some(g));
+        let name = match renaming {
+            Some(r) => r.clone().into_any_element(),
+            None => div()
+                .flex_1()
+                .min_w(px(0.))
+                .text_size(px(HEADER_PX))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(Rgba {
+                    a: if selected { 1.0 } else { HEADER_NAME_ALPHA },
+                    ..p.title
+                })
+                .whitespace_nowrap()
+                .overflow_hidden()
+                .text_ellipsis()
+                .child(group.name.clone())
+                .into_any_element(),
+        };
+        let unread = self.group_unread(g);
+        let badge = (unread > 0).then(|| {
+            div()
+                .flex_none()
+                .ml(px(HEADER_NAME_GAP))
+                .px(px(5.))
+                .py(px(1.))
+                .rounded_full()
+                .bg(p.accent)
+                .text_size(px(10.))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(gpui::white())
+                .child(badge_label(unread))
+        });
+        let ghost = DraggedWorkspace {
+            id: anchor,
+            title: group.name.clone().into(),
+            accent: p.accent,
+        };
+        let dragging = self.dragging == Some(anchor) && cx.has_active_drag();
+        div()
+            .id(("ws-group", g.0 as usize))
+            .group(hover.clone())
+            .flex()
+            .flex_row()
+            .flex_none()
+            .items_center()
+            .py(px(HEADER_PAD_Y))
+            .pr(px(HEADER_TRAIL))
+            .rounded(px(HEADER_RADIUS))
+            .when(selected, |d| {
+                d.bg(Rgba {
+                    a: HEADER_SELECTED_FILL,
+                    ..p.title
+                })
+            })
+            .when(dragging, |d| d.opacity(0.6))
+            .when(renaming.is_none(), |d| {
+                d.on_drag(ghost, |g, _, _, cx| cx.new(|_| g.clone()))
+            })
+            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                this.click_header(g, window, cx);
+            }))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
+                    this.open_menu(ev.position, menu::header_items(g, pinned), cx);
+                }),
+            )
+            .when(pinned, |d| {
+                d.child(glyph("icons/pin.svg", CHEVRON_ICON, HEADER_BOX).mr(px(HEADER_GAP)))
+            })
+            .child(
+                glyph(chevron, CHEVRON_ICON, HEADER_BOX)
+                    .id(("ws-group-chevron", g.0 as usize))
+                    .mr(px(HEADER_GAP))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        cx.stop_propagation();
+                        this.toggle_group(g, window, cx);
+                    })),
+            )
+            .child(glyph("icons/folder.svg", HEADER_ICON, HEADER_BOX).mr(px(HEADER_NAME_GAP)))
+            .child(name)
+            .children(badge)
+            .child(
+                glyph("icons/plus.svg", HEADER_ICON, HEADER_PLUS_BOX)
+                    .id(("ws-group-plus", g.0 as usize))
+                    .ml(px(HEADER_GAP))
+                    .opacity(0.)
+                    .group_hover(hover, |s| s.opacity(1.))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        cx.stop_propagation();
+                        this.spawn_in_group(g, Default::default(), None, true, window, cx);
+                    })),
+            )
     }
 }
 

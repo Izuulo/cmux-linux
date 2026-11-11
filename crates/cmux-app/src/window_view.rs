@@ -2,12 +2,15 @@
 //! selected workspace is rendered; the others keep their shells running (plan D1, D6).
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use cmux_core::{FeedItemId, FeedStore, Notifications, WorkspaceClosed, WorkspaceId, Workspaces};
+use cmux_core::{
+    FeedItemId, FeedStore, GroupId, Notifications, Placement, WorkspaceClosed, WorkspaceId,
+    Workspaces,
+};
 use cmux_meta::pr::{self, PrKey, PrPoller};
 use cmux_meta::{WorkspaceInput, WorkspaceMeta};
 use gpui::{
@@ -21,9 +24,13 @@ use crate::style::TermStyle;
 use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
 pub(crate) mod control;
+mod dock;
 mod feed;
 mod feed_cards;
 mod feed_ctl;
+mod group_ctl;
+mod groups;
+mod menu;
 mod notify;
 mod panel;
 mod rename;
@@ -45,6 +52,12 @@ pub struct WindowView {
     sidebar_width: f32,
     sidebar_scroll: ScrollHandle,
     rename: Option<Entity<RenameInput>>,
+    /// The open rename edits this group's name, not a workspace title (M8 plan D9).
+    rename_group: Option<GroupId>,
+    /// The sidebar's context menu, while open.
+    menu: Option<menu::Menu>,
+    /// Workspaces something was typed into (the "untouched anchor" rule, plan D5).
+    typed: HashSet<WorkspaceId>,
     /// Row bounds in list order, from the last paint (drop-gap maths).
     row_bounds: Rc<RefCell<Vec<Bounds<Pixels>>>>,
     drop_gap: Option<usize>,
@@ -60,8 +73,16 @@ pub struct WindowView {
     /// Agent prompts (M7) and the `feed.push` requests still waiting on them, by request id.
     feed: FeedStore,
     feed_waiters: HashMap<String, feed_ctl::Waiter>,
-    /// The right sidebar (Feed, plan M7 D7): closed at launch, fixed width.
+    /// The right sidebar (plan M7 D7, M8 D12): closed at launch.
     right_sidebar_open: bool,
+    right_mode: dock::RightMode,
+    /// The requested width; drawn clamped to the window (`dock::clamp_right_width`).
+    right_width: f32,
+    /// The Dock (M8 plan D13), once it has a terminal; `None` shows the empty pane.
+    dock: Option<Entity<WorkspaceView>>,
+    _dock_sub: Option<Subscription>,
+    /// `dock.json` was looked at (it only seeds the first showing).
+    dock_seeded: bool,
     feed_focus: FocusHandle,
     /// The card j/k moved to; Enter jumps to its surface.
     feed_selected: Option<FeedItemId>,
@@ -122,6 +143,9 @@ impl WindowView {
             sidebar_width: SIDEBAR_DEFAULT,
             sidebar_scroll: ScrollHandle::new(),
             rename: None,
+            rename_group: None,
+            menu: None,
+            typed: HashSet::new(),
             row_bounds: Rc::default(),
             drop_gap: None,
             dragging: None,
@@ -135,6 +159,11 @@ impl WindowView {
             feed: FeedStore::default(),
             feed_waiters: HashMap::new(),
             right_sidebar_open: false,
+            right_mode: Default::default(),
+            right_width: dock::RIGHT_SIDEBAR_MIN,
+            dock: None,
+            _dock_sub: None,
+            dock_seeded: false,
             feed_focus: cx.focus_handle(),
             feed_selected: None,
             feed_scroll: ScrollHandle::new(),
@@ -225,7 +254,10 @@ impl WindowView {
                 this.on_notify(id, *surface, title, String::new(), body, true, window, cx);
             }
             WorkspaceEvent::Focused(s) => this.on_focused(id, *s, window, cx),
-            WorkspaceEvent::Typed(s) => this.on_typed(id, *s, cx),
+            WorkspaceEvent::Typed(s) => {
+                this.typed.insert(id);
+                this.on_typed(id, *s, cx);
+            }
             WorkspaceEvent::Closed(s) => {
                 this.feed_close_surface(id, *s, cx);
                 this.on_closed(id, *s, cx);
@@ -244,30 +276,27 @@ impl WindowView {
         }
     }
 
+    /// `at_end`: appended as a plain row. Otherwise next to the selected workspace, inside its
+    /// group if it has one (rg §7.2).
     fn new_workspace(&mut self, at_end: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let cwd = self
-            .views
-            .get(&self.workspaces.selected())
-            .and_then(|v| v.read(cx).active_cwd(cx));
         let old = self.workspaces.selected();
+        if let Some(g) = self.workspaces.group_of(old).filter(|_| !at_end) {
+            self.spawn_in_group(g, Placement::AfterCurrent, Some(old), true, window, cx);
+            return;
+        }
+        let cwd = self.views.get(&old).and_then(|v| v.read(cx).active_cwd(cx));
         let id = if at_end {
             self.workspaces.add_at_end()
         } else {
             self.workspaces.add_after_selected()
         };
-        if self.make_view(id, cwd, window, cx) {
-            self.select(id, window, cx);
-        } else {
-            // make_view registered nothing for `id`; drop it from the model and go back.
-            self.workspaces.close(id);
-            self.select(old, window, cx);
-        }
+        self.adopt(id, old, cwd, true, window, cx);
     }
 
     fn select(&mut self, id: WorkspaceId, window: &mut Window, cx: &mut Context<Self>) {
         self.workspaces.select(id);
         let inset = self.sidebar_px(window).unwrap_or(0.);
-        let right = self.right_sidebar_px();
+        let right = self.right_sidebar_px(window);
         for (wid, view) in &self.views {
             view.update(cx, |v, _| v.set_active(*wid == id));
         }
@@ -278,7 +307,8 @@ impl WindowView {
         if let Some(view) = self.views.get(&id) {
             view.update(cx, |v, cx| v.focus_active(window, cx));
         }
-        if let Some(ix) = self.workspaces.index_of(id) {
+        let rows = self.workspaces.rows();
+        if let Some(ix) = rows.iter().position(|r| r.workspace() == id) {
             self.sidebar_scroll.scroll_to_item(ix);
         }
         self.read_selected(window, cx);
@@ -312,7 +342,9 @@ impl WindowView {
             WorkspaceClosed::Closed => {
                 if self.rename.as_ref().is_some_and(|r| r.read(cx).id() == id) {
                     self.rename = None;
+                    self.rename_group = None;
                 }
+                self.typed.remove(&id);
                 self.subs.remove(&id);
                 self.views.remove(&id);
                 self.titles.remove(&id);
@@ -482,16 +514,18 @@ impl Render for WindowView {
         self.refresh_title(self.workspaces.selected(), cx);
         let selected = self.views.get(&self.workspaces.selected()).cloned();
         let width = self.sidebar_px(window);
-        let right = self.right_sidebar_px();
+        let right = self.right_sidebar_px(window);
         if let Some(v) = &selected {
             v.update(cx, |v, _| v.set_insets(width.unwrap_or(0.), right));
         }
+        self.place_dock(window, cx);
         div()
             .relative()
             .flex()
             .flex_row()
             .size_full()
             .on_drag_move(cx.listener(Self::on_sidebar_drag))
+            .on_drag_move(cx.listener(Self::on_right_sidebar_drag))
             .on_action(
                 cx.listener(|this, _: &NewWorkspace, w, cx| this.new_workspace(false, w, cx)),
             )
@@ -517,15 +551,30 @@ impl Render for WindowView {
                     cx.notify();
                 }
             }))
+            .on_action(
+                cx.listener(|this, _: &NewWorkspaceGroup, w, cx| this.new_empty_group(w, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &ToggleWorkspaceGroupCollapsed, w, cx| {
+                    match this.workspaces.group_of(this.workspaces.selected()) {
+                        Some(g) => this.toggle_group(g, w, cx),
+                        // Not ours to consume (rg §10.1): the key goes on to the terminal.
+                        None => cx.propagate(),
+                    }
+                }),
+            )
             .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| this.toggle_sidebar(cx)))
             .on_action(
                 cx.listener(|this, _: &ToggleRightSidebar, w, cx| this.toggle_right_sidebar(w, cx)),
             )
             .on_action(
-                cx.listener(|this, _: &FocusRightSidebar, w, cx| this.focus_right_sidebar(w, cx)),
+                cx.listener(|this, _: &FocusRightSidebar, w, cx| this.show_right(None, w, cx)),
             )
             .on_action(cx.listener(|this, _: &SwitchRightSidebarToFeed, w, cx| {
-                this.focus_right_sidebar(w, cx)
+                this.show_right(Some(dock::RightMode::Feed), w, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SwitchRightSidebarToDock, w, cx| {
+                this.show_right(Some(dock::RightMode::Dock), w, cx)
             }))
             .on_action(cx.listener(|this, _: &ShowNotifications, _, cx| {
                 this.panel_open = !this.panel_open;
@@ -533,7 +582,12 @@ impl Render for WindowView {
             }))
             // The terminal keeps focus while the panel is up, so Escape is caught here first.
             .capture_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, _, cx| {
-                if this.panel_open && ev.keystroke.key == "escape" {
+                if ev.keystroke.key != "escape" {
+                    return;
+                }
+                if this.close_menu(cx) {
+                    cx.stop_propagation();
+                } else if this.panel_open {
                     this.close_panel(cx);
                     cx.stop_propagation();
                 }
@@ -555,7 +609,11 @@ impl Render for WindowView {
                 d.child(self.render_right_sidebar(window, cx))
             })
             .when_some(width, |d, w| d.child(self.render_resize_band(w)))
+            .when(self.right_sidebar_open, |d| {
+                d.child(self.render_right_resize_band(right))
+            })
             .children(self.render_panel(window, cx))
+            .children(self.render_menu(cx))
     }
 }
 

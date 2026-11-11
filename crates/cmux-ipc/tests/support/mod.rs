@@ -68,6 +68,7 @@ pub fn fixture() -> Snapshot {
                 panes: vec![p3],
             },
         ],
+        groups: Vec::new(),
     }
 }
 

@@ -40,8 +40,8 @@ original. It is a **local app**: no cloud services, no browser, no account.
 - **Keyboard first:** cmux's shortcuts with ⌘ mapped to Super; every binding can
   be remapped.
 
-Later: an agent approval feed, workspace groups, a dock, agent-to-agent
-messages, session restore, a command palette and SSH workspaces.
+Also here: an agent approval Feed, workspace groups and a Dock (below). Later:
+agent-to-agent messages, session restore, a command palette and SSH workspaces.
 
 ## How it's built
 
@@ -64,7 +64,9 @@ Full design: [`docs/design.md`](docs/design.md).
 | M4 notifications | Pane rings, badges, notification panel |
 | M5 cli-socket | Scriptable through the `cmux` CLI |
 | M6 parity-release | Visual parity, packaging, first release |
-| M7–M11 | Feed, groups and dock, agent coordination, persistence, productivity |
+| M7 feed | Agent approvals in the right sidebar |
+| M8 groups-dock | Workspace groups and a Dock of terminals |
+| M9–M11 | Agent coordination, persistence, productivity |
 
 Each milestone has a spec, plan and journal under [`docs/milestones/`](docs/milestones).
 
@@ -201,7 +203,8 @@ unchanged, for example a Claude Code hook in `~/.claude/settings.json`:
 
 Ported commands: `notify`, `dismiss-notification`, `new-workspace`, `new-split`, `send`,
 `send-key`, `list-workspaces`, `current-workspace`, `list-panes`, `list-pane-surfaces`,
-`select-workspace`, `focus-pane`, `focus-panel`, `ping`, `version`, with `--json` and
+`select-workspace`, `focus-pane`, `focus-panel`, `workspace-group`, `ping`, `version`, with
+`--json` and
 `--id-format refs|uuids|both`. `cmux --help` and `cmux <command> --help` list the flags.
 
 The socket is `~/.local/state/cmux-linux/cmux.sock` (`$XDG_STATE_HOME/cmux-linux/` when
@@ -261,6 +264,70 @@ Keys, all remappable under `[keybindings]`: `toggleRightSidebar` (Super+Alt+B),
 sidebar has focus; in a terminal it still selects tab 4, and a remapped binding also acts only
 inside the sidebar). In the sidebar, j/k or Down/Up
 choose a card, Enter jumps to its terminal and Escape returns to the terminal.
+
+## Workspace groups
+
+Groups are collapsible named sections in the sidebar. The first workspace of a group is its
+**anchor**: the group's header stands for it, so it has no row of its own. Closing the anchor
+promotes the next workspace; closing the last one removes the group.
+
+- **Create:** Ctrl+Super+G makes a group with a new workspace. Right-click a workspace for
+  New Empty Workspace Group, New Group from Workspace, Move to Group and Remove from Group.
+- **Header:** click the name to go to the anchor, the chevron to collapse, the `+` (on hover)
+  for a new workspace inside, in the anchor's directory. Right-click for New Workspace in
+  Group, Rename Group…, Pin / Unpin Group (pinned groups stay on top), Ungroup Workspaces
+  (keeps the workspaces) and Delete Group (closes them, after asking).
+- **Inside a group:** Super+N adds the new workspace to the group, after the current one.
+  Ctrl+Super+. collapses or expands the current workspace's group. Moving a workspace with
+  the keyboard keeps it inside its group; drag it above a member to join a group, anywhere
+  else to leave. Dragging a header moves the whole group.
+- Selecting a workspace of a collapsed group expands it. Super+1–9 count only the plain
+  visible rows, not headers or hidden workspaces.
+
+From scripts:
+
+```sh
+cmux workspace-group create --name api --from workspace:1,workspace:2
+cmux workspace-group new-workspace workspace_group:1 --placement end
+cmux workspace-group list
+```
+
+`cmux workspace-group --help` lists the rest (ungroup, delete, rename, collapse, expand, pin,
+unpin, add, remove, set-anchor, focus). Groups are not saved across restarts yet.
+
+Not ported from cmux: group colours and icons, per-directory group settings, grouping a
+multi-selection (the sidebar has none), renaming through a command palette (the header is
+edited in place instead).
+
+## Dock
+
+The right sidebar has two tabs, Feed and Dock. The Dock holds terminals that belong to the
+window, not to a workspace, so they stay put while you switch workspaces: a git view, logs, a
+test watcher. It uses the same tabs, splits and shortcuts as the main area; while a Dock
+terminal has focus, Super+T, Super+D, Super+Shift+D, Super+W and the pane-focus keys act on
+the Dock. Closing the sidebar hides the Dock but its terminals keep running.
+
+Open it with Super+Alt+B and click Dock, or Super+Shift+E then Ctrl+5 (`switchRightSidebarToDock`,
+like Ctrl+4 only while the Feed has focus). Drag the sidebar's left edge to resize it. An
+empty Dock offers New Terminal.
+
+To start the same terminals every time, write `~/.config/cmux-linux/dock.json`:
+
+```json
+{"controls": [
+  {"id": "git", "command": "lazygit", "cwd": "projects/app"},
+  {"id": "logs", "command": "tail -f /var/log/syslog"}
+]}
+```
+
+The first time the Dock is shown, each control gets a pane below the previous one and its
+`command` is typed into a shell started in `cwd` (relative to your home directory). When the
+command ends you are left in that shell.
+
+Not ported from cmux: browser controls, `height`, `env` and `title` in `dock.json`, project
+`.cmux/dock.json`, `--placement dock` and Dock rows in the CLI, notifications from Dock
+terminals (`cmux notify` and the Feed hook don't work inside the Dock yet), dragging tabs
+between the Dock and the main area.
 
 ## Contributing
 
