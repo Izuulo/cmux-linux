@@ -269,7 +269,12 @@ pub fn push_params(
 }
 
 pub fn hook_output(stdin: &Value, d: &Decision) -> Value {
-    let input = stdin.get("tool_input").cloned().unwrap_or(json!({}));
+    // A non-object tool_input can't carry `answers`; treat it as empty.
+    let input = stdin
+        .get("tool_input")
+        .filter(|v| v.is_object())
+        .cloned()
+        .unwrap_or(json!({}));
     let deny = |m: &str| json!({"behavior": "deny", "message": m});
     let allow_input = || json!({"behavior": "allow", "updatedInput": input});
     let decision = match d {
@@ -691,5 +696,21 @@ mod tests {
             )["behavior"],
             "deny"
         );
+    }
+
+    #[test]
+    fn hook_output_question_with_non_object_tool_input() {
+        for input in [json!("x"), json!([1]), json!(null)] {
+            let d = out(
+                json!({"tool_input": input}),
+                Decision::Question {
+                    selections: vec!["A".into()],
+                },
+            );
+            assert_eq!(
+                d,
+                json!({"behavior": "allow", "updatedInput": {"answers": {"Answer 1": "A"}}})
+            );
+        }
     }
 }

@@ -153,6 +153,8 @@ pub fn ctx(env: &[(&str, &str)]) -> Ctx {
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect(),
         cwd: PathBuf::from("/work"),
+        stdin: None,
+        exe: None,
     }
 }
 
@@ -172,6 +174,11 @@ impl T {
         let s = fixture();
         let fake = Fake::start(s.clone(), canned);
         T { s, fake }
+    }
+
+    /// The same snapshot behind a new fake answering `feed.push` with `result`.
+    pub fn with_feed(&self, result: Value) -> T {
+        self.with(HashMap::from([("feed.push", Ok(result))]))
     }
 
     pub fn a(&self) -> String {
@@ -208,6 +215,25 @@ impl T {
         ];
         env.extend_from_slice(extra);
         let out = self.fake.run(args, &env);
+        (out.code, out.stdout, out.stderr)
+    }
+
+    /// `run_env` with `stdin` as the hook's standard input.
+    pub fn run_with_stdin(
+        &self,
+        args: &[&str],
+        extra: &[(&str, &str)],
+        stdin: &str,
+    ) -> (i32, String, String) {
+        let (a, s1) = (self.a(), self.s1());
+        let mut env = vec![
+            ("CMUX_WORKSPACE_ID", a.as_str()),
+            ("CMUX_SURFACE_ID", s1.as_str()),
+        ];
+        env.extend_from_slice(extra);
+        let mut ctx = self.fake.ctx(&env);
+        ctx.stdin = Some(stdin.to_string());
+        let out = cli(args, &ctx);
         (out.code, out.stdout, out.stderr)
     }
 

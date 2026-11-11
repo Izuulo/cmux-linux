@@ -17,6 +17,8 @@ pub fn terminal_env(
         ("CMUX_TAB_ID", workspace_id),
         ("CMUX_SURFACE_ID", surface_id),
         ("CMUX_PANEL_ID", surface_id),
+        // Tells our hooks apart from the macOS cmux.app's, which shares the socket protocol.
+        ("CMUX_LINUX", "1"),
         // Blanked as cmux does, so an inherited value can't conflict with CMUX_SOCKET_PATH.
         ("CMUX_SOCKET", ""),
     ]
@@ -61,6 +63,7 @@ mod tests {
                 ("CMUX_TAB_ID", "W"),
                 ("CMUX_SURFACE_ID", "S"),
                 ("CMUX_PANEL_ID", "S"),
+                ("CMUX_LINUX", "1"),
                 ("CMUX_SOCKET", ""),
                 ("CMUX_SOCKET_PATH", "/s/cmux.sock"),
                 ("PATH", "/app/bin:/usr/bin:/bin"),
