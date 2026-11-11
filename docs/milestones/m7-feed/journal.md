@@ -63,3 +63,11 @@ Mac smoke run (release build, our app only, isolated state dir, hooks run in a s
 - Possible bug, needs a manual look: opening the right sidebar seemed to wipe the visible terminal content (the screen kept one prompt line at the top). Could not check scrollback; suspect resize/reflow in `terminal_view`.
 - Side notes: `XDG_STATE_HOME` leaks into child shells (test only); our zsh terminals append to the user's shell history; cmux-cua `type_text` sends only `a`, `press_key` works. A screenshot is at `~/Pictures/cmux-m7/` (sidebar open, empty).
 - Step 2 (real Claude Code run) and Step 4 (PR) are not done.
+
+## 2026-11-11 — Final review fixes
+- README: Feed answers can still be given in Claude's own prompt (card stays pending until 115 s, then dims); Always Allow and All tools are identical for Claude Code; setup rewrites only when our entry changes (2-space indent, order kept); remapped `switchRightSidebarToFeed` acts only inside the sidebar.
+- `terminal_env` now sets `CMUX_CLAUDE_HOOKS_DISABLED=1` (opt-out of cmux.app's `claude` wrapper, avoids a second hook and two cards).
+- `FeedKind::accepts`: a question reply needs one selection per prompt. The socket-only one-string "Skip interview" reply stays accepted (constant `SKIP_INTERVIEW` in core).
+- `hooks setup` on a dangling symlink writes to the link's target (relative targets resolved against the link's dir); test added.
+- cmux-ipc enables serde_json `preserve_order` itself (feature flag, Cargo.lock unchanged).
+- Not done: bind `CMUX_LINUX` to our socket path; CLI tests for invalid JSON / uninstall refusal / `HOME` fallback / precedence; fake-error test for the hook; the sidebar-wipe is likely a pre-existing resize/reflow question (toggle the left sidebar to compare).
