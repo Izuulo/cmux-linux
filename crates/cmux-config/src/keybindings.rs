@@ -74,6 +74,10 @@ pub const DEFAULTS: &[(&str, &[&str])] = &[
     ("toggleRightSidebar", &["super+opt+b"]),
     ("focusRightSidebar", &["super+shift+e"]),
     ("switchRightSidebarToFeed", &["ctrl+4"]),
+    // Groups and Dock: research-groups.md §10, research-dock.md §1.6 (M8).
+    ("newWorkspaceGroup", &["ctrl+super+g"]),
+    ("toggleFocusedWorkspaceGroupCollapsed", &["ctrl+super+."]),
+    ("switchRightSidebarToDock", &["ctrl+5"]),
 ];
 
 const NUMBERED: &[&str] = &["selectSurfaceByNumber", "selectWorkspaceByNumber"];
@@ -83,7 +87,11 @@ const NUMBERED: &[&str] = &["selectSurfaceByNumber", "selectWorkspaceByNumber"];
 /// contextless one as deepest); the Feed wins because tab 4's handler lives on WorkspaceView,
 /// off the sidebar's dispatch path, and its later DEFAULTS entry breaks the tie.
 fn context(action: &str) -> Option<&'static str> {
-    (action == "switchRightSidebarToFeed").then_some("RightSidebar")
+    matches!(
+        action,
+        "switchRightSidebarToFeed" | "switchRightSidebarToDock"
+    )
+    .then_some("RightSidebar")
 }
 
 /// What a US-layout Shift turns a key into. gpui on Linux reports Shift+] as key `}` with
