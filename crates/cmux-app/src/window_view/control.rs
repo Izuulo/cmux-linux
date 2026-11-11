@@ -240,6 +240,7 @@ impl WindowView {
                     return Err(RpcError::new("invalid_params", msg));
                 }
                 self.feed_finish(&request_id, super::feed_ctl::FeedEnd::Answer(d), cx);
+                self.feed_refocus(window);
                 Ok(json!({ "delivered": true }))
             }
             _ => Err(RpcError::new("method_not_found", "Unknown method")),

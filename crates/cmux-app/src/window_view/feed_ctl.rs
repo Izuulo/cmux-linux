@@ -96,10 +96,11 @@ impl WindowView {
             .insert(request_id.clone(), Waiter { req, notification });
         let wait = push.wait;
         // Detached: a timer outliving its answer finds no waiter and does nothing.
-        cx.spawn(async move |this, cx| {
+        cx.spawn_in(window, async move |this, cx| {
             cx.background_executor().timer(wait).await;
-            let _ = this.update(cx, |this, cx| {
-                this.feed_finish(&request_id, FeedEnd::TimedOut, cx)
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.feed_finish(&request_id, FeedEnd::TimedOut, cx);
+                this.feed_refocus(window);
             });
         })
         .detach();
@@ -138,6 +139,15 @@ impl WindowView {
         w.req.respond(Ok(reply));
         let gone = self.notifications.remove(w.notification);
         self.after_change(gone, cx);
+    }
+
+    /// After a card ends: if its feedback field had focus, focus the Feed list. Left on the
+    /// vanished field, focus would fall to the agent's terminal (WorkspaceView's focus-lost
+    /// listener), and the rest of the user's typing, Enter included, would answer Claude there.
+    pub(super) fn feed_refocus(&self, window: &mut Window) {
+        if self.feed_editing.is_none() && self.feed_field_focus.is_focused(window) {
+            window.focus(&self.feed_focus);
+        }
     }
 
     /// A Feed button: answers the card's request if it still waits and `decision` fits its kind.
