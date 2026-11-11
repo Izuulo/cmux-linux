@@ -272,7 +272,8 @@ fn feed_hook(cmd: &mut Cmd) -> Result<String, CliError> {
 
 /// `cmux hooks message --source claude`: Claude Code's `UserPromptSubmit`, `PostToolUse` and
 /// `Stop` hook (M9 plan D5). Claims the messages queued for this terminal's agent and hands
-/// them to Claude in the form the event takes. Anything else prints `{}`.
+/// them to Claude in the form the event takes. Anything else prints `{}`. On `Stop` it also
+/// reports the turn's end for auto-naming.
 fn message_hook(cmd: &mut Cmd) -> Result<String, CliError> {
     let empty = || Ok("{}\n".to_string());
     if !cmd
@@ -303,6 +304,14 @@ fn message_hook(cmd: &mut Cmd) -> Result<String, CliError> {
         return empty();
     };
     let stop = event == "Stop";
+    // A turn ended: the app may name the workspace from the transcript (M9 plan N2). It
+    // answers at once and runs the naming itself, so this never holds the agent up.
+    if let (true, Some(path)) = (stop, stdin.get("transcript_path").and_then(Value::as_str)) {
+        let mut p = serde_json::Map::new();
+        p.insert("surface_id".into(), surf.into());
+        p.insert("transcript_path".into(), path.into());
+        let _ = call(cmd, "workspace.auto_name", &p, Duration::from_secs(5));
+    }
     let mut params = serde_json::Map::new();
     params.insert("surface_id".into(), surf.into());
     params.insert("via".into(), event.into());

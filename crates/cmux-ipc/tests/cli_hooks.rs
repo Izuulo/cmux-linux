@@ -397,6 +397,28 @@ fn message_hook_continues_a_stopping_turn_and_ends_the_last_one() {
 }
 
 #[test]
+fn stop_reports_the_transcript_for_auto_naming() {
+    let t = mail("");
+    let run = |event: &str| {
+        let stdin = json!({"hook_event_name": event, "transcript_path": "/t/s.jsonl"}).to_string();
+        let args = ["hooks", "message", "--source", "claude"];
+        t.run_with_stdin(&args, &[LINUX], &stdin).1
+    };
+    // The app doesn't know the method here: the hook still ends the turn quietly.
+    assert_eq!(run("Stop"), "{}\n");
+    let asked = t.fake.requests();
+    assert_eq!(asked.len(), 2);
+    assert_eq!(asked[0].0, "workspace.auto_name");
+    assert_eq!(
+        asked[0].1,
+        json!({"surface_id": t.s1(), "transcript_path": "/t/s.jsonl"})
+    );
+    assert_eq!(asked[1].0, "agent.message.claim");
+    run("PostToolUse");
+    assert_eq!(t.fake.requests().len(), 3, "only a turn's end names");
+}
+
+#[test]
 fn message_hook_stays_silent_when_it_should() {
     let t = mail("x");
     let asked = || t.fake.requests().len();
