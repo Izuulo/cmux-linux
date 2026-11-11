@@ -4,8 +4,8 @@
      current version to docs/status-archive.md. -->
 
 **Updated:** 2026-11-11
-**Current milestone:** M8 groups-dock on branch `m8-groups-dock` (stacked on `m6-desktop-checks`, PR #9): plan Tasks 1–8 done, PR open. M9 agent-coordination is next.
-**Next action:** agent: M9 (research cmux `docs/agent-messages.md` and automations, write `plan.md`, build on top of `m8-groups-dock`). Owner, when convenient: (a) review and merge PR #9 then the M8 PR; (b) the mouse and typing checks no script can do, now including M8's (group header click, `+`, chevron, menus, rename field, Delete prompt, drags, sidebar edge drag, Dock "New Terminal"), plus the older list: divider/tab/row drag, Feed buttons, clicking a bubble, IME, `CMUX_TRACE_LATENCY=1` (M1 exit 3), blur by eye; (c) `makepkg -si` and a launcher start; (d) M7 Task 9 Step 2, a real Claude Code run with `cmux hooks setup`.
+**Current milestone:** M9 agent-coordination on branch `m9-agent-coordination` (stacked on `m8-groups-dock`, which is stacked on `m6-desktop-checks`): Part 1 of 4, agent messages, is built; Parts 2–4 (auto-naming, automations, Claude Teams) not started.
+**Next action:** agent: M9 Part 2 (workspace auto-naming; detail its plan section first), then Parts 3 and 4. Owner, when convenient: (a) review and merge the stack in order: #9 (M6 desktop checks), #10 (M8), then the M9 PR; (b) one real Claude Code run with `cmux hooks setup`: covers M7 Task 9 Step 2 and M9 exit 1 (send `cmux agent message` to a busy Claude and to an idle one); (c) the mouse and typing checks no script can do: M8's group header click, `+`, chevron, menus, rename field, Delete prompt, drags, sidebar edge drag, Dock "New Terminal"; older: divider/tab/row drag, Feed buttons, clicking a bubble, IME, `CMUX_TRACE_LATENCY=1` (M1 exit 3), blur by eye; (d) `makepkg -si` and a launcher start.
 
 ## Where things are
 - Project design and milestone table: `docs/design.md`
@@ -24,8 +24,8 @@
 | M5 cli-socket | merged (PR #6); criterion 1 = `cmux notify` hooks (owner's ruling), automated by `hook_commands_work_unchanged`; KDE desktop check pending |
 | M6 parity-release | merged (PR #7); KDE run done by script (journal 2026-11-11): perf pass, UI draws, D-Bus notification OK; owner-only checks left (install with sudo, mouse/typing, blur by eye) |
 | M7 feed | merged (PR #8); Feed seen drawn on KDE (permission, question, empty state); buttons unclicked; real Claude Code run (Task 9 Step 2) pending |
-| M8 groups-dock | built (`m8-groups-dock`); both exit criteria checked on KDE by script and screenshot; mouse paths unverified |
-| M9 agent-coordination | not started (post-v1) |
+| M8 groups-dock | built, PR #10; both exit criteria checked on KDE by script and screenshot; mouse paths unverified |
+| M9 agent-coordination | Part 1 (agent messages) built and checked against the app with hand-run hooks; real Claude run pending; Parts 2–4 not started |
 | M10 persistence | not started (post-v1) |
 | M11 productivity | not started (post-v1) |
 
@@ -56,10 +56,12 @@
 - `cmux-meta`: `git`, `path`, `ports`, `pr` (`PrPoller`), `collect`; M6 `darwin` (macOS libproc).
 - `cmux-ipc` (M5, no gpui): `wire`, `handles`, `json`, `snapshot` (reads + target resolution), `server`, `paths`, `env`, `keys`, `cli/*`; binary `cmux`. App side: `window_view/control.rs`.
 - M7: `cmux-core::feed` (`FeedStore`, `FeedKind::accepts`, `Decision`); `cmux-ipc::feed` (JSON <-> model, `hook_output`), `cli/hooks.rs` (`feed`, `setup`, `uninstall`); `cmux-config` `Binding.context`; app `window_view/feed_ctl.rs` (waiters, `feed_finish`, timer), `feed.rs` (right sidebar, permission cards, keys), `feed_cards.rs` (plan, question).
+- M9: `cmux-core::messages` (`MessageStore`, `render_messages`); `cmux-ipc` `Snapshot::message_target`, `cli/agent.rs`, `hooks message` in `cli/hooks.rs`; app `window_view/message_ctl.rs`.
 - M8: `cmux-core::groups` (`Group`, `Row`, `Placement`, `HeaderClick`); `cmux-ipc` `Kind::WorkspaceGroup`, `GroupSnap`, `cli/groups.rs`; app `window_view/groups.rs` (group actions), `menu.rs` (context menu), `group_ctl.rs` (socket), `dock.rs` (right sidebar frame, Dock, `dock.json`); `WorkspaceView::new_dock`.
 - `cmux-app`: gpui `TerminalView` + `TerminalElement`, keys, colours, style, mouse, IME; M2 adds `actions`, `chrome`, `workspace`, `workspace/tab_strip`, `assets`; M3 adds `window_view` (root, pollers), `window_view/sidebar`, `window_view/rename`, `blur` (Linux); M4 adds `attention` (ring, flash), `window_view/notify` (rules wiring, jump), `window_view/panel`, `desktop_notify` (zbus, Linux), `activation` + `wayland` (Linux).
 
 ## Open risks
+- M9 messages: hook output shapes (`additionalContext` on UserPromptSubmit/PostToolUse, `decision: block` on Stop) were written from memory of Claude Code's hook docs and never run under Claude. No idle wake, no off switch, not persisted.
 - M8: nothing in it was clicked or dragged (see Next action b). The Dock is invisible to the socket: `cmux notify`, the Feed hook and OSC notifications don't work from Dock terminals, and CLI commands can't target them. Dock keeps the main area's minimum pane size, so side-by-side splits need a wide sidebar. Groups and Dock are not persisted (M10).
 - gpui is pre-1.0 (pinned). No public FontMetrics → `line_gap` 0.
 - Blur shim runs on Plasma 6.8.2 without errors (KWin offers `ext_background_effect_manager_v1`); that the backdrop is really blurred is not yet confirmed by eye.
@@ -71,6 +73,7 @@
 - M6 parity: panel, 3-tab strip and ring flash were matched from Swift source only, never rendered; owner's cmux.app wasn't a clean reference (non-default config). Remaining gaps (default theme, full-width titlebar band, panel extras, pressed-icon opacity, scroll fades) are in the M6 journal.
 - M6 perf on macOS: loaded p95 10.7 ms, CPU 0.1 % after stop; footprint 971 MB at the old 50 MB scrollback, not re-measured at 10 MB. Linux (KDE, release): RSS 483 MB under 19 floods, CPU 0.8 % after stop.
 
+- Agent messages (M9): app-side store, delivered only through Claude Code hooks (`hooks message` on UserPromptSubmit, PostToolUse, Stop); a workspace's agent is the surface that last claimed.
 - Scripted UI checks: `debug.shortcut.simulate {combo}` (raw v2 request) presses a chord; needs `CMUX_SOCKET_MODE=allowAll` from outside the app.
 - Groups (M8): runs in the workspace list, anchor first, kept by `Workspaces::normalize`; the sidebar draws `rows()`; no empty groups; notification bump stays inside the group; inline group rename; a context menu instead of a palette. Dock (M8): one window-owned `WorkspaceView` in the right sidebar (mode bar Feed/Dock, draggable width), seeded by `~/.config/cmux-linux/dock.json`.
 
