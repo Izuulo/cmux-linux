@@ -1,5 +1,6 @@
 //! cmux-meta: sidebar metadata collectors: pure functions over the filesystem, unit-tested on fixtures.
 
+pub mod autoname;
 #[cfg(target_os = "macos")]
 pub mod darwin;
 pub mod git;
