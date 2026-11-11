@@ -42,6 +42,21 @@ impl ShellEnv {
         }
     }
 
+    /// The env vars for a Dock shell: the window's id stands in for the workspace (rd §6.1).
+    pub fn for_dock(&self, surface: SurfaceId) -> Vec<(String, String)> {
+        let mut h = self.handles.borrow_mut();
+        let w = h.handle(Kind::Window, (0, 0));
+        // Workspace ids start at 1, so `(0, n)` is free for Dock surfaces.
+        let s = h.handle(Kind::Surface, (0, surface.0));
+        cmux_ipc::env::terminal_env(
+            &w.id,
+            &s.id,
+            self.socket.as_deref(),
+            self.cli_dir.as_deref(),
+            self.path.as_deref(),
+        )
+    }
+
     /// The env vars for a shell in `ws`/`surface` (minting their handles).
     pub fn for_surface(&self, ws: WorkspaceId, surface: SurfaceId) -> Vec<(String, String)> {
         let mut h = self.handles.borrow_mut();
@@ -385,7 +400,15 @@ impl WindowView {
         let input = params.get("initial_input").and_then(Value::as_str);
         let new = view
             .update(cx, |v, cx| {
-                v.split_surface(SurfaceId(t.surface.key), dir, focus, input, window, cx)
+                v.split_surface(
+                    SurfaceId(t.surface.key),
+                    dir,
+                    focus,
+                    input,
+                    None,
+                    window,
+                    cx,
+                )
             })
             .map_err(|e| match e {
                 // shortcut: cmux's no-space code is UNVERIFIED (rc §8); invalid_state is ours.
