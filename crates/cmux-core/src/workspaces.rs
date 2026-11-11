@@ -1,6 +1,8 @@
 //! The workspace list: an ordered list of workspaces with one selected. Insert, close, cycle,
 //! number-select, move and rename rules follow cmux; see docs/milestones/m3-workspaces-sidebar.
 
+use crate::groups::{Group, GroupId, Row};
+
 /// One entry of the workspace list. Ids are never reused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct WorkspaceId(pub u64);
@@ -9,6 +11,8 @@ pub struct WorkspaceId(pub u64);
 pub struct Workspace {
     pub id: WorkspaceId,
     pub custom_title: Option<String>,
+    /// The group this workspace is in (`groups.rs`); its anchor carries it too.
+    pub group: Option<GroupId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,9 +25,11 @@ pub enum WorkspaceClosed {
 
 #[derive(Debug)]
 pub struct Workspaces {
-    list: Vec<Workspace>,
-    selected: usize,
+    pub(crate) list: Vec<Workspace>,
+    pub(crate) selected: usize,
     next_id: u64,
+    pub(crate) groups: Vec<Group>,
+    pub(crate) next_group: u64,
 }
 
 impl Default for Workspaces {
@@ -38,6 +44,8 @@ impl Workspaces {
             list: Vec::new(),
             selected: 0,
             next_id: 1,
+            groups: Vec::new(),
+            next_group: 1,
         };
         w.add_at_end();
         w
@@ -67,7 +75,7 @@ impl Workspaces {
         self.list.iter().position(|w| w.id == id)
     }
 
-    fn insert_selected(&mut self, at: usize) -> WorkspaceId {
+    pub(crate) fn insert_selected(&mut self, at: usize) -> WorkspaceId {
         let id = WorkspaceId(self.next_id);
         self.next_id += 1;
         self.list.insert(
@@ -75,20 +83,24 @@ impl Workspaces {
             Workspace {
                 id,
                 custom_title: None,
+                group: None,
             },
         );
         self.selected = at;
         id
     }
 
-    /// Inserted right after the selected workspace, and selected.
+    /// Inserted right after the selected workspace (after its whole group, if it has one), and
+    /// selected.
     pub fn add_after_selected(&mut self) -> WorkspaceId {
         let at = if self.list.is_empty() {
             0
         } else {
             self.selected + 1
         };
-        self.insert_selected(at)
+        let id = self.insert_selected(at);
+        self.normalize();
+        id
     }
 
     /// Appended, and selected.
@@ -96,7 +108,9 @@ impl Workspaces {
         self.insert_selected(self.list.len())
     }
 
-    /// Closing the selected one selects the workspace that slides into its slot, else the new last.
+    /// Closing the selected one selects the workspace that slides into its slot, else the new
+    /// last; a hidden member there hands over to its group's anchor. Closing an anchor promotes
+    /// the group's next member.
     pub fn close(&mut self, id: WorkspaceId) -> WorkspaceClosed {
         let Some(i) = self.index_of(id) else {
             return WorkspaceClosed::NotFound;
@@ -109,31 +123,42 @@ impl Workspaces {
             self.selected -= 1;
         }
         self.selected = self.selected.min(self.list.len() - 1);
+        self.normalize();
+        if let Some(anchor) = self.hidden_anchor(self.selected()) {
+            self.selected = self.index_of(anchor).expect("anchors are listed");
+        }
         WorkspaceClosed::Closed
     }
 
-    /// False if unknown or already selected.
+    /// False if unknown or already selected. Selecting a hidden member expands its group.
     pub fn select(&mut self, id: WorkspaceId) -> bool {
         match self.index_of(id) {
             Some(i) if i != self.selected => {
                 self.selected = i;
+                self.expand_for_selection();
                 true
             }
             _ => false,
         }
     }
 
-    /// `1..=8` select that position, `9` the last; anything else (or past the end) is a no-op.
+    /// `1..=8` select that plain visible row, `9` the last one; group headers and hidden
+    /// members are not counted. Anything else (or past the end) is a no-op.
     pub fn select_number(&mut self, n: usize) -> bool {
-        let i = match n {
-            1..=8 => n - 1,
-            9 => self.list.len() - 1,
-            _ => return false,
+        let plain: Vec<WorkspaceId> = self
+            .rows()
+            .into_iter()
+            .filter_map(|r| match r {
+                Row::Workspace { id, .. } => Some(id),
+                Row::Header { .. } => None,
+            })
+            .collect();
+        let pick = match n {
+            1..=8 => plain.get(n - 1),
+            9 => plain.last(),
+            _ => None,
         };
-        match self.list.get(i) {
-            Some(w) => self.select(w.id),
-            None => false,
-        }
+        pick.is_some_and(|id| self.select(*id))
     }
 
     /// Wraps around; false with a single workspace.
@@ -147,33 +172,7 @@ impl Workspaces {
         } else {
             (self.selected + n - 1) % n
         };
-        true
-    }
-
-    /// Moves the selected workspace by `delta` places, without wrapping.
-    pub fn move_selected(&mut self, delta: isize) -> bool {
-        let to = self.selected as isize + delta;
-        if delta == 0 || to < 0 || to >= self.list.len() as isize {
-            return false;
-        }
-        let w = self.list.remove(self.selected);
-        self.list.insert(to as usize, w);
-        self.selected = to as usize;
-        true
-    }
-
-    /// Moves `id` into `gap` (0..=len, counted in the current order). The selection follows ids.
-    pub fn move_to(&mut self, id: WorkspaceId, gap: usize) -> bool {
-        let Some(i) = self.index_of(id) else {
-            return false;
-        };
-        if gap > self.list.len() || gap == i || gap == i + 1 {
-            return false;
-        }
-        let selected = self.selected();
-        let w = self.list.remove(i);
-        self.list.insert(if gap > i { gap - 1 } else { gap }, w);
-        self.selected = self.index_of(selected).expect("selected id still listed");
+        self.expand_for_selection();
         true
     }
 
