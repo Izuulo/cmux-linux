@@ -11,6 +11,8 @@ pub struct WorkspaceId(pub u64);
 pub struct Workspace {
     pub id: WorkspaceId,
     pub custom_title: Option<String>,
+    /// `custom_title` came from auto-naming, not the user (M9 plan N3).
+    pub auto_title: bool,
     /// The group this workspace is in (`groups.rs`); its anchor carries it too.
     pub group: Option<GroupId>,
 }
@@ -83,6 +85,7 @@ impl Workspaces {
             Workspace {
                 id,
                 custom_title: None,
+                auto_title: false,
                 group: None,
             },
         );
@@ -183,6 +186,26 @@ impl Workspaces {
         };
         let name = name.trim();
         w.custom_title = (!name.is_empty()).then(|| name.to_string());
+        w.auto_title = false;
+        true
+    }
+
+    /// May auto-naming title this workspace? Not once the user has named it.
+    pub fn accepts_auto_title(&self, id: WorkspaceId) -> bool {
+        self.list
+            .iter()
+            .any(|w| w.id == id && (w.auto_title || w.custom_title.is_none()))
+    }
+
+    /// An auto-naming title: refused once the user has named the workspace (M9 plan N3).
+    pub fn set_auto_title(&mut self, id: WorkspaceId, name: &str) -> bool {
+        let name = name.trim();
+        if name.is_empty() || !self.accepts_auto_title(id) {
+            return false;
+        }
+        let w = self.list.iter_mut().find(|w| w.id == id).expect("accepted");
+        w.custom_title = Some(name.to_string());
+        w.auto_title = true;
         true
     }
 
@@ -309,6 +332,22 @@ mod tests {
         assert!(w.rename(a, "   "));
         assert_eq!(w.custom_title(a), None);
         assert!(!w.rename(WorkspaceId(42), "x"));
+    }
+
+    #[test]
+    fn auto_titles_lose_to_the_user() {
+        let mut w = Workspaces::new();
+        let a = w.selected();
+        assert!(w.set_auto_title(a, " fix login "));
+        assert!(w.set_auto_title(a, "fix login flow"), "auto replaces auto");
+        assert_eq!(w.custom_title(a), Some("fix login flow"));
+        assert!(w.rename(a, "mine"));
+        assert!(!w.set_auto_title(a, "theirs"));
+        assert_eq!(w.custom_title(a), Some("mine"));
+        assert!(w.rename(a, ""), "clearing reopens it");
+        assert!(!w.set_auto_title(a, "  "));
+        assert!(w.set_auto_title(a, "again"));
+        assert!(!w.set_auto_title(WorkspaceId(42), "x"));
     }
 
     #[test]
