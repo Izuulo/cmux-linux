@@ -70,12 +70,16 @@ Each milestone has a spec, plan and journal under [`docs/milestones/`](docs/mile
 
 ## Install
 
-Arch / CachyOS: build and install the package from this checkout (it builds Ghostty's Zig
-library too, so it needs network access):
+Arch / CachyOS: build and install the package. This clones GitHub master (it builds Ghostty's
+Zig library too, so it needs network access):
 
 ```sh
 cd packaging/arch && makepkg -si
 ```
+
+To build your local checkout instead, run
+`_repo="file://$(git rev-parse --show-toplevel)" makepkg -si` in `packaging/arch`; only
+committed changes are built.
 
 It installs `cmux-linux` and the `cmux` CLI side by side in `/usr/lib/cmux-linux/`, with
 symlinks in `/usr/bin` and a `.desktop` entry.
