@@ -114,3 +114,4 @@ Verdict vs D8: p50 <= 16.7 ms pass, p95 <= 33 ms pass, RSS <= 1 GiB pass, CPU < 
 ## 2026-11-11 — Final review fixes
 
 - Deviation from cmux: `SCROLLBACK` is 10_000_000 bytes (upstream Ghostty default), not cmux's 50 MB. Our history is never compressed (libghostty-vt leaves compression to the caller, `vendor/ghostty/include/ghostty/vt/terminal.h:43-52`), so 20 full panes at 50 MB would hold ~1 GB. Bound now: 20 x 10 MB + ~70 MB base = ~270 MB. Footprint not re-measured after this change.
+- Sidebar unread badge: checked `Sources/Sidebar/SidebarWorkspaceUnreadBadge.swift` (cmux @ 43ce5e2): a fixed-side circle with `Text("\(unreadCount)")`, no cap and no pill growth. Ours already matches (`badge_label`, test `badge_label_has_no_cap`), so no change.
