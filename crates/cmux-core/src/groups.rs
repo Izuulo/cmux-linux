@@ -442,6 +442,46 @@ impl Workspaces {
         })
     }
 
+    /// A notification's bump (rg: `moveTabToTopForNotification`): the workspace's top-level
+    /// row goes to the top of the unpinned rows, and a member also to the top of its group.
+    /// Pinned groups stay put.
+    pub fn bump_to_top(&mut self, ws: WorkspaceId) -> bool {
+        let Some(i) = self.index_of(ws) else {
+            return false;
+        };
+        let before = self.order();
+        let selected = self.selected();
+        let group = self.group_of(ws).and_then(|g| self.group(g));
+        if group.is_some_and(|g| g.pinned) {
+            return false;
+        }
+        let is_pinned = |w: &Workspace| {
+            w.group
+                .and_then(|g| self.group(g))
+                .is_some_and(|g| g.pinned)
+        };
+        let top = self.list.iter().filter(|w| is_pinned(w)).count();
+        match group.map(|g| (g.id, g.anchor)) {
+            None => {
+                let w = self.list.remove(i);
+                self.list.insert(top, w);
+            }
+            Some((g, anchor)) => {
+                let (mut run, rest): (Vec<_>, Vec<_>) =
+                    self.list.drain(..).partition(|w| w.group == Some(g));
+                if ws != anchor {
+                    let k = run.iter().position(|w| w.id == ws).expect("a member");
+                    let w = run.remove(k);
+                    run.insert(1, w);
+                }
+                self.list = rest;
+                self.list.splice(top..top, run);
+            }
+        }
+        self.reselect(selected);
+        self.order() != before
+    }
+
     fn order(&self) -> Vec<(WorkspaceId, Option<GroupId>)> {
         self.list.iter().map(|w| (w.id, w.group)).collect()
     }
@@ -984,6 +1024,28 @@ mod tests {
         assert!(w.move_to(WorkspaceId(1), 6));
         assert_eq!(rows(&w), "3 G2[4] .5 6 G1[1] .2");
         assert_eq!(w.group_members(g), ws(&[1, 2]));
+        assert_eq!(w.selected(), WorkspaceId(1));
+    }
+
+    #[test]
+    fn a_notification_bumps_the_row_and_its_group() {
+        let mut w = list(6);
+        let pinned = w.create_group("", &ws(&[6])).unwrap();
+        w.set_pinned(pinned, true);
+        w.create_group("", &ws(&[3, 4, 5])).unwrap();
+        // Rows: G1[6] 1 2 G2[3] .4 .5
+        assert!(w.bump_to_top(WorkspaceId(5)));
+        assert_eq!(
+            rows(&w),
+            "G1[6] G2[3] .5 .4 1 2",
+            "member first, group on top"
+        );
+        assert!(!w.bump_to_top(WorkspaceId(5)), "already there");
+        assert!(w.bump_to_top(WorkspaceId(2)));
+        assert_eq!(rows(&w), "G1[6] 2 G2[3] .5 .4 1");
+        assert!(w.bump_to_top(WorkspaceId(3)), "an anchor takes its group");
+        assert_eq!(rows(&w), "G1[6] G2[3] .5 .4 2 1");
+        assert!(!w.bump_to_top(WorkspaceId(6)), "pinned groups stay put");
         assert_eq!(w.selected(), WorkspaceId(1));
     }
 

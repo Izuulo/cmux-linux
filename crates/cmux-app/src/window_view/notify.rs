@@ -59,7 +59,7 @@ impl WindowView {
         }
         if !focused {
             // rn §6 app.reorderOnNotification: the workspace moves to the top.
-            self.workspaces.move_to(ws, 0);
+            self.workspaces.bump_to_top(ws);
             if selected {
                 self.flash(ws, surface, cx);
             }
