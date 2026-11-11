@@ -449,7 +449,9 @@ cmux claude-teams --model sonnet
 Run it in a cmux-linux terminal; everything after `claude-teams` goes to `claude`. It sets
 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, defaults `--teammate-mode auto`, and puts a private
 `tmux` script first on `PATH` that turns the tmux pane commands Claude sends (`split-window`,
-`send-keys`, `kill-pane`, `list-panes`, `display-message`, `select-pane`) into splits here.
+`respawn-pane`, `send-keys`, `kill-pane`, `list-panes`, `display-message`, `select-pane`) into
+splits here. Start it in a folder Claude Code already trusts: a teammate that meets the "trust
+this folder?" question waits there and the lead never hears from it.
 A teammate is an ordinary terminal: its notifications, directory and ports show as usual, and
 with `cmux hooks setup` its prompts reach the Feed.
 

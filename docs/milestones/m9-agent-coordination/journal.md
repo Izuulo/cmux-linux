@@ -85,3 +85,15 @@ Source: cmux `CLI/cmux.swift` @ `88b87c05` (usage text, `configureTmuxCompatEnvi
 - In the running app on KDE, `cmux claude-teams --continue` typed into a terminal with a fake `claude` first on `PATH`: it got `--teammate-mode auto --append-system-prompt <nudge> --continue`, `TMUX`, `TMUX_PANE=%1`, `TERM=screen-256color`, the teams variable, no `TERM_PROGRAM`, and our script as `tmux`. Acting as a lead it split twice (`-h` from the lead, `-v` from the first teammate), got `%2` and `%3`, typed a command into each with `send-keys ... Enter` (each ran in its own shell with its own `CMUX_SURFACE_ID`), listed three panes, saw `capture-pane` refused, and `kill-pane` closed one (screenshot: lead left, teammate right). An OSC 9 notification from the teammate pane drew its ring and the sidebar badge.
 - Not checked: a real Claude Code team. Which tmux commands Claude really sends is taken from cmux's shim, not observed; that run is the owner's (it spends usage).
 
+
+## 2026-11-11 — real Claude Code run (2.1.322) in the installed app
+
+Driven over the socket in the owner's session (`CMUX_SOCKET_MODE=allowAll`).
+- Agent messages: all three paths seen in the transcript. Idle: attached to the next prompt (`UserPromptSubmit`). Sent after a turn that left a background task: attached when the task's notification started the next turn. Mid-tool: `PostToolUse` context after a 15 s command. Each went `queued` -> `read`. The `Stop` "continue instead of stopping" path was not hit.
+- Auto-naming with the default `claude -p` line: the workspace became "cmux-linux agent test", then a second one "Agent Team Kernel Clock" (`has_custom_title` true).
+- Automations: a `workspace.created` rule fired once and ran `notify` then `run`.
+- Claude Teams, first try: both teammates failed with "Unsupported tmux compatibility command: respawn-pane". Claude sends `split-window ... cat` and then `respawn-pane -k -t %N 'cd <dir> && env ... claude --agent-id ...'`; cmux's shim list did not show that order.
+- Added `respawn-pane`: the command goes into a script under the state dir (with the lead's `PATH`, `TMUX` and the pane's `TMUX_PANE`), then Ctrl-C, a 300 ms pause, and `exec sh <script>` typed into the pane. Without the pause one of two panes lost the line. Typing the command itself was ruled out: the pane's shell may be fish.
+- Deviation: cmux respawns the surface's process (`surface.respawn`); ours ends the placeholder and types. A placeholder that ignores Ctrl-C would swallow the line.
+- With the fix (debug `cmux` as the shim): two teammates opened as splits, reported `uname -r` and `date`, approved shutdown, and their panes closed.
+- A lead started in an untrusted folder: the teammate stops at Claude's "trust this folder?" question and never reports. cmux waives that only for `--dangerously-skip-permissions`; we do nothing, the README says to start in a trusted folder.
