@@ -22,7 +22,21 @@ Deferred: turning messages off (per agent, per workspace, global), `cmux events`
 Tasks: 1 store and rendering; 2 wire and app methods; 3 CLI; 4 the hook and `hooks setup`; 5 check with two shells and a real hook run, docs.
 
 ## Part 2: workspace auto-naming (exit 3)
-Opt-in in `config.toml`; after an agent turn (the `Stop` hook reports it) run a configurable command (default `claude -p`) on the background executor and rename the workspace if it has no custom title. To plan in detail when Part 1 is merged.
+
+Reference: cmux `docs/workspace-auto-naming.md` and `CLI/CMUXCLI+AutoNaming.swift` @ `88b87c05`.
+
+| | Decision | Why |
+|---|---|---|
+| N1 | Setting `[auto_naming]` in `config.toml`: `enabled` (default false) and `command`, a shell line that gets the prompt on stdin and prints the title. Default: cmux's `claude -p --model haiku` with tools, slash commands, session persistence and MCP servers off. Read again at every turn end. | Spec: opt-in, local, configurable command. cmux gates on the live setting, so no restart. |
+| N2 | The app runs the pass, not the hook: the installed `Stop` hook (`hooks message`) also sends `workspace.auto_name {surface_id, transcript_path}` and returns at once. | No second hook to install, and naming can't block the agent. cmux runs it in an async hook and applies with `workspace.set_auto_title`. Deviation. |
+| N3 | Titles carry who set them. An auto title never replaces one the user set (sidebar rename, `workspace.rename`, `--title`); clearing the name opens the workspace to naming again. | cmux "Precedence". |
+| N4 | cmux's throttle, kept per workspace in memory: transcripts under 12 lines skipped, one pass at a time, 180 s between attempts, 6 new lines since the last name, a shrunk transcript only resets the count. | cmux `AutoNamingConfig`. Theirs is per session on disk; ours dies with the app like the rest (M10). |
+| N5 | Context and prompt are cmux's: the first 2 user messages and the last 4 messages of the Claude transcript, 240 characters each; the answer's first line, unquoted, cut to 50 characters at a word. | Same names as cmux for the same talk. |
+| N6 | The command runs under `sh -c` in the temp directory with every `CMUX_*` variable removed and a 60 s deadline. Any failure leaves the name alone. | Without `CMUX_*` the summarizer's own `Stop` hook does nothing, so it can't name itself in a loop. |
+
+Not done: naming the agent's tab, Codex and other agents' transcripts, a settings UI.
+
+Tasks: 1 title provenance in `cmux-core`; 2 setting in `cmux-config`; 3 engine in `cmux-meta::autoname` (throttle, transcript, prompt, title, runner); 4 `workspace.auto_name` in the app; 5 the hook sends it; 6 check against the app with a fake command, docs.
 
 ## Part 3: automations (exit 4)
 Event bus and ordered actions from a versioned JSON file. To plan after reading `docs/automations.md` against the Swift source.
