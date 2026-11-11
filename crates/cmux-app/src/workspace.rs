@@ -547,6 +547,7 @@ impl WorkspaceView {
         pane: PaneId,
         r: Rect,
         dim: Option<Rgba>,
+        controls_width: f32,
         cx: &Context<Self>,
     ) -> impl IntoElement + use<> {
         let pane = self.layout.pane(pane).expect("rects come from the layout");
@@ -576,7 +577,13 @@ impl WorkspaceView {
             .overflow_hidden()
             .key_context("Pane")
             // Tab bounds are window-space; the content area starts at left_inset.
-            .child(self.render_tab_strip(pane, focused, self.left_inset + r.x, cx))
+            .child(self.render_tab_strip(
+                pane,
+                focused,
+                self.left_inset + r.x,
+                crate::csd::lead(controls_width, self.left_inset + r.x, self.top_inset + r.y),
+                cx,
+            ))
             .child(
                 div()
                     .relative()
@@ -663,12 +670,13 @@ impl Render for WorkspaceView {
         let (w, h, scale) = self.container(window);
         let rects = self.layout.rects(w, h, scale);
         let focused = self.layout.focused();
+        let controls = crate::csd::controls_width(window);
         let dim = chrome::dim_overlay(&self.style.cfg).filter(|_| self.layout.pane_count() > 1);
         let divider = chrome::divider(&self.style.cfg);
         let panes: Vec<_> = rects
             .panes
             .iter()
-            .map(|(p, r)| self.render_pane(*p, *r, dim.filter(|_| *p != focused), cx))
+            .map(|(p, r)| self.render_pane(*p, *r, dim.filter(|_| *p != focused), controls, cx))
             .collect();
         let dividers: Vec<_> = rects
             .dividers
