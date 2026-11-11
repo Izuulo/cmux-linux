@@ -99,13 +99,23 @@ pub(crate) fn uninstall(settings: &mut Value) -> Result<(), String> {
 }
 
 fn settings(cmd: &mut Cmd, install_it: bool) -> Result<String, CliError> {
+    let name = if install_it {
+        "hooks setup"
+    } else {
+        "hooks uninstall"
+    };
     let mut file = None;
     let mut it = cmd.args.iter().skip(1);
     while let Some(a) = it.next() {
         if a == "--settings-file" {
-            file = it.next().cloned();
+            match it.next() {
+                Some(v) => file = Some(v.clone()),
+                None => return fail(format!("{name}: --settings-file requires a value")),
+            }
         } else if let Some(v) = a.strip_prefix("--settings-file=") {
             file = Some(v.to_string());
+        } else {
+            return fail(format!("{name}: unknown option {a}"));
         }
     }
     let path = match (file, cmd.env("CLAUDE_CONFIG_DIR"), cmd.env("HOME")) {

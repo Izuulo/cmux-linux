@@ -300,4 +300,27 @@ mod setup {
         assert_eq!(o.code, 0, "{}", o.stderr);
         assert!(d.join("settings.json").exists());
     }
+
+    #[test]
+    fn bad_arguments_touch_nothing() {
+        for (args, msg) in [
+            (
+                vec!["--settings-file"],
+                "hooks setup: --settings-file requires a value",
+            ),
+            (
+                vec!["--setting-file", "x"],
+                "hooks setup: unknown option --setting-file",
+            ),
+        ] {
+            let home = temp_dir();
+            let mut c = support::ctx(&[("HOME", home.to_str().unwrap())]);
+            c.exe = Some("/opt/cmux".into());
+            let mut a = vec!["hooks", "setup"];
+            a.extend(args);
+            let o = support::cli(&a, &c);
+            assert_eq!((o.code, o.stderr), (1, format!("Error: {msg}\n")));
+            assert_eq!(std::fs::read_dir(&home).unwrap().count(), 0);
+        }
+    }
 }
