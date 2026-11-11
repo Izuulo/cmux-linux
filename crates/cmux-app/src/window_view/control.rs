@@ -229,6 +229,12 @@ impl WindowView {
             }
             "notification.clear" => self.clear_from_socket(&snap, params, cx),
             "notification.dismiss" => self.dismiss_from_socket(params, cx),
+            // Unknown or already-answered ids are not an error (plan M7 D5).
+            "feed.permission.reply" | "feed.exit_plan.reply" | "feed.question.reply" => {
+                let (request_id, d) = cmux_ipc::feed::parse_reply(method, params)?;
+                self.feed_finish(&request_id, super::feed_ctl::FeedEnd::Answer(d), cx);
+                Ok(json!({ "delivered": true }))
+            }
             _ => Err(RpcError::new("method_not_found", "Unknown method")),
         }
     }

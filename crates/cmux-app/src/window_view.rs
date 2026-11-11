@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use cmux_core::{Notifications, WorkspaceClosed, WorkspaceId, Workspaces};
+use cmux_core::{FeedStore, Notifications, WorkspaceClosed, WorkspaceId, Workspaces};
 use cmux_meta::pr::{self, PrKey, PrPoller};
 use cmux_meta::{WorkspaceInput, WorkspaceMeta};
 use gpui::{
@@ -21,6 +21,7 @@ use crate::style::TermStyle;
 use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
 pub(crate) mod control;
+mod feed_ctl;
 mod notify;
 mod panel;
 mod rename;
@@ -54,6 +55,9 @@ pub struct WindowView {
     prs: PrPoller,
     pr_in_flight: bool,
     notifications: Notifications,
+    /// Agent prompts (M7) and the `feed.push` requests still waiting on them, by request id.
+    feed: FeedStore,
+    feed_waiters: HashMap<String, feed_ctl::Waiter>,
     /// Handles and env vars for new shells; shared with every `WorkspaceView`.
     shell: Rc<control::ShellEnv>,
     /// The control socket (M5), while it runs.
@@ -114,6 +118,8 @@ impl WindowView {
             prs: PrPoller::new(),
             pr_in_flight: false,
             notifications: Notifications::new(),
+            feed: FeedStore::default(),
+            feed_waiters: HashMap::new(),
             shell,
             _server: server,
             panel_open: false,
@@ -132,6 +138,15 @@ impl WindowView {
             this._tasks.push(cx.spawn_in(window, async move |this, cx| {
                 use futures::StreamExt;
                 while let Some(req) = requests.next().await {
+                    if req.method == "feed.push" {
+                        // Held until answered (plan M7 D5).
+                        let held =
+                            this.update_in(cx, |this, window, cx| this.feed_push(req, window, cx));
+                        if held.is_err() {
+                            return;
+                        }
+                        continue;
+                    }
                     let reply = this.update_in(cx, |this, window, cx| {
                         this.control(&req.method, &req.params, window, cx)
                     });
@@ -189,7 +204,10 @@ impl WindowView {
             }
             WorkspaceEvent::Focused(s) => this.on_focused(id, *s, window, cx),
             WorkspaceEvent::Typed(s) => this.on_typed(id, *s, cx),
-            WorkspaceEvent::Closed(s) => this.on_closed(id, *s, cx),
+            WorkspaceEvent::Closed(s) => {
+                this.feed_close_surface(id, *s, cx);
+                this.on_closed(id, *s, cx);
+            }
         });
         self.subs.insert(id, sub);
         self.views.insert(id, view);
@@ -275,6 +293,7 @@ impl WindowView {
                 self.subs.remove(&id);
                 self.views.remove(&id);
                 self.titles.remove(&id);
+                self.feed_close_workspace(id, cx);
                 let gone = self.notifications.remove_workspace(id);
                 self.after_change(gone, cx);
                 if was_selected {
