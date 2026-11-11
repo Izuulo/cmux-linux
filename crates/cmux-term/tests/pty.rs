@@ -152,6 +152,7 @@ fn no_events_after_drop() {
 #[test]
 fn shell_exit_ends_the_session_even_if_a_setsid_grandchild_holds_the_pty() {
     // Before M2 the reader waited for EOF, which never came while `sleep` kept the slave open.
+    // Also guards macOS revoking the slave when the shell exits.
     // macOS has no `setsid`; perl makes the grandchild's session (a same-session job gets
     // hung up with the shell on macOS).
     // The sleep lets perl reach setsid before the shell's exit sends it SIGHUP.
@@ -182,7 +183,7 @@ fn shell_exit_ends_the_session_even_if_a_setsid_grandchild_keeps_writing() {
     );
 }
 
-// Not Linux-only: this checks the wake path, which needs no exit watch.
+// Not Linux-only: this checks the wake path, which needs no pidfd.
 #[test]
 fn drop_releases_the_reader_even_if_a_setsid_grandchild_holds_the_pty() {
     let token = Arc::new(());

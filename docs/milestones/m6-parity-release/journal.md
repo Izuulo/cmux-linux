@@ -11,3 +11,6 @@ Append-only, newest last. One entry per session: date, what was tried, what was 
   - `setsid` and GNU `timeout` don't exist on macOS; the PTY exit test is ported with `trap '' HUP` (Task 3).
   - An install in `/usr/bin` would put `/usr/bin` first on every terminal's `PATH` (M5 D8), so the package installs to `/usr/lib/cmux-linux/` (D5).
 - Spec gives no performance numbers; the plan sets them (D8). M5's deferred CLI commands stay out unless the owner adds them to the spec.
+
+## 2026-11-10 — Task 3
+- Plan D2 (kqueue exit watch on macOS) dropped: macOS revokes the slave when the session leader exits (python pty probe: master reads EOF at once while a setsid'd `sleep` lives), so no exit watch is needed there. `pidfd` stays Linux-only; the shell-exit test now runs on macOS (perl setsid grandchild) as a guard for that behaviour.

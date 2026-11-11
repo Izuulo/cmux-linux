@@ -4,10 +4,10 @@
 //! a writer owns the PTY writer and drains one channel that carries both user input and the
 //! terminal's own replies, so nothing ever writes from inside `Term::feed`.
 //!
-//! The reader `poll`s the master, a wake socket and an exit watch on the shell (pidfd on Linux,
-//! kqueue on macOS), so it never
+//! The reader `poll`s the master, a wake socket and (Linux) a pidfd of the shell, so it never
 //! blocks forever: dropping the `Session` wakes it, and the shell exiting ends the session even
-//! when a `setsid` grandchild still holds the PTY slave open.
+//! when a `setsid` grandchild still holds the PTY slave open (macOS needs no pidfd: it revokes
+//! the slave when the shell exits, so the master sees EOF).
 
 use std::io::{self, Read, Write};
 use std::os::fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd};
@@ -135,7 +135,7 @@ impl Session {
             .0
             .as_ref()
             .and_then(|c| c.process_id())
-            .and_then(exit_watch);
+            .and_then(pidfd);
         let (wake, wake_peer) = UnixStream::pair()?;
 
         let (tx, rx) = mpsc::channel::<Vec<u8>>();
@@ -323,8 +323,8 @@ fn wait(
     })
 }
 
-/// An fd that becomes readable when `pid` exits.
-fn exit_watch(pid: u32) -> Option<OwnedFd> {
+/// A pidfd that becomes readable when `pid` exits (Linux only).
+fn pidfd(pid: u32) -> Option<OwnedFd> {
     #[cfg(target_os = "linux")]
     {
         use std::os::fd::FromRawFd;
@@ -333,38 +333,10 @@ fn exit_watch(pid: u32) -> Option<OwnedFd> {
         // SAFETY: `fd` is that new, open fd.
         (fd >= 0).then(|| unsafe { OwnedFd::from_raw_fd(fd as RawFd) })
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(not(target_os = "linux"))]
     {
-        use std::os::fd::FromRawFd;
-        // SAFETY: plain syscall; on success the kernel returns a new fd that nothing else owns.
-        let kq = unsafe { libc::kqueue() };
-        if kq < 0 {
-            return None;
-        }
-        // SAFETY: `kq` is that new, open fd.
-        let kq = unsafe { OwnedFd::from_raw_fd(kq) };
-        // SAFETY: a zeroed kevent is valid; the fields that matter are set below.
-        let mut ev: libc::kevent = unsafe { std::mem::zeroed() };
-        ev.ident = pid as libc::uintptr_t;
-        ev.filter = libc::EVFILT_PROC;
-        ev.flags = libc::EV_ADD | libc::EV_ONESHOT;
-        ev.fflags = libc::NOTE_EXIT;
-        // SAFETY: one valid change record, no event list; `kq` is open.
-        let r = unsafe {
-            libc::kevent(
-                kq.as_raw_fd(),
-                &ev,
-                1,
-                std::ptr::null_mut(),
-                0,
-                std::ptr::null(),
-            )
-        };
-        // A pid that is already gone (ESRCH) gives None; the PTY then hits EOF as it did in M1.
-        (r >= 0).then_some(kq)
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    {
+        // macOS revokes the slave when the session leader exits, so the master sees EOF even
+        // while a job holds it.
         let _ = pid;
         None
     }
@@ -411,24 +383,6 @@ pub fn process_cwd(_pid: u32) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn exit_watch_fires_when_the_process_exits() {
-        let mut child = std::process::Command::new("sleep")
-            .arg("0.2")
-            .spawn()
-            .unwrap();
-        let fd = exit_watch(child.id()).expect("watch");
-        let mut p = libc::pollfd {
-            fd: fd.as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
-        };
-        // SAFETY: one valid pollfd.
-        let n = unsafe { libc::poll(&mut p, 1, 5000) };
-        assert_eq!(n, 1);
-        child.wait().unwrap();
-    }
 
     #[test]
     fn a_panic_under_the_lock_is_caught_and_unpoisoned() {
