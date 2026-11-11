@@ -6,8 +6,11 @@ pkgdesc='Terminal workspace for coding agents (Rust port of cmux for KDE Wayland
 arch=('x86_64')
 url='https://github.com/Izuulo/cmux-linux'
 license=('GPL-3.0-or-later')
+# fontconfig, freetype2, wayland, vulkan-icd-loader and libx11 are dlopen()ed by gpui, so
+# namcap reports them as unneeded; the app does not start without them.
 depends=('fontconfig' 'freetype2' 'libxkbcommon' 'libxkbcommon-x11' 'wayland'
-         'vulkan-icd-loader' 'libx11' 'libxcb' 'gcc-libs' 'glibc')
+         'vulkan-icd-loader' 'libx11' 'libxcb' 'glibc')
+options=('!debug')
 makedepends=('git' 'rustup' 'clang')
 provides=('cmux-linux')
 conflicts=('cmux-linux')
