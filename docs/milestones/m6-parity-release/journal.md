@@ -17,8 +17,8 @@ Append-only, newest last. One entry per session: date, what was tried, what was 
 
 ## 2026-11-10 — Task 6 parity checklist
 
-- Reference: cmux.app **0.65.2 (build 111)**; source `manaflow-ai/cmux` @ **43ce5e2** (`Sources/`, plus `Packages/macOS/{CmuxFoundation,CmuxAppKitSupportUI,CmuxSettings,CmuxTerminalCore}`, all GPL), Bonsplit (MIT) @ its pinned gitlink **58b73fd** (unchanged since M2). Shorthands: `S/` = cmux `Sources/`, `P/` = cmux `Packages/macOS/`, `B/` = `bonsplit/Sources/Bonsplit/`.
-- Method (D9, amended by the controller): the owner's cmux.app was never driven; its window was only screenshotted read-only (`screencapture -l`, window on another Space, so terminal surfaces render blank but chrome is drawn). That window runs a custom sidebar provider, groups and the AppKit-list flag, so its sidebar is not a default reference; Swift values win everywhere. Ours ran from `target/release` on a scratch socket with `XDG_CONFIG_HOME` pointing at an empty config (Ghostty default theme) and at `theme = Apple System Colors` (cmux's default dark theme, via cmux.app's theme dir) for the dark pair; layout 2 workspaces, 2 × 2 splits, one unread notification on a background pane, 1100 × 700 pt.
+- Reference: cmux source `manaflow-ai/cmux` @ **43ce5e2** (`Sources/`, plus `Packages/macOS/{CmuxFoundation,CmuxAppKitSupportUI,CmuxSettings,CmuxTerminalCore}`, all GPL), Bonsplit (MIT) @ its pinned gitlink **58b73fd** (unchanged since M2). Shorthands: `S/` = cmux `Sources/`, `P/` = cmux `Packages/macOS/`, `B/` = `bonsplit/Sources/Bonsplit/`.
+- Method (D9, amended by the controller): the owner's cmux.app was never driven; its window was only screenshotted read-only. It runs a non-default configuration, so its window was not a clean reference; Swift values win everywhere. Ours ran from `target/release` on a scratch socket with `XDG_CONFIG_HOME` pointing at an empty config (Ghostty default theme) and at `theme = Apple System Colors` (cmux's default dark theme, via cmux.app's theme dir) for the dark pair; layout 2 workspaces, 2 × 2 splits, one unread notification on a background pane, 1100 × 700 pt.
 - Not captured: a 3-tab strip and the open panel need key/mouse events; posting events to our pid needs the macOS PostEvent permission (prompt), so both are compared from source only. `flash.mov` skipped (flash = source values below). The ring is not on screen in cmux; source only.
 - Screenshots (`~/Pictures/cmux-m6/`, not committed): `cmux-window-raw`, `cmux-sidebar`, `cmux-tab-strip`; `ours-window-before`, `ours-window`, `ours-sidebar`, `ours-tab-strip`, `ours-splits`, `ours-ring`, `ours-window-dark-theme`, `ours-sidebar-dark-theme`.
 - Pixel check: cmux's sidebar border is #353336 on its #262427 backdrop = our `chrome::separator` (+0.16 @ 0.36) exactly; our selected row samples #0091FF.
@@ -88,7 +88,7 @@ Append-only, newest last. One entry per session: date, what was tried, what was 
 
 ## 2026-11-10 — Task 7 performance (macOS)
 
-Host: Apple M5, 16 GiB, macOS, release build. Window 1100 x 732 pt (default, not enlarged); 4 rows x 5 columns = 20 panes fit (`scripts/perf-panes.sh`, rows split first, then columns; splitting columns first nests later rows under one column and hits the 160 pt minimum). 19 panes ran `while :; do seq 100000; done`; 54 + 50 keys typed into the 20th pane via cmux-cua `type_text` (synthetic key events do produce `latency key->paint` lines; 104 samples).
+Host: an Apple Silicon Mac, release build. Window 1100 x 732 pt (default, not enlarged); 4 rows x 5 columns = 20 panes fit (`scripts/perf-panes.sh`, rows split first, then columns; splitting columns first nests later rows under one column and hits the 160 pt minimum). 19 panes ran `while :; do seq 100000; done`; 54 + 50 keys typed into the 20th pane via cmux-cua `type_text` (synthetic key events do produce `latency key->paint` lines; 104 samples).
 
 | Run | p50 | p95 | max | RSS | CPU |
 |---|---|---|---|---|---|
