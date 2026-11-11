@@ -131,3 +131,173 @@ fn feed_hook_requires_source() {
         "Error: cmux hooks feed requires --source <agent-name>\n"
     );
 }
+
+mod setup {
+    use super::support::{self, temp_dir};
+    use serde_json::{Value, json};
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::Path;
+
+    fn run(sub: &str, file: &Path) -> (i32, String, String) {
+        let mut c = support::ctx(&[]);
+        c.exe = Some("/opt/cmux".into());
+        let o = support::cli(
+            &["hooks", sub, "--settings-file", file.to_str().unwrap()],
+            &c,
+        );
+        (o.code, o.stdout, o.stderr)
+    }
+    fn read(p: &Path) -> Value {
+        serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
+    }
+    fn mode(p: &Path) -> u32 {
+        std::fs::metadata(p).unwrap().permissions().mode() & 0o777
+    }
+
+    #[test]
+    fn install_creates_file_with_0600() {
+        let f = temp_dir().join("new/dir/settings.json");
+        let (code, out, _) = run("setup", &f);
+        assert_eq!(code, 0);
+        assert_eq!(
+            out,
+            format!(
+                "cmux: installed Feed hooks in {}\ncmux: restart running Claude Code sessions to load them\n",
+                f.display()
+            )
+        );
+        assert_eq!(mode(&f), 0o600);
+        assert_eq!(mode(f.parent().unwrap()), 0o700);
+        let e = &read(&f)["hooks"]["PermissionRequest"][0];
+        assert_eq!(e["matcher"], json!(""));
+        assert_eq!(e["hooks"][0]["timeout"], json!(125));
+        assert_eq!(
+            e["hooks"][0]["command"],
+            json!("test -x '/opt/cmux' && '/opt/cmux' hooks feed --source claude || :")
+        );
+    }
+
+    #[test]
+    fn install_keeps_user_hooks_and_is_idempotent() {
+        let f = temp_dir().join("s.json");
+        let orig = json!({"theme":"x","hooks":{
+            "Stop":[{"hooks":[{"type":"command","command":"echo"}]}],
+            "PermissionRequest":[{"matcher":"Bash","hooks":[{"type":"command","command":"mine"}]}]}});
+        std::fs::write(&f, serde_json::to_string(&orig).unwrap()).unwrap();
+        run("setup", &f);
+        let v = read(&f);
+        assert_eq!(v["hooks"]["Stop"], orig["hooks"]["Stop"]);
+        assert_eq!(v["hooks"]["PermissionRequest"].as_array().unwrap().len(), 2);
+        assert_eq!(v["theme"], json!("x"));
+        let bytes = std::fs::read(&f).unwrap();
+        let mtime = std::fs::metadata(&f).unwrap().modified().unwrap();
+        let (code, out, _) = run("setup", &f);
+        assert_eq!(code, 0);
+        assert_eq!(
+            out,
+            format!(
+                "cmux: Feed hooks are already installed in {}\n",
+                f.display()
+            )
+        );
+        assert_eq!(std::fs::read(&f).unwrap(), bytes);
+        assert_eq!(std::fs::metadata(&f).unwrap().modified().unwrap(), mtime);
+    }
+
+    #[test]
+    fn install_replaces_an_old_path() {
+        let f = temp_dir().join("s.json");
+        let old = "test -x '/old/cmux' && '/old/cmux' hooks feed --source claude || :";
+        let v = json!({"hooks":{"PermissionRequest":[{"matcher":"","hooks":[{"type":"command","command":old}]}]}});
+        std::fs::write(&f, v.to_string()).unwrap();
+        run("setup", &f);
+        let l = read(&f)["hooks"]["PermissionRequest"].clone();
+        assert_eq!(l.as_array().unwrap().len(), 1);
+        assert!(
+            l[0]["hooks"][0]["command"]
+                .as_str()
+                .unwrap()
+                .contains("/opt/cmux")
+        );
+    }
+
+    #[test]
+    fn uninstall_restores_original() {
+        let f = temp_dir().join("s.json");
+        let orig = json!({"a":1,"hooks":{"Stop":[{"hooks":[{"type":"command","command":"e"}]}]}});
+        std::fs::write(&f, orig.to_string()).unwrap();
+        run("setup", &f);
+        let (code, out, _) = run("uninstall", &f);
+        assert_eq!(code, 0);
+        assert_eq!(
+            out,
+            format!("cmux: removed Feed hooks from {}\n", f.display())
+        );
+        assert_eq!(read(&f), orig);
+        let (_, out, _) = run("uninstall", &f);
+        assert_eq!(
+            out,
+            format!("cmux: no Feed hooks installed in {}\n", f.display())
+        );
+    }
+
+    #[test]
+    fn uninstall_without_file_creates_nothing() {
+        let d = temp_dir();
+        let f = d.join("sub/settings.json");
+        let (code, out, _) = run("uninstall", &f);
+        assert_eq!(code, 0);
+        assert!(out.starts_with("cmux: no Feed hooks installed"));
+        assert!(!d.join("sub").exists());
+    }
+
+    #[test]
+    fn install_follows_symlink_and_keeps_mode() {
+        let d = temp_dir();
+        let target = d.join("real.json");
+        std::fs::write(&target, "{}").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o640)).unwrap();
+        let link = d.join("settings.json");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        run("setup", &link);
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(mode(&target), 0o640);
+        assert!(read(&target)["hooks"]["PermissionRequest"].is_array());
+    }
+
+    #[test]
+    fn refuses_non_object() {
+        for (body, msg) in [
+            ("[]", "is not a JSON object"),
+            (r#"{"hooks":[]}"#, "is not an object"),
+        ] {
+            let f = temp_dir().join("s.json");
+            std::fs::write(&f, body).unwrap();
+            let (code, _, err) = run("setup", &f);
+            assert_eq!(code, 1);
+            assert!(
+                err.contains(msg) && err.contains(f.to_str().unwrap()),
+                "{err}"
+            );
+            assert_eq!(std::fs::read_to_string(&f).unwrap(), body);
+        }
+    }
+
+    #[test]
+    fn claude_config_dir_is_used() {
+        let d = temp_dir();
+        let mut c = support::ctx(&[
+            ("CLAUDE_CONFIG_DIR", d.to_str().unwrap()),
+            ("HOME", "/nonexistent"),
+        ]);
+        c.exe = Some("/opt/cmux".into());
+        let o = support::cli(&["hooks", "setup"], &c);
+        assert_eq!(o.code, 0, "{}", o.stderr);
+        assert!(d.join("settings.json").exists());
+    }
+}
