@@ -287,7 +287,11 @@ impl WorkspaceView {
             palette: p,
         };
         let close_group = SharedString::from(format!("tab-close-{}", surface.0));
-        let accent = self.attention_color();
+        // Bonsplit paints the unread dot in systemBlue, never desaturated (`TabBarColors.swift:363`).
+        let dot = chrome::accent(chrome::wcag_is_light(chrome::rgba(
+            self.style.cfg.background,
+            1.0,
+        )));
         // gpui's svg paints only its own text colour (it does not inherit), so the button is
         // revealed with opacity (which applies to children) and the glyph brightens through its
         // own group hover.
@@ -379,7 +383,7 @@ impl WorkspaceView {
                         .items_center()
                         .justify_center()
                         .group_hover(group.clone(), |s| s.opacity(0.))
-                        .child(div().size(px(UNREAD_DOT)).rounded_full().bg(accent)),
+                        .child(div().size(px(UNREAD_DOT)).rounded_full().bg(dot)),
                 )
             })
             .when(selected, |d| {
