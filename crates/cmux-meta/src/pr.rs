@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
@@ -124,7 +124,7 @@ pub fn fetch(
     }
     let mut cmd = Command::new(program);
     cmd.args(GH_ARGS).arg(branch).current_dir(dir);
-    let out = run_with_deadline(cmd, deadline)?;
+    let out = run_with_deadline(cmd, Vec::new(), deadline)?;
     parse_gh_pr_list(&String::from_utf8_lossy(&out.stdout)).map_err(FetchError::Failed)
 }
 
@@ -138,8 +138,18 @@ fn drain(r: Option<impl Read + Send + 'static>) -> std::thread::JoinHandle<Vec<u
     })
 }
 
-fn run_with_deadline(mut cmd: Command, deadline: Duration) -> Result<Output, FetchError> {
-    cmd.stdin(Stdio::null())
+/// `input` is written to the child's stdin, which is then closed (empty: no stdin at all).
+pub(crate) fn run_with_deadline(
+    mut cmd: Command,
+    input: Vec<u8>,
+    deadline: Duration,
+) -> Result<Output, FetchError> {
+    let stdin = if input.is_empty() {
+        Stdio::null()
+    } else {
+        Stdio::piped()
+    };
+    cmd.stdin(stdin)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| match e.kind() {
@@ -148,6 +158,12 @@ fn run_with_deadline(mut cmd: Command, deadline: Duration) -> Result<Output, Fet
     })?;
     // Drain pipes on threads so a chatty child can't block on a full pipe.
     let (so, se) = (drain(child.stdout.take()), drain(child.stderr.take()));
+    if let Some(mut stdin) = child.stdin.take() {
+        // On a thread: a child that never reads must not block us past the deadline.
+        std::thread::spawn(move || {
+            let _ = stdin.write_all(&input);
+        });
+    }
     let start = Instant::now();
     let status = loop {
         match child.try_wait() {
@@ -342,7 +358,7 @@ mod tests {
         let mut cmd = Command::new("sleep");
         cmd.arg("5");
         let t = Instant::now();
-        let r = run_with_deadline(cmd, Duration::from_millis(300));
+        let r = run_with_deadline(cmd, Vec::new(), Duration::from_millis(300));
         assert_eq!(r.err(), Some(FetchError::Failed("timed out".into())));
         assert!(t.elapsed() < Duration::from_secs(2));
     }
