@@ -85,3 +85,15 @@ Append-only, newest last. One entry per session: date, what was tried, what was 
 | ring | tab highlight: the pane's tab gets Bonsplit's `showsNotificationBadge` under the same unread-indicator rule as the ring; Bonsplit draws it as the 6 pt dot on an unselected, unhovered tab | `workspace/tab_strip.rs` dot when `!selected && attention.contains(surface)` (`attention` = the ring set), `UNREAD_DOT` 6 | `S/Workspace.swift:5838-5850` (`syncUnreadBadgeStateForPanel`); dot: `B/Internal/Views/TabItemView.swift:1159-1165` | ✓ (colour fixed in 3518001) |
 
 - Provenance of the `B/` (Bonsplit) rows and the two `parity(tab-strip)` commits: Bonsplit is not in the cmux sparse clone. I read it from a separate clone of https://github.com/manaflow-ai/bonsplit checked out at `58b73fde506ef6aa5fc371b8990e528ac83f0929`, the `vendor/bonsplit` gitlink of cmux 43ce5e2. Its `LICENSE` is MIT, not BUSL-1.1. Values were read for matching only; no code copied. The commit messages' `TabBarColors.swift:363` and `TabItemView.swift:1159-1165` are paths under `Sources/Bonsplit/Internal/Styling/` and `…/Internal/Views/` in that clone.
+
+## 2026-11-10 — Task 7 performance (macOS)
+
+Host: Apple M5, 16 GiB, macOS, release build. Window 1100 x 732 pt (default, not enlarged); 4 rows x 5 columns = 20 panes fit (`scripts/perf-panes.sh`, rows split first, then columns; splitting columns first nests later rows under one column and hits the 160 pt minimum). 19 panes ran `while :; do seq 100000; done`; 54 + 50 keys typed into the 20th pane via cmux-cua `type_text` (synthetic key events do produce `latency key->paint` lines; 104 samples).
+
+| Run | p50 | p95 | max | RSS | CPU |
+|---|---|---|---|---|---|
+| 20 panes, 60 s in | 8.5 ms | 10.5 ms | 17.8 ms | ~80 MB | 42 % (`ps` decayed average; ~270 % in a 5 s probe run) |
+| after ctrl+c to 19, +5 s | | | | ~66 MB | 0.1 % (`ps` and `top`) |
+| idle, 1 pane | 10.8 ms | 13.5 ms | 14.6 ms | | |
+
+Verdict vs D8: p50 <= 16.7 ms pass, p95 <= 33 ms pass, RSS <= 1 GiB pass, CPU < 5 % after stop pass, idle p95 <= 16.7 ms pass. Caveats: the 60 s `ps` CPU is a decayed average, not an instantaneous reading; socket path was /tmp/cmux-perf.sock because the scratchpad path exceeds macOS SUN_LEN.
