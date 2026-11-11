@@ -65,8 +65,12 @@ pub fn cwd(pid: u32) -> Option<String> {
     if n != size {
         return None;
     }
-    // SAFETY: the kernel NUL-terminates vip_path within its buffer.
-    let path = unsafe { std::ffi::CStr::from_ptr(info.pvi_cdir.vip_path.as_ptr().cast()) };
+    let raw = &info.pvi_cdir.vip_path;
+    // SAFETY: c_char is u8-sized; libc declares vip_path as nested arrays, so use the byte size.
+    let bytes = unsafe {
+        std::slice::from_raw_parts(raw.as_ptr().cast::<u8>(), std::mem::size_of_val(raw))
+    };
+    let path = std::ffi::CStr::from_bytes_until_nul(bytes).ok()?;
     path.to_str()
         .ok()
         .filter(|p| !p.is_empty())

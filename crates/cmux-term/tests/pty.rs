@@ -155,13 +155,16 @@ fn shell_exit_ends_the_session_even_if_a_setsid_grandchild_holds_the_pty() {
     // Also guards macOS revoking the slave when the shell exits.
     // macOS has no `setsid`; perl makes the grandchild's session (a same-session job gets
     // hung up with the shell on macOS).
-    // The sleep lets perl reach setsid before the shell's exit sends it SIGHUP.
+    // The shell waits for perl's "detached" marker (printed after setsid) before exiting, so
+    // the shell's exit never races the setsid.
     let t = Instant::now();
     let out = run(
-        "perl -MPOSIX -e 'POSIX::setsid(); exec \"sleep\", \"5\"' & sleep 0.3; echo started",
+        "f=$(mktemp -u); mkfifo $f; \
+         perl -MPOSIX -e 'POSIX::setsid(); open F, \">$ARGV[0]\"; print F \"detached\\n\"; close F; \
+         exec \"sleep\", \"5\"' $f & read l < $f; rm $f; echo started $l",
         None,
     );
-    assert!(out.contains("started"), "{out}");
+    assert!(out.contains("started detached"), "{out}");
     assert!(
         t.elapsed() < Duration::from_secs(2),
         "took {:?}",
