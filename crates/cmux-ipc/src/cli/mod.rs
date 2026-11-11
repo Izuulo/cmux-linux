@@ -13,6 +13,7 @@ use crate::wire::RpcError;
 mod args;
 mod client;
 mod commands;
+mod groups;
 mod help;
 mod hooks;
 mod notify;
@@ -129,6 +130,7 @@ fn run_inner(args: &[String], ctx: &Ctx) -> Result<String, CliError> {
         "notify" => notify::notify(&mut cmd),
         "dismiss-notification" => notify::dismiss(&mut cmd),
         "hooks" => hooks::hooks(&mut cmd),
+        "workspace-group" => groups::workspace_group(&mut cmd),
         other => fail(format!("{other} is not available yet")),
     }
 }

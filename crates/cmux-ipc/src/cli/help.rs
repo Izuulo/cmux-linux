@@ -5,7 +5,13 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
     ("Start & Resume", &["new-workspace"]),
     (
         "Navigate & Arrange",
-        &["new-split", "focus-pane", "focus-panel", "select-workspace"],
+        &[
+            "new-split",
+            "focus-pane",
+            "focus-panel",
+            "select-workspace",
+            "workspace-group",
+        ],
     ),
     (
         "Inspect",
@@ -63,6 +69,9 @@ pub(crate) fn usage_line(cmd: &str) -> Option<&'static str> {
         }
         "dismiss-notification" => "dismiss-notification (--id <uuid> | --all-read)",
         "hooks" => "hooks <setup|uninstall> [--settings-file <path>] | hooks feed --source claude",
+        "workspace-group" => {
+            "workspace-group <list|create|ungroup|delete|rename|collapse|expand|pin|unpin|add|remove|set-anchor|new-workspace|focus> [options]"
+        }
         "ping" => "ping",
         "version" => "version",
         _ => return None,
@@ -125,6 +134,7 @@ pub(crate) fn command(cmd: &str) -> Option<String> {
         "select-workspace" => SELECT_WORKSPACE,
         "focus-pane" => FOCUS_PANE,
         "focus-panel" => FOCUS_PANEL,
+        "workspace-group" => WORKSPACE_GROUP,
         "ping" => PING,
         _ => return None,
     };
@@ -339,3 +349,31 @@ const PING: &str = "Usage: cmux ping
 
 Check that cmux is running and reachable over its socket. Prints PONG.
 ";
+
+const WORKSPACE_GROUP: &str = r#"Usage: cmux workspace-group <subcommand> [options]
+
+Collapsible named sections of workspaces in the sidebar. The first workspace of a
+group is its anchor: the group's header stands for it.
+
+Subcommands:
+  list
+  create [--name <name>] [--cwd <path>] [--from <workspace>,<workspace>]
+  ungroup <group>                       Dissolve the group; keep its workspaces.
+  delete <group> [--close-workspaces]   Dissolve, or close every workspace in it.
+  rename <group> --name <name>
+  collapse <group> | expand <group>
+  pin <group> | unpin <group>
+  add --group <group> --workspace <id|ref|index>
+  remove --workspace <id|ref|index>
+  set-anchor --group <group> --workspace <id|ref|index>
+  new-workspace <group> [--placement afterCurrent|top|end]
+  focus <group>
+
+A group is a UUID or a ref like workspace_group:1. Without --from, create makes a
+group with a new anchor workspace.
+
+Example:
+  cmux workspace-group create --name api --from workspace:1,workspace:2
+  cmux workspace-group new-workspace workspace_group:1
+  cmux workspace-group list
+"#;

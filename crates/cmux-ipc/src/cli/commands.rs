@@ -120,6 +120,7 @@ impl Cmd<'_> {
             Kind::Workspace => ("workspace.list", "workspaces"),
             Kind::Pane => ("pane.list", "panes"),
             Kind::Surface => ("surface.list", "surfaces"),
+            Kind::WorkspaceGroup => ("workspace.group.list", "groups"),
         };
         let is_ref = handle.split_once(':').is_some_and(|(k, n)| {
             (k == kind.name() || (kind == Kind::Surface && k == "tab"))
@@ -473,7 +474,7 @@ impl Cmd<'_> {
     }
 
     /// `~` expanded, relative paths made absolute against the cwd, `.` parts dropped.
-    fn absolute(&self, path: &str) -> String {
+    pub(crate) fn absolute(&self, path: &str) -> String {
         let home = self.env("HOME").unwrap_or("");
         let expanded = match path.strip_prefix('~') {
             Some(rest) if rest.is_empty() || rest.starts_with('/') => format!("{home}{rest}"),
