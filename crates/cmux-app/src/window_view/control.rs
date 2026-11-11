@@ -246,7 +246,10 @@ impl WindowView {
             // cmux's test-only `debug.shortcut.simulate`: scripted UI checks press chords here.
             "debug.shortcut.simulate" => {
                 let combo = params.get("combo").and_then(Value::as_str).unwrap_or("");
-                let chord = combo.to_lowercase().replace('+', "-").replace("opt-", "alt-");
+                let chord = combo
+                    .to_lowercase()
+                    .replace('+', "-")
+                    .replace("opt-", "alt-");
                 let Ok(ks) = Keystroke::parse(&chord) else {
                     return Err(RpcError::new("invalid_params", "Invalid combo"));
                 };
