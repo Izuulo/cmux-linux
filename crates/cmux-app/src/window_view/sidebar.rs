@@ -361,7 +361,7 @@ impl WindowView {
                 .rounded(px(RADIUS))
                 .child(band_icon(id, icon, p))
         };
-        let band = div()
+        let band = crate::csd::window_drag(div(), true)
             .flex()
             .flex_row()
             .flex_none()

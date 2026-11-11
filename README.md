@@ -178,6 +178,13 @@ focusUp = "ctrl+alt+shift+up"
 focusDown = "ctrl+alt+shift+down"
 ```
 
+## Window buttons
+
+On Linux the window has no system title bar or border. Close, minimize and maximize are the
+three dots in the top-left corner (as in cmux); drag the empty part of the sidebar band or of
+a tab strip to move the window, double-click the band to maximize, and drag an edge or corner
+to resize. The window is square-cornered and has no shadow.
+
 ## Notifications
 
 A program asks for attention with OSC 9 (`printf '\e]9;Build done\a'`), OSC 777

@@ -9,6 +9,7 @@ pub mod attention;
 pub mod blur;
 pub mod chrome;
 pub mod colors;
+pub mod csd;
 pub mod desktop_notify;
 pub mod ime;
 pub mod keys;

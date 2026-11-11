@@ -102,6 +102,8 @@ impl WorkspaceView {
         pane: &Pane,
         focused: bool,
         strip_x: f32,
+        // Indent that clears our own window buttons (csd.rs) in the window's top-left pane.
+        lead: f32,
         cx: &Context<Self>,
     ) -> impl IntoElement + use<> {
         let p = self.palette(focused);
@@ -153,6 +155,7 @@ impl WorkspaceView {
             .flex_none()
             .w_full()
             .h(px(TAB_BAR_HEIGHT))
+            .pl(px(lead))
             .bg(p.bar)
             .on_drag_move(
                 cx.listener(move |this, ev: &DragMoveEvent<DraggedTab>, _, cx| {
@@ -178,8 +181,9 @@ impl WorkspaceView {
                     .children(tabs),
             )
             .child(
-                // Empty strip area: the bottom separator continues; double-click opens a tab.
-                div()
+                // Empty strip area: the bottom separator continues; double-click opens a tab,
+                // and a drag moves a self-decorated window.
+                crate::csd::window_drag(div(), false)
                     .id(SharedString::from(format!("strip-empty-{}", pane_id.0)))
                     .flex_1()
                     .h_full()

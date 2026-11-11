@@ -638,6 +638,8 @@ impl Render for WindowView {
             })
             .children(self.render_panel(window, cx))
             .children(self.render_menu(cx))
+            .children(crate::csd::controls(window))
+            .children(crate::csd::resize_grips(window))
     }
 }
 
