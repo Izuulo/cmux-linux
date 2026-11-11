@@ -67,7 +67,8 @@ impl Handles {
     }
 }
 
-fn new_uuid() -> String {
+/// A fresh uppercase UUID, as Swift's `uuidString`.
+pub fn new_uuid() -> String {
     uuid::Uuid::new_v4()
         .hyphenated()
         .encode_upper(&mut uuid::Uuid::encode_buffer())
