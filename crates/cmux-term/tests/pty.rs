@@ -233,3 +233,35 @@ fn foreground_busy_tracks_a_running_job() {
     }
     assert!(session.foreground_busy(), "sleep is the foreground job");
 }
+
+#[test]
+fn spawned_shell_has_no_inherited_cmux_vars() {
+    let (tx, rx) = mpsc::channel();
+    let mut cmd = Session::shell_command();
+    cmd.env("CMUX_SURFACE_ID", "ours");
+    let session = Session::spawn(
+        cmd,
+        300,
+        200,
+        |_| {},
+        move |ev| {
+            let _ = tx.send(matches!(ev, PtyEvent::Exited));
+        },
+    )
+    .unwrap();
+    session.write(b"env; exit\r".to_vec());
+    while !rx.recv_timeout(Duration::from_secs(10)).unwrap() {}
+    let out = session
+        .term
+        .lock()
+        .unwrap()
+        .text_lines()
+        .unwrap()
+        .join("\n");
+    assert!(out.contains("CMUX_SURFACE_ID=ours"), "{out}");
+    let others: Vec<_> = out
+        .lines()
+        .filter(|l| l.starts_with("CMUX_") && !l.starts_with("CMUX_SURFACE_ID="))
+        .collect();
+    assert!(others.is_empty(), "{others:?}");
+}
