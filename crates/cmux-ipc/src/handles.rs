@@ -9,6 +9,7 @@ pub enum Kind {
     Workspace,
     Pane,
     Surface,
+    WorkspaceGroup,
 }
 
 impl Kind {
@@ -18,12 +19,13 @@ impl Kind {
             Kind::Workspace => "workspace",
             Kind::Pane => "pane",
             Kind::Surface => "surface",
+            Kind::WorkspaceGroup => "workspace_group",
         }
     }
 }
 
-/// `(workspace, id)`: pane and surface ids restart per workspace; a workspace is `(id, 0)`,
-/// the window `(0, 0)`.
+/// `(workspace, id)`: pane and surface ids restart per workspace; a workspace or a workspace
+/// group is `(id, 0)`, the window `(0, 0)`.
 pub type Key = (u64, u64);
 
 #[derive(Debug, Clone, PartialEq)]
