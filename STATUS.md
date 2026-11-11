@@ -61,7 +61,7 @@
 - `cmux-app`: gpui `TerminalView` + `TerminalElement`, keys, colours, style, mouse, IME; M2 adds `actions`, `chrome`, `workspace`, `workspace/tab_strip`, `assets`; M3 adds `window_view` (root, pollers), `window_view/sidebar`, `window_view/rename`, `blur` (Linux); M4 adds `attention` (ring, flash), `window_view/notify` (rules wiring, jump), `window_view/panel`, `desktop_notify` (zbus, Linux), `activation` + `wayland` (Linux).
 
 ## Open risks
-- M9 messages: hook output shapes (`additionalContext` on UserPromptSubmit/PostToolUse, `decision: block` on Stop) were written from memory of Claude Code's hook docs and never run under Claude. No idle wake, no off switch, not persisted.
+- M9 messages: the hook's output shapes match Claude Code's hooks reference (checked 2026-11-11) but were never run under Claude. No idle wake, no off switch, not persisted.
 - M8: nothing in it was clicked or dragged (see Next action b). The Dock is invisible to the socket: `cmux notify`, the Feed hook and OSC notifications don't work from Dock terminals, and CLI commands can't target them. Dock keeps the main area's minimum pane size, so side-by-side splits need a wide sidebar. Groups and Dock are not persisted (M10).
 - gpui is pre-1.0 (pinned). No public FontMetrics → `line_gap` 0.
 - Blur shim runs on Plasma 6.8.2 without errors (KWin offers `ext_background_effect_manager_v1`); that the backdrop is really blurred is not yet confirmed by eye.
