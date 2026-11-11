@@ -2,12 +2,15 @@
 //! selected workspace is rendered; the others keep their shells running (plan D1, D6).
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use cmux_core::{FeedItemId, FeedStore, Notifications, WorkspaceClosed, WorkspaceId, Workspaces};
+use cmux_core::{
+    FeedItemId, FeedStore, GroupId, Notifications, Placement, WorkspaceClosed, WorkspaceId,
+    Workspaces,
+};
 use cmux_meta::pr::{self, PrKey, PrPoller};
 use cmux_meta::{WorkspaceInput, WorkspaceMeta};
 use gpui::{
@@ -24,6 +27,8 @@ pub(crate) mod control;
 mod feed;
 mod feed_cards;
 mod feed_ctl;
+mod groups;
+mod menu;
 mod notify;
 mod panel;
 mod rename;
@@ -45,6 +50,12 @@ pub struct WindowView {
     sidebar_width: f32,
     sidebar_scroll: ScrollHandle,
     rename: Option<Entity<RenameInput>>,
+    /// The open rename edits this group's name, not a workspace title (M8 plan D9).
+    rename_group: Option<GroupId>,
+    /// The sidebar's context menu, while open.
+    menu: Option<menu::Menu>,
+    /// Workspaces something was typed into (the "untouched anchor" rule, plan D5).
+    typed: HashSet<WorkspaceId>,
     /// Row bounds in list order, from the last paint (drop-gap maths).
     row_bounds: Rc<RefCell<Vec<Bounds<Pixels>>>>,
     drop_gap: Option<usize>,
@@ -122,6 +133,9 @@ impl WindowView {
             sidebar_width: SIDEBAR_DEFAULT,
             sidebar_scroll: ScrollHandle::new(),
             rename: None,
+            rename_group: None,
+            menu: None,
+            typed: HashSet::new(),
             row_bounds: Rc::default(),
             drop_gap: None,
             dragging: None,
@@ -225,7 +239,10 @@ impl WindowView {
                 this.on_notify(id, *surface, title, String::new(), body, true, window, cx);
             }
             WorkspaceEvent::Focused(s) => this.on_focused(id, *s, window, cx),
-            WorkspaceEvent::Typed(s) => this.on_typed(id, *s, cx),
+            WorkspaceEvent::Typed(s) => {
+                this.typed.insert(id);
+                this.on_typed(id, *s, cx);
+            }
             WorkspaceEvent::Closed(s) => {
                 this.feed_close_surface(id, *s, cx);
                 this.on_closed(id, *s, cx);
@@ -244,24 +261,21 @@ impl WindowView {
         }
     }
 
+    /// `at_end`: appended as a plain row. Otherwise next to the selected workspace, inside its
+    /// group if it has one (rg §7.2).
     fn new_workspace(&mut self, at_end: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let cwd = self
-            .views
-            .get(&self.workspaces.selected())
-            .and_then(|v| v.read(cx).active_cwd(cx));
         let old = self.workspaces.selected();
+        if let Some(g) = self.workspaces.group_of(old).filter(|_| !at_end) {
+            self.spawn_in_group(g, Placement::AfterCurrent, Some(old), true, window, cx);
+            return;
+        }
+        let cwd = self.views.get(&old).and_then(|v| v.read(cx).active_cwd(cx));
         let id = if at_end {
             self.workspaces.add_at_end()
         } else {
             self.workspaces.add_after_selected()
         };
-        if self.make_view(id, cwd, window, cx) {
-            self.select(id, window, cx);
-        } else {
-            // make_view registered nothing for `id`; drop it from the model and go back.
-            self.workspaces.close(id);
-            self.select(old, window, cx);
-        }
+        self.adopt(id, old, cwd, true, window, cx);
     }
 
     fn select(&mut self, id: WorkspaceId, window: &mut Window, cx: &mut Context<Self>) {
@@ -278,7 +292,8 @@ impl WindowView {
         if let Some(view) = self.views.get(&id) {
             view.update(cx, |v, cx| v.focus_active(window, cx));
         }
-        if let Some(ix) = self.workspaces.index_of(id) {
+        let rows = self.workspaces.rows();
+        if let Some(ix) = rows.iter().position(|r| r.workspace() == id) {
             self.sidebar_scroll.scroll_to_item(ix);
         }
         self.read_selected(window, cx);
@@ -312,7 +327,9 @@ impl WindowView {
             WorkspaceClosed::Closed => {
                 if self.rename.as_ref().is_some_and(|r| r.read(cx).id() == id) {
                     self.rename = None;
+                    self.rename_group = None;
                 }
+                self.typed.remove(&id);
                 self.subs.remove(&id);
                 self.views.remove(&id);
                 self.titles.remove(&id);
@@ -517,6 +534,18 @@ impl Render for WindowView {
                     cx.notify();
                 }
             }))
+            .on_action(
+                cx.listener(|this, _: &NewWorkspaceGroup, w, cx| this.new_empty_group(w, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &ToggleWorkspaceGroupCollapsed, w, cx| {
+                    match this.workspaces.group_of(this.workspaces.selected()) {
+                        Some(g) => this.toggle_group(g, w, cx),
+                        // Not ours to consume (rg §10.1): the key goes on to the terminal.
+                        None => cx.propagate(),
+                    }
+                }),
+            )
             .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| this.toggle_sidebar(cx)))
             .on_action(
                 cx.listener(|this, _: &ToggleRightSidebar, w, cx| this.toggle_right_sidebar(w, cx)),
@@ -533,7 +562,12 @@ impl Render for WindowView {
             }))
             // The terminal keeps focus while the panel is up, so Escape is caught here first.
             .capture_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, _, cx| {
-                if this.panel_open && ev.keystroke.key == "escape" {
+                if ev.keystroke.key != "escape" {
+                    return;
+                }
+                if this.close_menu(cx) {
+                    cx.stop_propagation();
+                } else if this.panel_open {
                     this.close_panel(cx);
                     cx.stop_propagation();
                 }
@@ -556,6 +590,7 @@ impl Render for WindowView {
             })
             .when_some(width, |d, w| d.child(self.render_resize_band(w)))
             .children(self.render_panel(window, cx))
+            .children(self.render_menu(cx))
     }
 }
 
