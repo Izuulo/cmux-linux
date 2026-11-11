@@ -40,8 +40,8 @@ original. It is a **local app**: no cloud services, no browser, no account.
 - **Keyboard first:** cmux's shortcuts with ⌘ mapped to Super; every binding can
   be remapped.
 
-Also here: an agent approval Feed, workspace groups and a Dock (below). Later:
-agent-to-agent messages, session restore, a command palette and SSH workspaces.
+Also here: an agent approval Feed, workspace groups, a Dock and agent-to-agent
+messages (below). Later: session restore, a command palette and SSH workspaces.
 
 ## How it's built
 
@@ -203,7 +203,8 @@ unchanged, for example a Claude Code hook in `~/.claude/settings.json`:
 
 Ported commands: `notify`, `dismiss-notification`, `new-workspace`, `new-split`, `send`,
 `send-key`, `list-workspaces`, `current-workspace`, `list-panes`, `list-pane-surfaces`,
-`select-workspace`, `focus-pane`, `focus-panel`, `workspace-group`, `ping`, `version`, with
+`select-workspace`, `focus-pane`, `focus-panel`, `workspace-group`, `agent`, `ping`,
+`version`, with
 `--json` and
 `--id-format refs|uuids|both`. `cmux --help` and `cmux <command> --help` list the flags.
 
@@ -328,6 +329,37 @@ Not ported from cmux: browser controls, `height`, `env` and `title` in `dock.jso
 `.cmux/dock.json`, `--placement dock` and Dock rows in the CLI, notifications from Dock
 terminals (`cmux notify` and the Feed hook don't work inside the Dock yet), dragging tabs
 between the Dock and the main area.
+
+## Agent messages
+
+`cmux agent message` leaves a message for the agent in another workspace. It is handed over
+through that agent's hooks, never typed into its terminal, so it can't land in a half-typed
+prompt or press Enter for anyone.
+
+```sh
+cmux agent message builder "The relay fix is on main; rebase when free."
+cmux agent message workspace:4 --from reviewer "Review posted on #123."
+echo "long text" | cmux agent message surface:12 -
+cmux agent message --reply-to <message-id> "Done."
+cmux agent inbox                 # latest 50, newest first
+cmux agent inbox --state queued
+```
+
+The target is a workspace or surface id or ref, or a workspace title (exact, then a unique
+prefix). A workspace means the terminal whose agent last asked for messages there, else its
+focused terminal. `--from` defaults to the sending workspace's title.
+
+Delivery needs the hooks from `cmux hooks setup` (run it again if you installed them before
+this feature; it now adds `UserPromptSubmit`, `PostToolUse` and `Stop` entries for Claude
+Code). A busy Claude sees a message after its current tool call, or continues with it instead
+of stopping; an idle one gets it attached to the next prompt you send. A message is `queued`,
+then `delivered` when the agent has been shown it, then `read` when that turn ends.
+
+Limits: text only (no control characters except newline and tab), 32 KiB, sender name one
+line of at most 64 characters. Messages are kept in memory and are lost when the app quits.
+
+Not ported from cmux: waking an idle agent, turning messages off per agent or workspace,
+Codex and Kiro delivery.
 
 ## Contributing
 
