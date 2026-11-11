@@ -241,6 +241,8 @@ fn foreground_busy_tracks_a_running_job() {
 fn spawned_shell_has_no_inherited_cmux_vars() {
     let (tx, rx) = mpsc::channel();
     let mut cmd = Session::shell_command();
+    // Not the user's shell: its startup files may eat typed-ahead input (a prompt wizard).
+    cmd.env("SHELL", "/bin/sh");
     cmd.env("CMUX_SURFACE_ID", "ours");
     let session = Session::spawn(
         cmd,
