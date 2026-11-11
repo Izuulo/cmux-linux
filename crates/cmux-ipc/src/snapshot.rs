@@ -315,7 +315,40 @@ impl Snapshot {
         self.workspaces.iter().find(|ws| matches(&ws.handle, h))
     }
 
-    fn find_surface(&self, h: &str) -> Option<Target<'_>> {
+    /// An agent message's target (M9 plan D4): a surface or workspace id or ref, else a
+    /// workspace title, exact first, then a unique prefix. A workspace comes without a surface;
+    /// the caller picks its agent.
+    pub fn message_target(&self, target: &str) -> Result<(&WsSnap, Option<Target<'_>>), RpcError> {
+        if let Some(t) = self.find_surface(target) {
+            return Ok((t.ws, Some(t)));
+        }
+        if let Some(ws) = self.find_workspace(target) {
+            return Ok((ws, None));
+        }
+        let titled = |pick: &dyn Fn(&str) -> bool| -> Vec<&WsSnap> {
+            self.workspaces
+                .iter()
+                .filter(|ws| pick(&ws.title))
+                .collect()
+        };
+        let mut found = titled(&|t| t == target);
+        if found.is_empty() {
+            found = titled(&|t| !target.is_empty() && t.starts_with(target));
+        }
+        match found.as_slice() {
+            [ws] => Ok((ws, None)),
+            [] => Err(RpcError::new(
+                "not_found",
+                format!("No workspace or surface matches '{target}'"),
+            )),
+            _ => Err(RpcError::new(
+                "invalid_params",
+                format!("'{target}' matches more than one workspace"),
+            )),
+        }
+    }
+
+    pub fn find_surface(&self, h: &str) -> Option<Target<'_>> {
         // `tab:N` is cmux's alias for `surface:N`.
         let alias = h.strip_prefix("tab:").map(|n| format!("surface:{n}"));
         let h = alias.as_deref().unwrap_or(h);

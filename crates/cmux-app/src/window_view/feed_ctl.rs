@@ -70,6 +70,11 @@ impl WindowView {
         let created_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.as_millis() as u64);
+        let mut payload = serde_json::Map::new();
+        payload.insert("source".into(), push.source.as_str().into());
+        payload.insert("request_id".into(), request_id.as_str().into());
+        payload.insert("title".into(), title.into());
+        self.emit("feed.item.received", Some(ws), Some(surface), payload, cx);
         let pushed = self.feed.push(NewItem {
             request_id: push.request_id,
             source: push.source,

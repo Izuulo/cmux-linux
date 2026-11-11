@@ -10,13 +10,16 @@ use crate::json::IdFormat;
 use crate::paths;
 use crate::wire::RpcError;
 
+mod agent;
 mod args;
+mod automation;
 mod client;
 mod commands;
 mod groups;
 mod help;
 mod hooks;
 mod notify;
+mod tmux;
 
 use args::Global;
 use client::Client;
@@ -86,6 +89,24 @@ pub fn run(args: &[String], ctx: &Ctx) -> Outcome {
 }
 
 fn run_inner(args: &[String], ctx: &Ctx) -> Result<String, CliError> {
+    // These two hand their arguments on untouched (to tmux's parser, to `claude`), so our own
+    // option parsing must not see them (M9 plan Part 4).
+    if let Some((name, rest)) = args.split_first() {
+        let teams = name == "claude-teams" && !matches!(rest, [h] if h == "--help" || h == "-h");
+        if teams || name == "__tmux-compat" {
+            let mut cmd = Cmd {
+                ctx,
+                g: Global::default(),
+                args: rest.to_vec(),
+                client: None,
+            };
+            return if teams {
+                tmux::claude_teams(&mut cmd)
+            } else {
+                tmux::compat(&mut cmd)
+            };
+        }
+    }
     let parsed = args::parse(args)?;
     let (global, name, rest, wants_help) = match parsed {
         args::Parsed::Help => return Ok(help::top_level()),
@@ -131,6 +152,8 @@ fn run_inner(args: &[String], ctx: &Ctx) -> Result<String, CliError> {
         "dismiss-notification" => notify::dismiss(&mut cmd),
         "hooks" => hooks::hooks(&mut cmd),
         "workspace-group" => groups::workspace_group(&mut cmd),
+        "agent" => agent::agent(&mut cmd),
+        "automation" => automation::automation(&mut cmd),
         other => fail(format!("{other} is not available yet")),
     }
 }

@@ -40,8 +40,9 @@ original. It is a **local app**: no cloud services, no browser, no account.
 - **Keyboard first:** cmux's shortcuts with ⌘ mapped to Super; every binding can
   be remapped.
 
-Also here: an agent approval Feed, workspace groups and a Dock (below). Later:
-agent-to-agent messages, session restore, a command palette and SSH workspaces.
+Also here: an agent approval Feed, workspace groups, a Dock, agent-to-agent
+messages, workspace auto-naming, automations and Claude Code teams in splits
+(below). Later: session restore, a command palette and SSH workspaces.
 
 ## How it's built
 
@@ -203,7 +204,8 @@ unchanged, for example a Claude Code hook in `~/.claude/settings.json`:
 
 Ported commands: `notify`, `dismiss-notification`, `new-workspace`, `new-split`, `send`,
 `send-key`, `list-workspaces`, `current-workspace`, `list-panes`, `list-pane-surfaces`,
-`select-workspace`, `focus-pane`, `focus-panel`, `workspace-group`, `ping`, `version`, with
+`select-workspace`, `focus-pane`, `focus-panel`, `workspace-group`, `agent`, `ping`,
+`version`, with
 `--json` and
 `--id-format refs|uuids|both`. `cmux --help` and `cmux <command> --help` list the flags.
 
@@ -328,6 +330,135 @@ Not ported from cmux: browser controls, `height`, `env` and `title` in `dock.jso
 `.cmux/dock.json`, `--placement dock` and Dock rows in the CLI, notifications from Dock
 terminals (`cmux notify` and the Feed hook don't work inside the Dock yet), dragging tabs
 between the Dock and the main area.
+
+## Agent messages
+
+`cmux agent message` leaves a message for the agent in another workspace. It is handed over
+through that agent's hooks, never typed into its terminal, so it can't land in a half-typed
+prompt or press Enter for anyone.
+
+```sh
+cmux agent message builder "The relay fix is on main; rebase when free."
+cmux agent message workspace:4 --from reviewer "Review posted on #123."
+echo "long text" | cmux agent message surface:12 -
+cmux agent message --reply-to <message-id> "Done."
+cmux agent inbox                 # latest 50, newest first
+cmux agent inbox --state queued
+```
+
+The target is a workspace or surface id or ref, or a workspace title (exact, then a unique
+prefix). A workspace means the terminal whose agent last asked for messages there, else its
+focused terminal. `--from` defaults to the sending workspace's title.
+
+Delivery needs the hooks from `cmux hooks setup` (run it again if you installed them before
+this feature; it now adds `UserPromptSubmit`, `PostToolUse` and `Stop` entries for Claude
+Code). A busy Claude sees a message after its current tool call, or continues with it instead
+of stopping; an idle one gets it attached to the next prompt you send. A message is `queued`,
+then `delivered` when the agent has been shown it, then `read` when that turn ends.
+
+Limits: text only (no control characters except newline and tab), 32 KiB, sender name one
+line of at most 64 characters. Messages are kept in memory and are lost when the app quits.
+
+Not ported from cmux: waking an idle agent, turning messages off per agent or workspace,
+Codex and Kiro delivery.
+
+## Workspace auto-naming
+
+Off by default. When on, the end of each Claude Code turn may rename the workspace to a 2-5
+word title summarised from the conversation, so several agent workspaces stop looking alike.
+
+```toml
+# ~/.config/cmux-linux/config.toml
+[auto_naming]
+enabled = true
+# Optional. A shell line that reads the prompt on stdin and prints the title.
+# The default is a tool-less `claude -p --model haiku` call.
+# command = "my-summarizer --short"
+```
+
+It needs the hooks from `cmux hooks setup` (the `Stop` hook reports the turn). The setting is
+read at every turn end, so no restart is needed. The command runs on your own account, in the
+temp directory, with no `CMUX_*` variables and a 60 second limit; if it fails, the name stays.
+
+A name you set yourself is never replaced; clear it to let auto-naming back in. To keep calls
+rare, sessions under 12 transcript lines are skipped, and a new name needs 6 new lines and 3
+minutes since the last try.
+
+Not ported from cmux: naming the agent's tab, and agents other than Claude Code.
+
+## Automations
+
+Rules in `~/.config/cmux-linux/automations.json` run actions when something happens in the app.
+
+```json
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "agent-done-in-build",
+      "when": { "event": "agent.hook.Stop" },
+      "where": { "workspace.title": { "prefix": "build" } },
+      "rate_limit": { "interval_seconds": 30, "maximum": 1 },
+      "then": [
+        { "action": "notify", "title": "Agent finished", "body": "in {{payload.workspace_title}}" },
+        { "action": "run", "command": "paplay /usr/share/sounds/freedesktop/stereo/complete.oga" }
+      ]
+    }
+  ]
+}
+```
+
+Events: `workspace.created`, `workspace.closed`, `notification.created` (`title`, `subtitle`,
+`body`), `feed.item.received` (`source`, `request_id`, `title`), `agent.message.queued` (`id`,
+`sender_name`, `body_length`) and `agent.hook.Stop` (`source`, `transcript_path`; needs
+`cmux hooks setup`). Every payload also has `workspace_id`, `workspace_title` and, when there
+is one, `surface_id`.
+
+- `when.event` and `when.category` (the name's first part) take a name or a list; `*` at
+  either end is a wildcard.
+- `where` compares payload values, ignoring case: a plain value must be equal, or use an
+  object of `equals`, `contains`, `prefix`, `suffix`, `in`, `not`. `workspace.title` (or
+  `title`), `agent` and `surface.kind` are cmux's aliases.
+- `rate_limit` defaults to one firing a second. `"enabled": false` keeps a rule without
+  running it.
+- Actions run in order, each after the last has ended. `notify` takes `title`, `subtitle` and
+  `body` with `{{event.name}}`, `{{event.category}}`, `{{event.source}}` and
+  `{{payload.<key>}}`. `run` takes `command` for `sh -c` (in the temp directory, 60 seconds,
+  `timeout_seconds` up to 300) with the event as JSON in `CMUX_AUTOMATION_EVENT`, plus
+  `CMUX_AUTOMATION_EVENT_NAME`, `CMUX_AUTOMATION_EVENT_CATEGORY` and `CMUX_AUTOMATION_RULE_ID`.
+
+The file is read at start. `cmux automation reload` reads it again and `cmux automation list`
+shows the loaded rules, how often each fired, and any rule left out with the reason.
+
+Not ported from cmux: the `rpc` and `webhook` actions (call `cmux ...` or `curl` from `run`;
+a rule using them is left out), `workspace.tag`, `cmux events`, and `automation
+show|test|enable|disable|logs`. A notification made by a rule triggers no rule, but a `run`
+that calls `cmux notify` can: give such rules a rate limit.
+
+## Claude Teams
+
+`cmux claude-teams` starts Claude Code with agent teams enabled, and each named teammate
+opens as a split in the workspace instead of needing tmux.
+
+```sh
+cmux claude-teams
+cmux claude-teams --continue
+cmux claude-teams --model sonnet
+```
+
+Run it in a cmux-linux terminal; everything after `claude-teams` goes to `claude`. It sets
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, defaults `--teammate-mode auto`, and puts a private
+`tmux` script first on `PATH` that turns the tmux pane commands Claude sends (`split-window`,
+`respawn-pane`, `send-keys`, `kill-pane`, `list-panes`, `display-message`, `select-pane`) into
+splits here. Start it in a folder Claude Code already trusts: a teammate that meets the "trust
+this folder?" question waits there and the lead never hears from it.
+A teammate is an ordinary terminal: its notifications, directory and ports show as usual, and
+with `cmux hooks setup` its prompts reach the Feed.
+
+Not ported from cmux: the tidy teammate column (splits go where Claude asks, and fail when
+there is no room), `capture-pane`, tmux windows and sessions, and restoring a team after a
+restart. A tmux command the script doesn't know fails with "Unsupported tmux compatibility
+command", so a new Claude Code version shows what it needs.
 
 ## Contributing
 

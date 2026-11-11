@@ -112,7 +112,7 @@ pub(crate) fn parse_dock_config(json: &str, base: &Path) -> Result<Vec<DockContr
 }
 
 /// `~/.config/cmux-linux/dock.json` (`$XDG_CONFIG_HOME` first) and its base, the home directory.
-fn dock_config_path() -> Option<(PathBuf, PathBuf)> {
+pub(super) fn dock_config_path() -> Option<(PathBuf, PathBuf)> {
     let home = PathBuf::from(std::env::var_os("HOME")?);
     let config = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)

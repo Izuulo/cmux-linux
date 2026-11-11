@@ -20,20 +20,30 @@ const READ_TIMEOUT: Duration = Duration::from_secs(118);
 pub(crate) fn hooks(cmd: &mut Cmd) -> Result<String, CliError> {
     match cmd.args.first().map(String::as_str) {
         Some("feed") => feed_hook(cmd),
+        Some("message") => message_hook(cmd),
         Some("setup") => settings(cmd, true),
         Some("uninstall") => settings(cmd, false),
-        _ => fail("Usage: cmux hooks <setup|uninstall|feed> ..."),
+        _ => fail("Usage: cmux hooks <setup|uninstall|feed|message> ..."),
     }
 }
 
 /// Identifies our entries so a re-install replaces them and an uninstall finds them.
 const MARKER: &str = "hooks feed --source claude";
 
+/// The agent-message hook (M9 plan D5), found and replaced the same way.
+const MESSAGE_MARKER: &str = "hooks message --source claude";
+/// Where messages reach Claude: with a prompt, after a tool call, and when it would stop.
+const MESSAGE_EVENTS: [&str; 3] = ["UserPromptSubmit", "PostToolUse", "Stop"];
+
 /// D2's hook command; the absolute, single-quoted path keeps another `cmux` from answering, and
 /// `test -x ... || :` makes a removed binary a silent no-op.
 pub(crate) fn hook_command(exe: &Path) -> String {
+    command_for(exe, MARKER)
+}
+
+fn command_for(exe: &Path, marker: &str) -> String {
     let q = format!("'{}'", exe.to_string_lossy().replace('\'', "'\\''"));
-    format!("test -x {q} && {q} {MARKER} || :")
+    format!("test -x {q} && {q} {marker} || :")
 }
 
 /// Drops our hooks, then any group, event or `hooks` object that only we emptied.
@@ -47,7 +57,7 @@ fn remove(settings: &mut Value) -> Result<(), String> {
     let ours = |h: &Value| {
         h.get("command")
             .and_then(Value::as_str)
-            .is_some_and(|c| c.contains(MARKER))
+            .is_some_and(|c| c.contains(MARKER) || c.contains(MESSAGE_MARKER))
     };
     events.retain(|_, groups| {
         let Some(groups) = groups.as_array_mut() else {
@@ -71,22 +81,33 @@ fn remove(settings: &mut Value) -> Result<(), String> {
     Ok(())
 }
 
+/// `command` is the Feed hook's; the message hook's is derived from it.
 pub(crate) fn install(settings: &mut Value, command: &str) -> Result<(), String> {
     remove(settings)?;
     let obj = settings
         .as_object_mut()
         .ok_or("<path> is not a JSON object")?;
-    let group =
-        json!({"matcher": "", "hooks": [{"type": "command", "command": command, "timeout": 125}]});
-    let events = obj.entry("hooks").or_insert_with(|| json!({}));
-    let list = events
+    let events = obj
+        .entry("hooks")
+        .or_insert_with(|| json!({}))
         .as_object_mut()
-        .ok_or("hooks in <path> is not an object")?
-        .entry("PermissionRequest")
-        .or_insert_with(|| json!([]));
-    match list.as_array_mut() {
-        Some(a) => a.push(group),
-        None => return Err("PermissionRequest in <path> is not an array".into()),
+        .ok_or("hooks in <path> is not an object")?;
+    let message = command.replace(MARKER, MESSAGE_MARKER);
+    let entries = [("PermissionRequest", command, 125)]
+        .into_iter()
+        .chain(MESSAGE_EVENTS.map(|e| (e, message.as_str(), 10)));
+    for (event, command, timeout) in entries {
+        let group = json!({"matcher": "", "hooks": [
+            {"type": "command", "command": command, "timeout": timeout},
+        ]});
+        match events
+            .entry(event)
+            .or_insert_with(|| json!([]))
+            .as_array_mut()
+        {
+            Some(a) => a.push(group),
+            None => return Err(format!("{event} in <path> is not an array")),
+        }
     }
     Ok(())
 }
@@ -249,14 +270,86 @@ fn feed_hook(cmd: &mut Cmd) -> Result<String, CliError> {
     Ok(format!("{out}\n"))
 }
 
+/// `cmux hooks message --source claude`: Claude Code's `UserPromptSubmit`, `PostToolUse` and
+/// `Stop` hook (M9 plan D5). Claims the messages queued for this terminal's agent and hands
+/// them to Claude in the form the event takes. Anything else prints `{}`. On `Stop` it also
+/// reports the turn's end for auto-naming.
+fn message_hook(cmd: &mut Cmd) -> Result<String, CliError> {
+    let empty = || Ok("{}\n".to_string());
+    if !cmd
+        .args
+        .iter()
+        .any(|a| a == "claude" || a == "--source=claude")
+    {
+        return empty();
+    }
+    let linux = cmd.env("CMUX_LINUX").and_then(parse_bool) == Some(true);
+    let Some(surf) = cmd.env("CMUX_SURFACE_ID").filter(|s| linux && is_uuid(s)) else {
+        return empty();
+    };
+    let raw = match &cmd.ctx.stdin {
+        Some(s) => s.clone(),
+        None => {
+            let mut s = String::new();
+            let _ = std::io::stdin().read_to_string(&mut s);
+            s
+        }
+    };
+    let stdin: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
+    let Some(event) = stdin
+        .get("hook_event_name")
+        .and_then(Value::as_str)
+        .filter(|e| MESSAGE_EVENTS.contains(e))
+    else {
+        return empty();
+    };
+    let stop = event == "Stop";
+    // A turn ended: the app may name the workspace from the transcript (M9 plan N2). It
+    // answers at once and runs the naming itself, so this never holds the agent up.
+    if let (true, Some(path)) = (stop, stdin.get("transcript_path").and_then(Value::as_str)) {
+        let mut p = serde_json::Map::new();
+        p.insert("surface_id".into(), surf.into());
+        p.insert("transcript_path".into(), path.into());
+        let _ = call(cmd, "workspace.auto_name", &p, Duration::from_secs(5));
+    }
+    let mut params = serde_json::Map::new();
+    params.insert("surface_id".into(), surf.into());
+    params.insert("via".into(), event.into());
+    // A turn that ends has read what it was shown.
+    params.insert("mark_delivered_read".into(), stop.into());
+    let text = call(cmd, "agent.message.claim", &params, Duration::from_secs(5))
+        .and_then(|r| r.get("text")?.as_str().map(str::to_string))
+        .filter(|t| !t.is_empty());
+    let Some(text) = text else {
+        return empty();
+    };
+    let out = if stop {
+        // Claude keeps going, with the message as the reason.
+        json!({"decision": "block", "reason": text})
+    } else {
+        json!({"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}})
+    };
+    Ok(format!("{out}\n"))
+}
+
 /// The `feed.push` result, or `None` on any socket or server error.
 fn push(cmd: &Cmd, params: &serde_json::Map<String, Value>) -> Option<Value> {
+    call(cmd, "feed.push", params, READ_TIMEOUT)
+}
+
+/// A hook's socket call: `None` on any socket or server error.
+fn call(
+    cmd: &Cmd,
+    method: &str,
+    params: &serde_json::Map<String, Value>,
+    timeout: Duration,
+) -> Option<Value> {
     let path = cmd.socket_path().ok()?;
-    let mut client = Client::connect(&path, READ_TIMEOUT).ok()?;
+    let mut client = Client::connect(&path, timeout).ok()?;
     if let Some(password) = cmd.password() {
         client.auth(&password).ok()?;
     }
-    client.call("feed.push", params).ok()?.ok()
+    client.call(method, params).ok()?.ok()
 }
 
 #[cfg(test)]

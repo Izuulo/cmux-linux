@@ -1,5 +1,6 @@
 //! cmux-ipc: cmux's control socket (server, wire format, handles) and the `cmux` CLI.
 
+pub mod automation;
 pub mod cli;
 pub mod env;
 pub mod feed;

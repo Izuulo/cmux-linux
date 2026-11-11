@@ -186,8 +186,19 @@ mod setup {
         std::fs::write(&f, serde_json::to_string(&orig).unwrap()).unwrap();
         run("setup", &f);
         let v = read(&f);
-        assert_eq!(v["hooks"]["Stop"], orig["hooks"]["Stop"]);
+        // The user's Stop hook stays first; ours (the message hook) is added after it.
+        assert_eq!(v["hooks"]["Stop"][0], orig["hooks"]["Stop"][0]);
+        assert_eq!(v["hooks"]["Stop"].as_array().unwrap().len(), 2);
         assert_eq!(v["hooks"]["PermissionRequest"].as_array().unwrap().len(), 2);
+        for event in ["UserPromptSubmit", "PostToolUse", "Stop"] {
+            let ours = v["hooks"][event].as_array().unwrap().last().unwrap();
+            assert_eq!(
+                ours["hooks"][0],
+                json!({"type": "command", "timeout": 10, "command":
+                    "test -x '/opt/cmux' && '/opt/cmux' hooks message --source claude || :"}),
+                "{event}"
+            );
+        }
         assert_eq!(v["theme"], json!("x"));
         let bytes = std::fs::read(&f).unwrap();
         let mtime = std::fs::metadata(&f).unwrap().modified().unwrap();
@@ -339,4 +350,91 @@ mod setup {
             assert_eq!(std::fs::read_dir(&home).unwrap().count(), 0);
         }
     }
+}
+
+/// A fake answering `agent.message.claim` with `text`.
+fn mail(text: &str) -> T {
+    let reply = Ok(json!({"messages": [], "text": text}));
+    T::new(HashMap::new()).with(HashMap::from([("agent.message.claim", reply)]))
+}
+
+fn message_hook(t: &T, event: &str, env: &[(&str, &str)]) -> Value {
+    let stdin = json!({"session_id": "s", "hook_event_name": event}).to_string();
+    let args = ["hooks", "message", "--source", "claude"];
+    let (code, out, err) = t.run_with_stdin(&args, env, &stdin);
+    assert_eq!(code, 0, "stderr: {err}");
+    serde_json::from_str(&out).unwrap()
+}
+
+#[test]
+fn message_hook_attaches_mail_to_a_prompt_or_tool_result() {
+    let t = mail("[cmux agent message] from a");
+    for event in ["UserPromptSubmit", "PostToolUse"] {
+        assert_eq!(
+            message_hook(&t, event, &[LINUX]),
+            json!({"hookSpecificOutput": {
+                "hookEventName": event, "additionalContext": "[cmux agent message] from a"}})
+        );
+        let (method, params) = t.last();
+        assert_eq!(method, "agent.message.claim");
+        assert_eq!(
+            params,
+            json!({"surface_id": t.s1(), "via": event, "mark_delivered_read": false})
+        );
+    }
+}
+
+#[test]
+fn message_hook_continues_a_stopping_turn_and_ends_the_last_one() {
+    let t = mail("[cmux agent message] from a");
+    assert_eq!(
+        message_hook(&t, "Stop", &[LINUX]),
+        json!({"decision": "block", "reason": "[cmux agent message] from a"})
+    );
+    assert_eq!(t.last().1["mark_delivered_read"], json!(true));
+    // No mail: the turn just ends.
+    assert_eq!(message_hook(&mail(""), "Stop", &[LINUX]), json!({}));
+}
+
+#[test]
+fn stop_reports_the_transcript_for_auto_naming() {
+    let t = mail("");
+    let run = |event: &str| {
+        let stdin = json!({"hook_event_name": event, "transcript_path": "/t/s.jsonl"}).to_string();
+        let args = ["hooks", "message", "--source", "claude"];
+        t.run_with_stdin(&args, &[LINUX], &stdin).1
+    };
+    // The app doesn't know the method here: the hook still ends the turn quietly.
+    assert_eq!(run("Stop"), "{}\n");
+    let asked = t.fake.requests();
+    assert_eq!(asked.len(), 2);
+    assert_eq!(asked[0].0, "workspace.auto_name");
+    assert_eq!(
+        asked[0].1,
+        json!({"surface_id": t.s1(), "transcript_path": "/t/s.jsonl"})
+    );
+    assert_eq!(asked[1].0, "agent.message.claim");
+    run("PostToolUse");
+    assert_eq!(t.fake.requests().len(), 3, "only a turn's end names");
+}
+
+#[test]
+fn message_hook_stays_silent_when_it_should() {
+    let t = mail("x");
+    let asked = || t.fake.requests().len();
+    assert_eq!(message_hook(&t, "SubagentStop", &[LINUX]), json!({}));
+    assert_eq!(message_hook(&t, "Stop", &[("CMUX_LINUX", "0")]), json!({}));
+    assert_eq!(
+        message_hook(&t, "Stop", &[LINUX, ("CMUX_SURFACE_ID", "nope")]),
+        json!({})
+    );
+    assert_eq!(asked(), 0, "nothing was claimed");
+    let (_, out, _) = t.run_with_stdin(
+        &["hooks", "message", "--source", "claude"],
+        &[LINUX],
+        "junk",
+    );
+    assert_eq!(out, "{}\n");
+    let down = [LINUX, ("CMUX_SOCKET_PATH", "/nonexistent/cmux.sock")];
+    assert_eq!(message_hook(&t, "Stop", &down), json!({}));
 }

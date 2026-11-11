@@ -2,7 +2,7 @@
 
 /// (command, usage line, help text). Groups are cmux's task groups.
 pub(crate) const GROUPS: &[(&str, &[&str])] = &[
-    ("Start & Resume", &["new-workspace"]),
+    ("Start & Resume", &["new-workspace", "claude-teams"]),
     (
         "Navigate & Arrange",
         &[
@@ -29,6 +29,8 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
             "send-key",
             "notify",
             "dismiss-notification",
+            "agent",
+            "automation",
             "hooks",
         ],
     ),
@@ -68,7 +70,14 @@ pub(crate) fn usage_line(cmd: &str) -> Option<&'static str> {
             "notify [--title <text>] [--subtitle <text>] [--body <text>] [--reply] [--desktop <true|false>] [--clear] [--workspace <id|ref|index>] [--surface <id|ref|index>] [--window <id|ref|index>]"
         }
         "dismiss-notification" => "dismiss-notification (--id <uuid> | --all-read)",
-        "hooks" => "hooks <setup|uninstall> [--settings-file <path>] | hooks feed --source claude",
+        "agent" => {
+            "agent message <target> [--from <name>] <text|-> | agent message --reply-to <id> <text|-> | agent inbox [--surface <target>] [--state <state>] [--limit <n>] [--mark-read]"
+        }
+        "automation" => "automation <list|reload>",
+        "claude-teams" => "claude-teams [claude-args...]",
+        "hooks" => {
+            "hooks <setup|uninstall> [--settings-file <path>] | hooks <feed|message> --source claude"
+        }
         "workspace-group" => {
             "workspace-group <list|create|ungroup|delete|rename|collapse|expand|pin|unpin|add|remove|set-anchor|new-workspace|focus> [options]"
         }
@@ -135,6 +144,9 @@ pub(crate) fn command(cmd: &str) -> Option<String> {
         "focus-pane" => FOCUS_PANE,
         "focus-panel" => FOCUS_PANEL,
         "workspace-group" => WORKSPACE_GROUP,
+        "agent" => AGENT,
+        "automation" => AUTOMATION,
+        "claude-teams" => CLAUDE_TEAMS,
         "ping" => PING,
         _ => return None,
     };
@@ -170,11 +182,14 @@ Example:
 "#;
 
 const HOOKS: &str = "Usage: cmux hooks <setup|uninstall> [--settings-file <path>]
-       cmux hooks feed --source claude
+       cmux hooks <feed|message> --source claude
 
   setup      Add cmux's hooks to Claude Code's settings
   uninstall  Remove cmux's hooks from Claude Code's settings
   feed       Run as Claude Code's PermissionRequest hook: show the prompt in the cmux Feed
+  message    Run as Claude Code's UserPromptSubmit, PostToolUse and Stop hook: hand over
+             the messages other agents left with `cmux agent message`; on Stop also
+             report the turn's end for workspace auto-naming
 ";
 
 const DISMISS: &str = "Usage: cmux dismiss-notification (--id <uuid> | --all-read)
@@ -376,4 +391,53 @@ Example:
   cmux workspace-group create --name api --from workspace:1,workspace:2
   cmux workspace-group new-workspace workspace_group:1
   cmux workspace-group list
+"#;
+
+const CLAUDE_TEAMS: &str = "Usage: cmux claude-teams [claude-args...]
+
+Launch Claude Code with agent teams enabled. Run it in a cmux-linux terminal.
+
+This command:
+  - defaults Claude teammate mode to auto
+  - sets a tmux-like environment so Claude auto mode uses cmux splits
+  - sets CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+  - prepends a private tmux shim to PATH
+  - forwards all remaining arguments to claude
+
+The tmux shim translates the tmux pane commands a team uses (split-window, send-keys,
+kill-pane, list-panes, display-message, select-pane) into cmux splits in this workspace.
+
+Examples:
+  cmux claude-teams
+  cmux claude-teams --continue
+  cmux claude-teams --model sonnet
+";
+
+const AUTOMATION: &str = "Usage: cmux automation <list|reload>
+
+Rules in ~/.config/cmux-linux/automations.json run actions when the app emits an event.
+
+  list    Show the loaded rules, how often each fired, and why any rule was left out
+  reload  Read automations.json again
+";
+
+const AGENT: &str = r#"Usage: cmux agent message <target> [--from <name>] <text|->
+       cmux agent message --reply-to <message-id> <text|->
+       cmux agent inbox [--surface <target>] [--state queued|delivered|read] [--limit <n>] [--mark-read]
+
+Leave a message for the agent in another workspace or surface. It is delivered
+through that agent's hooks (install them with `cmux hooks setup`), never typed
+into its terminal: a busy agent sees it at its next step, an idle one with its
+next prompt.
+
+The target is a workspace or surface id or ref, or a workspace title (exact
+match first, then a unique prefix). A workspace means the surface running its
+agent. --from defaults to the sending workspace's title. `-` reads the text
+from standard input.
+
+Example:
+  cmux agent message workspace:4 --from reviewer "Review posted on #123."
+  echo "long text" | cmux agent message surface:12 -
+  cmux agent message --reply-to 3F2A... "Done."
+  cmux agent inbox --state queued
 "#;

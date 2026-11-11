@@ -1,5 +1,6 @@
 //! cmux-meta: sidebar metadata collectors: pure functions over the filesystem, unit-tested on fixtures.
 
+pub mod autoname;
 #[cfg(target_os = "macos")]
 pub mod darwin;
 pub mod git;
@@ -132,6 +133,30 @@ fn proc_cwd(proc_root: &Path, pid: u32) -> Option<String> {
     let link = std::fs::read_link(proc_root.join(pid.to_string()).join("cwd")).ok()?;
     let s = link.to_str()?;
     Some(s.strip_suffix(" (deleted)").unwrap_or(s).to_string())
+}
+
+/// Runs a user's shell line for the app (auto-naming, automations) off the UI thread: `sh -c`
+/// in the temp directory, away from any project, `input` on stdin. Inherited `CMUX_*` variables
+/// are dropped, so an agent CLI started here doesn't take itself for one of our terminals and
+/// run our hooks (M9 plan N6). `None` on a non-zero exit or the deadline.
+pub fn sh(
+    command: &str,
+    envs: &[(&str, &str)],
+    input: &str,
+    deadline: std::time::Duration,
+) -> Option<String> {
+    let mut cmd = std::process::Command::new("sh");
+    cmd.arg("-c").arg(command).current_dir(std::env::temp_dir());
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("CMUX_") {
+            cmd.env_remove(key);
+        }
+    }
+    cmd.envs(envs.iter().copied());
+    // shortcut: on the deadline only `sh` is killed, a child it started runs on until it ends;
+    // kill the process group if stuck commands are ever seen.
+    let out = pr::run_with_deadline(cmd, input.as_bytes().to_vec(), deadline).ok()?;
+    Some(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// Fresh per-test scratch dir under the OS temp dir (shared by all module tests).

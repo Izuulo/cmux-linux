@@ -265,3 +265,54 @@ fn unknown_window_is_not_found() {
         Some(RpcError::new("not_found", "Window not found"))
     );
 }
+
+#[test]
+fn message_target_takes_handles_then_titles() {
+    let s = fixture();
+    let (a, b) = (&s.workspaces[0], &s.workspaces[1]);
+    let key = |r: Result<
+        (
+            &cmux_ipc::snapshot::WsSnap,
+            Option<cmux_ipc::snapshot::Target>,
+        ),
+        RpcError,
+    >| {
+        r.map(|(ws, t)| (ws.key, t.map(|t| t.surface.key)))
+            .map_err(|e| (e.code, e.message))
+    };
+    assert_eq!(key(s.message_target("surface:3")), Ok((1, Some(3))));
+    assert_eq!(key(s.message_target("workspace:2")), Ok((2, None)));
+    assert_eq!(
+        key(s.message_target(&a.handle.id.to_lowercase())),
+        Ok((1, None))
+    );
+    assert_eq!(key(s.message_target("Build")), Ok((2, None)));
+    assert_eq!(
+        key(s.message_target("Bu")),
+        Ok((2, None)),
+        "a unique prefix"
+    );
+    assert_eq!(key(s.message_target(&b.title[..1])), Ok((2, None)));
+    assert_eq!(
+        key(s.message_target("nope")),
+        Err((
+            "not_found".into(),
+            "No workspace or surface matches 'nope'".into()
+        ))
+    );
+    assert_eq!(key(s.message_target("")).unwrap_err().0, "not_found");
+    let mut twins = fixture();
+    twins.workspaces[0].title = "Builder".into();
+    assert_eq!(
+        key(twins.message_target("Bu")),
+        Err((
+            "invalid_params".into(),
+            "'Bu' matches more than one workspace".into()
+        ))
+    );
+    assert_eq!(
+        key(twins.message_target("Build")),
+        Ok((2, None)),
+        "exact wins"
+    );
+}

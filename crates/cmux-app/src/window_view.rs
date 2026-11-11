@@ -8,8 +8,8 @@ use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use cmux_core::{
-    FeedItemId, FeedStore, GroupId, Notifications, Placement, WorkspaceClosed, WorkspaceId,
-    Workspaces,
+    FeedItemId, FeedStore, GroupId, MessageStore, Notifications, Placement, WorkspaceClosed,
+    WorkspaceId, Workspaces,
 };
 use cmux_meta::pr::{self, PrKey, PrPoller};
 use cmux_meta::{WorkspaceInput, WorkspaceMeta};
@@ -23,6 +23,8 @@ use crate::actions::*;
 use crate::style::TermStyle;
 use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
+mod automation_ctl;
+mod autoname_ctl;
 pub(crate) mod control;
 mod dock;
 mod feed;
@@ -31,6 +33,7 @@ mod feed_ctl;
 mod group_ctl;
 mod groups;
 mod menu;
+mod message_ctl;
 mod notify;
 mod panel;
 mod rename;
@@ -73,6 +76,14 @@ pub struct WindowView {
     /// Agent prompts (M7) and the `feed.push` requests still waiting on them, by request id.
     feed: FeedStore,
     feed_waiters: HashMap<String, feed_ctl::Waiter>,
+    /// Agent-to-agent messages (M9), claimed by the recipients' hooks.
+    messages: MessageStore,
+    /// Auto-naming's throttle state per workspace (M9 Part 2).
+    naming: HashMap<WorkspaceId, autoname_ctl::Naming>,
+    /// Automation rules (M9 Part 3) and whether one of their notifications is being made.
+    automations: cmux_ipc::automation::Rules,
+    automating: bool,
+    window_handle: gpui::AnyWindowHandle,
     /// The right sidebar (plan M7 D7, M8 D12): closed at launch.
     right_sidebar_open: bool,
     right_mode: dock::RightMode,
@@ -158,6 +169,11 @@ impl WindowView {
             notifications: Notifications::new(),
             feed: FeedStore::default(),
             feed_waiters: HashMap::new(),
+            messages: MessageStore::default(),
+            naming: HashMap::new(),
+            automations: automation_ctl::load(),
+            automating: false,
+            window_handle: window.window_handle(),
             right_sidebar_open: false,
             right_mode: Default::default(),
             right_width: dock::RIGHT_SIDEBAR_MIN,
@@ -260,12 +276,14 @@ impl WindowView {
             }
             WorkspaceEvent::Closed(s) => {
                 this.feed_close_surface(id, *s, cx);
+                this.messages.forget(id, Some(*s));
                 this.on_closed(id, *s, cx);
             }
         });
         self.subs.insert(id, sub);
         self.views.insert(id, view);
         self.refresh_title(id, cx);
+        self.emit("workspace.created", Some(id), None, Default::default(), cx);
         true
     }
 
@@ -337,6 +355,10 @@ impl WindowView {
 
     fn close_now(&mut self, id: WorkspaceId, window: &mut Window, cx: &mut Context<Self>) {
         let was_selected = id == self.workspaces.selected();
+        // Before it goes: the event still names it. (Closing the last one quits instead.)
+        if self.workspaces.len() > 1 && self.workspaces.index_of(id).is_some() {
+            self.emit("workspace.closed", Some(id), None, Default::default(), cx);
+        }
         match self.workspaces.close(id) {
             WorkspaceClosed::Last => cx.quit(),
             WorkspaceClosed::Closed => {
@@ -349,6 +371,8 @@ impl WindowView {
                 self.views.remove(&id);
                 self.titles.remove(&id);
                 self.feed_close_workspace(id, cx);
+                self.messages.forget(id, None);
+                self.naming.remove(&id);
                 let gone = self.notifications.remove_workspace(id);
                 self.after_change(gone, cx);
                 if was_selected {

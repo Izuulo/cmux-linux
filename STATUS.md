@@ -4,8 +4,8 @@
      current version to docs/status-archive.md. -->
 
 **Updated:** 2026-11-11
-**Current milestone:** M8 groups-dock on branch `m8-groups-dock` (stacked on `m6-desktop-checks`, PR #9): plan Tasks 1–8 done, PR open. M9 agent-coordination is next.
-**Next action:** agent: M9 (research cmux `docs/agent-messages.md` and automations, write `plan.md`, build on top of `m8-groups-dock`). Owner, when convenient: (a) review and merge PR #9 then the M8 PR; (b) the mouse and typing checks no script can do, now including M8's (group header click, `+`, chevron, menus, rename field, Delete prompt, drags, sidebar edge drag, Dock "New Terminal"), plus the older list: divider/tab/row drag, Feed buttons, clicking a bubble, IME, `CMUX_TRACE_LATENCY=1` (M1 exit 3), blur by eye; (c) `makepkg -si` and a launcher start; (d) M7 Task 9 Step 2, a real Claude Code run with `cmux hooks setup`.
+**Current milestone:** M9 agent-coordination on branch `m9-agent-coordination` (stacked on `m8-groups-dock`, which is stacked on `m6-desktop-checks`): all four parts built (agent messages, auto-naming, automations, Claude Teams), PR #11. None of it has run under a real Claude Code yet.
+**Next action:** agent: M10 persistence (write its plan first), on a branch stacked on `m9-agent-coordination`. Owner, when convenient: (a) review and merge the stack in order: #9, #10, #11; (b) done 2026-11-11 with Claude Code 2.1.322 (M9 journal): messages, default auto-naming, automations and a two-teammate `cmux claude-teams` run pass, the last only after adding `respawn-pane`; still open: M7 Task 9 Step 2 (a permission prompt in the Feed) and the `Stop` continue path; (c) the mouse and typing checks no script can do: M8's group header click, `+`, chevron, menus, rename field, Delete prompt, drags, sidebar edge drag, Dock "New Terminal"; older: divider/tab/row drag, Feed buttons, clicking a bubble, IME, `CMUX_TRACE_LATENCY=1` (M1 exit 3), blur by eye; (d) `makepkg -si` and a launcher start.
 
 ## Where things are
 - Project design and milestone table: `docs/design.md`
@@ -24,8 +24,8 @@
 | M5 cli-socket | merged (PR #6); criterion 1 = `cmux notify` hooks (owner's ruling), automated by `hook_commands_work_unchanged`; KDE desktop check pending |
 | M6 parity-release | merged (PR #7); KDE run done by script (journal 2026-11-11): perf pass, UI draws, D-Bus notification OK; owner-only checks left (install with sudo, mouse/typing, blur by eye) |
 | M7 feed | merged (PR #8); Feed seen drawn on KDE (permission, question, empty state); buttons unclicked; real Claude Code run (Task 9 Step 2) pending |
-| M8 groups-dock | built (`m8-groups-dock`); both exit criteria checked on KDE by script and screenshot; mouse paths unverified |
-| M9 agent-coordination | not started (post-v1) |
+| M8 groups-dock | built, PR #10; both exit criteria checked on KDE by script and screenshot; mouse paths unverified |
+| M9 agent-coordination | built, PR #11; each exit criterion checked against the app on KDE with hand-run hooks, a fake naming command and a fake `claude`; real Claude run pending |
 | M10 persistence | not started (post-v1) |
 | M11 productivity | not started (post-v1) |
 
@@ -56,10 +56,12 @@
 - `cmux-meta`: `git`, `path`, `ports`, `pr` (`PrPoller`), `collect`; M6 `darwin` (macOS libproc).
 - `cmux-ipc` (M5, no gpui): `wire`, `handles`, `json`, `snapshot` (reads + target resolution), `server`, `paths`, `env`, `keys`, `cli/*`; binary `cmux`. App side: `window_view/control.rs`.
 - M7: `cmux-core::feed` (`FeedStore`, `FeedKind::accepts`, `Decision`); `cmux-ipc::feed` (JSON <-> model, `hook_output`), `cli/hooks.rs` (`feed`, `setup`, `uninstall`); `cmux-config` `Binding.context`; app `window_view/feed_ctl.rs` (waiters, `feed_finish`, timer), `feed.rs` (right sidebar, permission cards, keys), `feed_cards.rs` (plan, question).
+- M9: `cmux-core::messages` (`MessageStore`, `render_messages`); `cmux-ipc` `Snapshot::message_target`, `cli/agent.rs`, `hooks message` in `cli/hooks.rs`; app `window_view/message_ctl.rs`. Auto-naming: `cmux-config::auto_naming`, `cmux-meta::autoname` (+ `cmux_meta::sh`), `Workspaces::set_auto_title`, app `autoname_ctl.rs`. Automations: `cmux-ipc::automation`, `cli/automation.rs`, app `automation_ctl.rs` (`emit`). Claude Teams: `cmux-ipc` `cli/tmux.rs` (`claude-teams`, `__tmux-compat`), socket `surface.close`.
 - M8: `cmux-core::groups` (`Group`, `Row`, `Placement`, `HeaderClick`); `cmux-ipc` `Kind::WorkspaceGroup`, `GroupSnap`, `cli/groups.rs`; app `window_view/groups.rs` (group actions), `menu.rs` (context menu), `group_ctl.rs` (socket), `dock.rs` (right sidebar frame, Dock, `dock.json`); `WorkspaceView::new_dock`.
 - `cmux-app`: gpui `TerminalView` + `TerminalElement`, keys, colours, style, mouse, IME; M2 adds `actions`, `chrome`, `workspace`, `workspace/tab_strip`, `assets`; M3 adds `window_view` (root, pollers), `window_view/sidebar`, `window_view/rename`, `blur` (Linux); M4 adds `attention` (ring, flash), `window_view/notify` (rules wiring, jump), `window_view/panel`, `desktop_notify` (zbus, Linux), `activation` + `wayland` (Linux).
 
 ## Open risks
+- M9: nothing ran under a real Claude Code. Messages: hook output shapes match the hooks reference; no idle wake, no off switch, not persisted. Claude Teams: the tmux commands a team sends were taken from cmux's shim, not observed; an unhandled one fails loudly; splits can fail for lack of room (no column layout). Auto-naming's default `claude -p` line is untested. Automations: a `run` that calls `cmux` can loop at its rate limit.
 - M8: nothing in it was clicked or dragged (see Next action b). The Dock is invisible to the socket: `cmux notify`, the Feed hook and OSC notifications don't work from Dock terminals, and CLI commands can't target them. Dock keeps the main area's minimum pane size, so side-by-side splits need a wide sidebar. Groups and Dock are not persisted (M10).
 - gpui is pre-1.0 (pinned). No public FontMetrics → `line_gap` 0.
 - Blur shim runs on Plasma 6.8.2 without errors (KWin offers `ext_background_effect_manager_v1`); that the backdrop is really blurred is not yet confirmed by eye.
@@ -71,6 +73,8 @@
 - M6 parity: panel, 3-tab strip and ring flash were matched from Swift source only, never rendered; owner's cmux.app wasn't a clean reference (non-default config). Remaining gaps (default theme, full-width titlebar band, panel extras, pressed-icon opacity, scroll fades) are in the M6 journal.
 - M6 perf on macOS: loaded p95 10.7 ms, CPU 0.1 % after stop; footprint 971 MB at the old 50 MB scrollback, not re-measured at 10 MB. Linux (KDE, release): RSS 483 MB under 19 floods, CPU 0.8 % after stop.
 
+- Agent messages (M9): app-side store, delivered only through Claude Code hooks (`hooks message` on UserPromptSubmit, PostToolUse, Stop); a workspace's agent is the surface that last claimed.
+- M9 Parts 2–4: the app, not a hook, runs the naming command (`[auto_naming]`, off by default; user titles win); automations are cmux's `automations.json` with `notify` and `run` only, over six events from one `emit`; Claude Teams maps tmux pane `%N` to `surface:N` through a private `tmux` script.
 - Scripted UI checks: `debug.shortcut.simulate {combo}` (raw v2 request) presses a chord; needs `CMUX_SOCKET_MODE=allowAll` from outside the app.
 - Groups (M8): runs in the workspace list, anchor first, kept by `Workspaces::normalize`; the sidebar draws `rows()`; no empty groups; notification bump stays inside the group; inline group rename; a context menu instead of a palette. Dock (M8): one window-owned `WorkspaceView` in the right sidebar (mode bar Feed/Dock, draggable width), seeded by `~/.config/cmux-linux/dock.json`.
 
