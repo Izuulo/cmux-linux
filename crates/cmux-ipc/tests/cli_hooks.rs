@@ -64,8 +64,9 @@ fn feed_hook_question_with_non_object_tool_input() {
         &[LINUX],
     );
     assert_eq!(
-        v["hookSpecificOutput"]["decision"]["behavior"],
-        json!("allow")
+        v,
+        json!({"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":
+            {"behavior":"allow","updatedInput":{"answers":{"Answer 1":"a"}}}}})
     );
 }
 
