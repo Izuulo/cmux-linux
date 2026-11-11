@@ -14,7 +14,9 @@ name = "cmux"
 path = "src/bin/cmux.rs"
 
 [dependencies]
-serde_json.workspace = true
+cmux-core = { path = "../cmux-core" }
+# Keeps key order of users' settings.json even in a standalone `-p cmux-ipc` build.
+serde_json = { workspace = true, features = ["preserve_order"] }
 uuid.workspace = true
 libc.workspace = true
 futures.workspace = true

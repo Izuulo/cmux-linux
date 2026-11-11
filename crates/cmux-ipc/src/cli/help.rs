@@ -18,7 +18,13 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
     ),
     (
         "Automation",
-        &["send", "send-key", "notify", "dismiss-notification"],
+        &[
+            "send",
+            "send-key",
+            "notify",
+            "dismiss-notification",
+            "hooks",
+        ],
     ),
     ("Diagnostics / Advanced", &["ping", "version"]),
 ];
@@ -56,6 +62,7 @@ pub(crate) fn usage_line(cmd: &str) -> Option<&'static str> {
             "notify [--title <text>] [--subtitle <text>] [--body <text>] [--reply] [--desktop <true|false>] [--clear] [--workspace <id|ref|index>] [--surface <id|ref|index>] [--window <id|ref|index>]"
         }
         "dismiss-notification" => "dismiss-notification (--id <uuid> | --all-read)",
+        "hooks" => "hooks <setup|uninstall> [--settings-file <path>] | hooks feed --source claude",
         "ping" => "ping",
         "version" => "version",
         _ => return None,
@@ -106,6 +113,7 @@ pub(crate) fn command(cmd: &str) -> Option<String> {
     let text = match cmd {
         "notify" => NOTIFY,
         "dismiss-notification" => DISMISS,
+        "hooks" => HOOKS,
         "new-workspace" => NEW_WORKSPACE,
         "new-split" => NEW_SPLIT,
         "send" => SEND,
@@ -150,6 +158,14 @@ Example:
   cmux notify --title "Deploy finished" --desktop false
   cmux notify --clear
 "#;
+
+const HOOKS: &str = "Usage: cmux hooks <setup|uninstall> [--settings-file <path>]
+       cmux hooks feed --source claude
+
+  setup      Add cmux's hooks to Claude Code's settings
+  uninstall  Remove cmux's hooks from Claude Code's settings
+  feed       Run as Claude Code's PermissionRequest hook: show the prompt in the cmux Feed
+";
 
 const DISMISS: &str = "Usage: cmux dismiss-notification (--id <uuid> | --all-read)
 

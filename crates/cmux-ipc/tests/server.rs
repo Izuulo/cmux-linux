@@ -261,3 +261,47 @@ fn oversized_line_closes_connection() {
     assert_eq!(Conn::open(server.path()).ask("ping"), "PONG");
     assert_eq!(writer.join().unwrap(), "", "closed without a reply");
 }
+
+/// Server with a 200 ms deadline whose fake app answers every request after 600 ms.
+fn slow_app() -> (Server, std::path::PathBuf) {
+    let path = temp_dir().join("cmux.sock");
+    let (server, mut rx) =
+        Server::start(&path, Access::AllowAll, Duration::from_millis(200)).unwrap();
+    std::thread::spawn(move || {
+        while let Some(req) = futures::executor::block_on(rx.next()) {
+            std::thread::sleep(Duration::from_millis(600));
+            let method = req.method.clone();
+            req.respond(Ok(json!({"answered": method})));
+        }
+    });
+    (server, path)
+}
+
+#[test]
+fn feed_push_outlives_the_app_deadline() {
+    let (_server, path) = slow_app();
+    let r = Conn::open(&path)
+        .ask(r#"{"id":1,"method":"feed.push","params":{"wait_timeout_seconds":1}}"#);
+    assert_eq!(r, r#"{"id":1,"ok":true,"result":{"answered":"feed.push"}}"#);
+}
+
+#[test]
+fn other_methods_keep_the_deadline() {
+    let (_server, path) = slow_app();
+    let r = Conn::open(&path).ask(r#"{"id":1,"method":"workspace.list"}"#);
+    assert!(r.contains(r#""code":"timeout""#), "{r}");
+}
+
+#[test]
+fn feed_push_wait_out_of_range_is_rejected_by_the_server() {
+    let path = temp_dir().join("cmux.sock");
+    let (_server, mut rx) = Server::start(&path, Access::AllowAll, DEADLINE).unwrap();
+    let r = Conn::open(&path)
+        .ask(r#"{"id":1,"method":"feed.push","params":{"wait_timeout_seconds":121}}"#);
+    assert!(r.contains(r#""code":"invalid_params""#), "{r}");
+    assert!(
+        r.contains("feed.push wait_timeout_seconds must be between 0 and 120"),
+        "{r}"
+    );
+    assert!(rx.try_recv().is_err(), "the app must not see the request");
+}

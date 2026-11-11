@@ -70,7 +70,7 @@ zbus (crates.io 5.19, https://github.com/dbus2/zbus), used by cmux-app on Linux 
 
 Lucide icons (crates/cmux-app/assets/icons/*.svg, https://lucide.dev, lucide-static 0.460.0)
   terminal, square-terminal, x, columns-2, rows-2, plus, panel-left, git-pull-request,
-  git-merge, circle-x, bell, bell-off. Copyright Lucide Contributors and Cole Bemis (Feather). ISC License; see crates/cmux-app/assets/icons/LICENSE-lucide.txt.
+  git-merge, circle-x, bell, bell-off, shield, triangle-alert, list, circle-help. Copyright Lucide Contributors and Cole Bemis (Feather). ISC License; see crates/cmux-app/assets/icons/LICENSE-lucide.txt.
 
 Bonsplit (https://github.com/manaflow-ai/bonsplit @ 58b73fd), cmux's split/tab library
   Copyright (c) 2026 Alasdair Monk. MIT. crates/cmux-core and crates/cmux-app/src/workspace*

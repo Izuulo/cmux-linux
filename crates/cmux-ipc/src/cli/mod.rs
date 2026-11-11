@@ -14,6 +14,7 @@ mod args;
 mod client;
 mod commands;
 mod help;
+mod hooks;
 mod notify;
 
 use args::Global;
@@ -23,6 +24,10 @@ use client::Client;
 pub struct Ctx {
     pub env: HashMap<String, String>,
     pub cwd: PathBuf,
+    /// Standard input for commands that read it; `None` reads the process's own.
+    pub stdin: Option<String>,
+    /// This executable's path.
+    pub exe: Option<PathBuf>,
 }
 
 impl Ctx {
@@ -31,6 +36,8 @@ impl Ctx {
         Ctx {
             env: std::env::vars().collect(),
             cwd: std::env::current_dir().unwrap_or_default(),
+            stdin: None,
+            exe: std::env::current_exe().ok(),
         }
     }
 }
@@ -121,6 +128,7 @@ fn run_inner(args: &[String], ctx: &Ctx) -> Result<String, CliError> {
         "send-key" => commands::send_key(&mut cmd),
         "notify" => notify::notify(&mut cmd),
         "dismiss-notification" => notify::dismiss(&mut cmd),
+        "hooks" => hooks::hooks(&mut cmd),
         other => fail(format!("{other} is not available yet")),
     }
 }

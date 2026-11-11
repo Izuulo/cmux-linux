@@ -1,7 +1,7 @@
 //! gpui actions for cmux's shortcuts and binding them from cmux-config's table.
 
 use cmux_config::keybindings::{Binding, Keybindings};
-use gpui::{Action, App, KeyBinding, PlatformKeyboardMapper};
+use gpui::{Action, App, KeyBinding, KeyBindingContextPredicate, PlatformKeyboardMapper};
 
 gpui::actions!(
     cmux,
@@ -41,6 +41,9 @@ gpui::actions!(
         JumpToUnread,
         MarkAllNotificationsRead,
         ClearAllNotifications,
+        ToggleRightSidebar,
+        FocusRightSidebar,
+        SwitchRightSidebarToFeed,
     ]
 );
 
@@ -93,17 +96,26 @@ pub fn action_for(b: &Binding) -> Option<Box<dyn Action>> {
         "jumpToUnread" => Box::new(JumpToUnread),
         "markAllNotificationsRead" => Box::new(MarkAllNotificationsRead),
         "clearAllNotifications" => Box::new(ClearAllNotifications),
+        "toggleRightSidebar" => Box::new(ToggleRightSidebar),
+        "focusRightSidebar" => Box::new(FocusRightSidebar),
+        "switchRightSidebarToFeed" => Box::new(SwitchRightSidebarToFeed),
         "selectWorkspaceByNumber" => Box::new(SelectWorkspaceByNumber(b.number?)),
         "selectSurfaceByNumber" => Box::new(SelectSurfaceByNumber(b.number?)),
         _ => return None,
     })
 }
 
-/// One config binding as a gpui `KeyBinding` (contextless, so one scheme decides precedence;
-/// research-gpui.md §1.5). Never panics: a bad keystroke is an `Err`.
+/// One config binding as a gpui `KeyBinding`: contextless, so one scheme decides precedence
+/// (research-gpui.md §1.5), unless the config limits it to a key context. Never panics: a bad
+/// keystroke is an `Err`.
 pub fn key_binding(b: &Binding, mapper: &dyn PlatformKeyboardMapper) -> Result<KeyBinding, String> {
     let action = action_for(b).ok_or_else(|| format!("no handler for `{}`", b.action))?;
-    KeyBinding::load(&b.keystroke, action, None, false, None, mapper)
+    let context = b
+        .context
+        .map(|c| KeyBindingContextPredicate::parse(c).map(Into::into))
+        .transpose()
+        .map_err(|e| format!("keybindings.{}: {e}", b.action))?;
+    KeyBinding::load(&b.keystroke, action, context, false, None, mapper)
         .map_err(|e| format!("keybindings.{}: {e}", b.action))
 }
 
@@ -132,6 +144,7 @@ mod tests {
                 action: name,
                 keystroke: String::new(),
                 number: Some(1),
+                context: None,
             };
             assert!(action_for(&b).is_some(), "{name}");
         }
@@ -161,6 +174,33 @@ mod tests {
             key: key.into(),
             key_char: key_char.map(Into::into),
         }
+    }
+
+    #[test]
+    fn ctrl_4_shows_the_feed_only_in_the_right_sidebar() {
+        let ctrl_4 = [typed(false, true, false, "4", None)];
+        let feed = binding_for("switchRightSidebarToFeed");
+        assert_eq!(feed.match_keystrokes(&ctrl_4), Some(false));
+        let root = gpui::KeyContext::parse("Root").unwrap();
+        let sidebar = gpui::KeyContext::parse("RightSidebar").unwrap();
+        let pred = feed.predicate().unwrap();
+        assert_eq!(pred.depth_of(std::slice::from_ref(&root)), None);
+        assert!(pred.depth_of(&[root, sidebar]).is_some());
+        // Tab 4 stays contextless. gpui 0.2.2 ranks a contextless binding as deepest, so inside
+        // the sidebar both match; the Feed wins because tab 4's handler is on WorkspaceView (off
+        // the sidebar's dispatch path) and its later DEFAULTS entry breaks the tie.
+        let k = keybindings(None, "test");
+        let tab = k
+            .bindings
+            .iter()
+            .find(|b| b.action == "selectSurfaceByNumber" && b.keystroke == "ctrl-4")
+            .unwrap();
+        assert!(
+            key_binding(tab, &DummyKeyboardMapper)
+                .unwrap()
+                .predicate()
+                .is_none()
+        );
     }
 
     #[test]

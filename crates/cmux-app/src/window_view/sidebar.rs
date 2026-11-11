@@ -151,7 +151,7 @@ pub(crate) fn drop_gap(row_mids: &[f32], y: f32) -> usize {
 impl WindowView {
     /// The drawn sidebar width, or `None` when hidden.
     pub(super) fn sidebar_px(&self, window: &Window) -> Option<f32> {
-        let window_w = f32::from(window.viewport_size().width);
+        let window_w = f32::from(window.viewport_size().width) - self.right_sidebar_px();
         self.sidebar_visible
             .then(|| clamp_width(self.sidebar_width, window_w))
     }
@@ -255,7 +255,7 @@ impl WindowView {
         cx.notify();
     }
 
-    fn palette(&self) -> SidebarPalette {
+    pub(super) fn palette(&self) -> SidebarPalette {
         let cfg = &self.style.cfg;
         chrome::sidebar_palette(chrome::rgba(cfg.background, cfg.background_opacity))
     }

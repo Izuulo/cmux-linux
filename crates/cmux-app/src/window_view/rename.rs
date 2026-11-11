@@ -3,8 +3,8 @@
 use cmux_core::WorkspaceId;
 use gpui::{
     Context, EventEmitter, FocusHandle, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
-    ParentElement, Render, Rgba, StatefulInteractiveElement, Styled, Subscription, Window, div,
-    prelude::*, px,
+    Keystroke, ParentElement, Render, Rgba, StatefulInteractiveElement, Styled, Subscription,
+    Window, div, prelude::*, px,
 };
 
 use crate::actions::*;
@@ -16,6 +16,20 @@ pub(crate) enum RenameKey<'a> {
     Enter,
     Escape,
     Other,
+}
+
+impl<'a> From<&'a Keystroke> for RenameKey<'a> {
+    fn from(ks: &'a Keystroke) -> Self {
+        match ks.key.as_str() {
+            "backspace" => RenameKey::Backspace,
+            "enter" => RenameKey::Enter,
+            "escape" => RenameKey::Escape,
+            _ => match &ks.key_char {
+                Some(c) if !ks.modifiers.control && !ks.modifiers.platform => RenameKey::Char(c),
+                _ => RenameKey::Other,
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -144,17 +158,7 @@ impl RenameInput {
     }
 
     fn on_key(&mut self, ev: &KeyDownEvent, cx: &mut Context<Self>) {
-        let ks = &ev.keystroke;
-        let key = match ks.key.as_str() {
-            "backspace" => RenameKey::Backspace,
-            "enter" => RenameKey::Enter,
-            "escape" => RenameKey::Escape,
-            _ => match &ks.key_char {
-                Some(c) if !ks.modifiers.control && !ks.modifiers.platform => RenameKey::Char(c),
-                _ => RenameKey::Other,
-            },
-        };
-        match self.state.apply(key) {
+        match self.state.apply(RenameKey::from(&ev.keystroke)) {
             RenameOutcome::Editing => cx.notify(),
             RenameOutcome::Commit(t) => self.finish(Some(t), cx),
             RenameOutcome::Cancel => self.finish(None, cx),

@@ -55,6 +55,8 @@ pub struct WorkspaceView {
     drop_target: Option<(PaneId, usize)>,
     /// Width the sidebar takes from the left of the window.
     left_inset: f32,
+    /// Width the right sidebar (Feed) takes from the right.
+    right_inset: f32,
     /// Only the active workspace pulls focus back after a focus loss.
     active: bool,
     has_terminals: bool,
@@ -122,6 +124,7 @@ impl WorkspaceView {
             tab_bounds: Rc::default(),
             drop_target: None,
             left_inset: 0.0,
+            right_inset: 0.0,
             active: true,
             has_terminals: true,
             attention: HashSet::new(),
@@ -143,8 +146,9 @@ impl WorkspaceView {
         self.has_terminals
     }
 
-    pub fn set_left_inset(&mut self, inset: f32) {
-        self.left_inset = inset;
+    pub fn set_insets(&mut self, left: f32, right: f32) {
+        self.left_inset = left;
+        self.right_inset = right;
     }
 
     pub fn set_active(&mut self, active: bool) {
@@ -355,7 +359,7 @@ impl WorkspaceView {
     fn container(&self, window: &Window) -> (f32, f32, f32) {
         let size = window.viewport_size();
         (
-            (f32::from(size.width) - self.left_inset).max(0.0),
+            (f32::from(size.width) - self.left_inset - self.right_inset).max(0.0),
             f32::from(size.height),
             window.scale_factor(),
         )

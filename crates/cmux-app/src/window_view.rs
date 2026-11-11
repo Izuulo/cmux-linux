@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use cmux_core::{Notifications, WorkspaceClosed, WorkspaceId, Workspaces};
+use cmux_core::{FeedItemId, FeedStore, Notifications, WorkspaceClosed, WorkspaceId, Workspaces};
 use cmux_meta::pr::{self, PrKey, PrPoller};
 use cmux_meta::{WorkspaceInput, WorkspaceMeta};
 use gpui::{
@@ -21,6 +21,9 @@ use crate::style::TermStyle;
 use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
 pub(crate) mod control;
+mod feed;
+mod feed_cards;
+mod feed_ctl;
 mod notify;
 mod panel;
 mod rename;
@@ -54,6 +57,21 @@ pub struct WindowView {
     prs: PrPoller,
     pr_in_flight: bool,
     notifications: Notifications,
+    /// Agent prompts (M7) and the `feed.push` requests still waiting on them, by request id.
+    feed: FeedStore,
+    feed_waiters: HashMap<String, feed_ctl::Waiter>,
+    /// The right sidebar (Feed, plan M7 D7): closed at launch, fixed width.
+    right_sidebar_open: bool,
+    feed_focus: FocusHandle,
+    /// The card j/k moved to; Enter jumps to its surface.
+    feed_selected: Option<FeedItemId>,
+    feed_scroll: ScrollHandle,
+    /// Plan feedback text and question picks of pending cards (D8), dropped when a card ends.
+    feed_feedback: HashMap<FeedItemId, rename::RenameState>,
+    feed_picks: HashMap<FeedItemId, feed_cards::QuestionPicks>,
+    /// The plan card whose feedback field holds (or last held) `feed_field_focus`.
+    feed_editing: Option<FeedItemId>,
+    feed_field_focus: FocusHandle,
     /// Handles and env vars for new shells; shared with every `WorkspaceView`.
     shell: Rc<control::ShellEnv>,
     /// The control socket (M5), while it runs.
@@ -114,6 +132,16 @@ impl WindowView {
             prs: PrPoller::new(),
             pr_in_flight: false,
             notifications: Notifications::new(),
+            feed: FeedStore::default(),
+            feed_waiters: HashMap::new(),
+            right_sidebar_open: false,
+            feed_focus: cx.focus_handle(),
+            feed_selected: None,
+            feed_scroll: ScrollHandle::new(),
+            feed_feedback: HashMap::new(),
+            feed_picks: HashMap::new(),
+            feed_editing: None,
+            feed_field_focus: cx.focus_handle(),
             shell,
             _server: server,
             panel_open: false,
@@ -132,6 +160,15 @@ impl WindowView {
             this._tasks.push(cx.spawn_in(window, async move |this, cx| {
                 use futures::StreamExt;
                 while let Some(req) = requests.next().await {
+                    if req.method == "feed.push" {
+                        // Held until answered (plan M7 D5).
+                        let held =
+                            this.update_in(cx, |this, window, cx| this.feed_push(req, window, cx));
+                        if held.is_err() {
+                            return;
+                        }
+                        continue;
+                    }
                     let reply = this.update_in(cx, |this, window, cx| {
                         this.control(&req.method, &req.params, window, cx)
                     });
@@ -189,7 +226,10 @@ impl WindowView {
             }
             WorkspaceEvent::Focused(s) => this.on_focused(id, *s, window, cx),
             WorkspaceEvent::Typed(s) => this.on_typed(id, *s, cx),
-            WorkspaceEvent::Closed(s) => this.on_closed(id, *s, cx),
+            WorkspaceEvent::Closed(s) => {
+                this.feed_close_surface(id, *s, cx);
+                this.on_closed(id, *s, cx);
+            }
         });
         self.subs.insert(id, sub);
         self.views.insert(id, view);
@@ -227,12 +267,13 @@ impl WindowView {
     fn select(&mut self, id: WorkspaceId, window: &mut Window, cx: &mut Context<Self>) {
         self.workspaces.select(id);
         let inset = self.sidebar_px(window).unwrap_or(0.);
+        let right = self.right_sidebar_px();
         for (wid, view) in &self.views {
             view.update(cx, |v, _| v.set_active(*wid == id));
         }
         // Splits right after the switch need this workspace's width now, not next frame.
         if let Some(view) = self.views.get(&id) {
-            view.update(cx, |v, _| v.set_left_inset(inset));
+            view.update(cx, |v, _| v.set_insets(inset, right));
         }
         if let Some(view) = self.views.get(&id) {
             view.update(cx, |v, cx| v.focus_active(window, cx));
@@ -275,6 +316,7 @@ impl WindowView {
                 self.subs.remove(&id);
                 self.views.remove(&id);
                 self.titles.remove(&id);
+                self.feed_close_workspace(id, cx);
                 let gone = self.notifications.remove_workspace(id);
                 self.after_change(gone, cx);
                 if was_selected {
@@ -440,8 +482,9 @@ impl Render for WindowView {
         self.refresh_title(self.workspaces.selected(), cx);
         let selected = self.views.get(&self.workspaces.selected()).cloned();
         let width = self.sidebar_px(window);
+        let right = self.right_sidebar_px();
         if let Some(v) = &selected {
-            v.update(cx, |v, _| v.set_left_inset(width.unwrap_or(0.)));
+            v.update(cx, |v, _| v.set_insets(width.unwrap_or(0.), right));
         }
         div()
             .relative()
@@ -475,6 +518,15 @@ impl Render for WindowView {
                 }
             }))
             .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| this.toggle_sidebar(cx)))
+            .on_action(
+                cx.listener(|this, _: &ToggleRightSidebar, w, cx| this.toggle_right_sidebar(w, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &FocusRightSidebar, w, cx| this.focus_right_sidebar(w, cx)),
+            )
+            .on_action(cx.listener(|this, _: &SwitchRightSidebarToFeed, w, cx| {
+                this.focus_right_sidebar(w, cx)
+            }))
             .on_action(cx.listener(|this, _: &ShowNotifications, _, cx| {
                 this.panel_open = !this.panel_open;
                 cx.notify();
@@ -499,6 +551,9 @@ impl Render for WindowView {
             }))
             .when_some(width, |d, w| d.child(self.render_sidebar(w, cx)))
             .child(div().flex_1().min_w(px(0.)).h_full().children(selected))
+            .when(self.right_sidebar_open, |d| {
+                d.child(self.render_right_sidebar(window, cx))
+            })
             .when_some(width, |d, w| d.child(self.render_resize_band(w)))
             .children(self.render_panel(window, cx))
     }
