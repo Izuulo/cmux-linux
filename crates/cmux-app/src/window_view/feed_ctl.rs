@@ -111,6 +111,14 @@ impl WindowView {
         let Some(w) = self.feed_waiters.remove(request_id) else {
             return;
         };
+        if let Some(id) = self.feed.items().find(|i| i.request_id == request_id) {
+            let id = id.id;
+            self.feed_feedback.remove(&id);
+            self.feed_picks.remove(&id);
+            if self.feed_editing == Some(id) {
+                self.feed_editing = None;
+            }
+        }
         let reply: Value = match end {
             FeedEnd::Answer(d) => {
                 let v = json!({"status": "resolved", "decision": decision_json(&d)});

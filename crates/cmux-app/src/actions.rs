@@ -186,7 +186,9 @@ mod tests {
         let pred = feed.predicate().unwrap();
         assert_eq!(pred.depth_of(std::slice::from_ref(&root)), None);
         assert!(pred.depth_of(&[root, sidebar]).is_some());
-        // Tab 4 stays contextless; gpui's Keymap prefers the deeper context inside the sidebar.
+        // Tab 4 stays contextless. gpui 0.2.2 ranks a contextless binding as deepest, so inside
+        // the sidebar both match; the Feed wins because tab 4's handler is on WorkspaceView (off
+        // the sidebar's dispatch path) and its later DEFAULTS entry breaks the tie.
         let k = keybindings(None, "test");
         let tab = k
             .bindings

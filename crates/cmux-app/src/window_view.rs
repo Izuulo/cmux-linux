@@ -22,6 +22,7 @@ use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
 pub(crate) mod control;
 mod feed;
+mod feed_cards;
 mod feed_ctl;
 mod notify;
 mod panel;
@@ -65,6 +66,12 @@ pub struct WindowView {
     /// The card j/k moved to; Enter jumps to its surface.
     feed_selected: Option<FeedItemId>,
     feed_scroll: ScrollHandle,
+    /// Plan feedback text and question picks of pending cards (D8), dropped when a card ends.
+    feed_feedback: HashMap<FeedItemId, rename::RenameState>,
+    feed_picks: HashMap<FeedItemId, feed_cards::QuestionPicks>,
+    /// The plan card whose feedback field holds (or last held) `feed_field_focus`.
+    feed_editing: Option<FeedItemId>,
+    feed_field_focus: FocusHandle,
     /// Handles and env vars for new shells; shared with every `WorkspaceView`.
     shell: Rc<control::ShellEnv>,
     /// The control socket (M5), while it runs.
@@ -131,6 +138,10 @@ impl WindowView {
             feed_focus: cx.focus_handle(),
             feed_selected: None,
             feed_scroll: ScrollHandle::new(),
+            feed_feedback: HashMap::new(),
+            feed_picks: HashMap::new(),
+            feed_editing: None,
+            feed_field_focus: cx.focus_handle(),
             shell,
             _server: server,
             panel_open: false,
@@ -541,7 +552,7 @@ impl Render for WindowView {
             .when_some(width, |d, w| d.child(self.render_sidebar(w, cx)))
             .child(div().flex_1().min_w(px(0.)).h_full().children(selected))
             .when(self.right_sidebar_open, |d| {
-                d.child(self.render_right_sidebar(cx))
+                d.child(self.render_right_sidebar(window, cx))
             })
             .when_some(width, |d, w| d.child(self.render_resize_band(w)))
             .children(self.render_panel(window, cx))

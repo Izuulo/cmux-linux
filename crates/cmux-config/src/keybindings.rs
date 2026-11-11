@@ -78,8 +78,10 @@ pub const DEFAULTS: &[(&str, &[&str])] = &[
 
 const NUMBERED: &[&str] = &["selectSurfaceByNumber", "selectWorkspaceByNumber"];
 
-/// Actions that only fire while focus is inside a gpui key context; a deeper context beats
-/// the contextless bindings, so Ctrl+4 still selects tab 4 in a terminal (plan M7 D7).
+/// Actions that only fire while focus is inside a gpui key context, so Ctrl+4 still selects
+/// tab 4 in a terminal (plan M7 D7). In the sidebar both bindings match (gpui 0.2.2 counts a
+/// contextless one as deepest); the Feed wins because tab 4's handler lives on WorkspaceView,
+/// off the sidebar's dispatch path, and its later DEFAULTS entry breaks the tie.
 fn context(action: &str) -> Option<&'static str> {
     (action == "switchRightSidebarToFeed").then_some("RightSidebar")
 }

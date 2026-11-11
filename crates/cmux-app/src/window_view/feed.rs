@@ -1,13 +1,15 @@
 //! The right sidebar's Feed (plan M7 D7-D10, rf §5): agent prompts as cards, newest first.
-//! Permission cards answer here; plan and question cards show their header only (Task 8).
+//! Permission cards are here; plan and question cards are in `feed_cards.rs` (D8).
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use cmux_core::{FeedItem, FeedItemId, FeedKind, FeedStatus, PermissionMode, Preview, age_label};
+use cmux_core::{
+    Decision, FeedItem, FeedItemId, FeedKind, FeedStatus, PermissionMode, Preview, age_label,
+};
 use gpui::{
-    ClickEvent, Context, FontWeight, InteractiveElement, IntoElement, KeyDownEvent, Keystroke,
-    Modifiers, ParentElement, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div,
-    prelude::*, px, rgb, svg,
+    AnyElement, ClickEvent, Context, Div, FontWeight, InteractiveElement, IntoElement,
+    KeyDownEvent, Keystroke, Modifiers, ParentElement, Rgba, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, Window, div, prelude::*, px, rgb, svg,
 };
 
 use super::WindowView;
@@ -21,27 +23,27 @@ const HEADER_H: f32 = 28.0;
 const HEADER_PAD_X: f32 = 12.0;
 const ROW_PAD_X: f32 = 12.0;
 const ROW_PAD_Y: f32 = 10.0;
-const ROW_GAP: f32 = 10.0;
+pub(super) const ROW_GAP: f32 = 10.0;
 const DIVIDER_ALPHA: f32 = 0.08;
 /// Answered and expired cards (D10).
 const DONE_OPACITY: f32 = 0.6;
-const TITLE_ALPHA: f32 = 0.92;
+pub(super) const TITLE_ALPHA: f32 = 0.92;
 const EMPTY_ALPHA: f32 = 0.7;
 const EMPTY_PAD_X: f32 = 16.0;
 const KIND_ICON: f32 = 12.0;
 const KIND_BOX: f32 = 14.0;
 const CHIP_PX: f32 = 10.0;
 const CHIP_RADIUS: f32 = 4.0;
-const CLAUDE_CHIP_ALPHA: f32 = 0.18;
+pub(super) const CLAUDE_CHIP_ALPHA: f32 = 0.18;
 const BADGE_ALPHA: f32 = 0.2;
-const CODE_PAD: f32 = 10.0;
-const CODE_RADIUS: f32 = 6.0;
-const CODE_FILL_ALPHA: f32 = 0.05;
-const CODE_STROKE_ALPHA: f32 = 0.10;
+pub(super) const CODE_PAD: f32 = 10.0;
+pub(super) const CODE_RADIUS: f32 = 6.0;
+pub(super) const CODE_FILL_ALPHA: f32 = 0.05;
+pub(super) const CODE_STROKE_ALPHA: f32 = 0.10;
 /// Not from cmux: keeps a huge command or JSON from filling the sidebar.
 const CODE_LINES: usize = 12;
 const BUTTON_GAP: f32 = 6.0;
-const BUTTON_RADIUS: f32 = 6.0;
+pub(super) const BUTTON_RADIUS: f32 = 6.0;
 /// The compact FeedButton: four medium buttons (12×5 at 10.5 pt) don't fit in 295.
 const BUTTON_PX: f32 = 10.0;
 const BUTTON_PAD_X: f32 = 8.0;
@@ -50,6 +52,8 @@ const BUTTON_PAD_Y: f32 = 4.0;
 const SELECTED_ALPHA: f32 = 0.06;
 /// Not from cmux: "dimmed" green of the submitted line.
 const SUBMITTED_ALPHA: f32 = 0.8;
+/// Not from cmux: a disabled button (Send feedback without text, Submit before every answer).
+const DISABLED_OPACITY: f32 = 0.4;
 
 /// What a key does in the Feed (D9).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,20 +113,73 @@ fn preview_text(p: &Preview) -> (String, Option<String>) {
     }
 }
 
-fn with_alpha(c: Rgba, a: f32) -> Rgba {
+pub(super) fn with_alpha(c: Rgba, a: f32) -> Rgba {
     Rgba { a, ..c }
+}
+
+pub(super) fn chip(label: impl Into<SharedString>, fg: Rgba, bg: Rgba) -> Div {
+    div()
+        .flex_none()
+        .px(px(5.))
+        .py(px(2.))
+        .rounded(px(CHIP_RADIUS))
+        .bg(bg)
+        .text_color(fg)
+        .text_size(px(CHIP_PX))
+        .font_weight(FontWeight::MEDIUM)
+        .child(label.into())
+}
+
+/// The compact FeedButton; `enabled: false` dims it (the caller adds no click then).
+pub(super) fn feed_button(label: &'static str, fg: Rgba, bg: Rgba, enabled: bool) -> Stateful<Div> {
+    div()
+        .id(label)
+        .flex()
+        .flex_1()
+        .flex_basis(px(0.))
+        .min_w(px(0.))
+        .items_center()
+        .justify_center()
+        .px(px(BUTTON_PAD_X))
+        .py(px(BUTTON_PAD_Y))
+        .rounded(px(BUTTON_RADIUS))
+        .bg(bg)
+        .text_color(fg)
+        .text_size(px(BUTTON_PX))
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_center()
+        .when(enabled, |d| d.hover(|s| s.opacity(0.85)))
+        .when(!enabled, |d| d.opacity(DISABLED_OPACITY))
+        .child(label)
+}
+
+pub(super) fn button_row() -> Div {
+    div().flex().flex_row().gap(px(BUTTON_GAP))
+}
+
+/// Pending: `pending()`; answered: the submitted line; expired: nothing.
+pub(super) fn card_footer(
+    status: &FeedStatus,
+    c: FeedColors,
+    pending: impl FnOnce() -> AnyElement,
+) -> Option<AnyElement> {
+    match status {
+        FeedStatus::Pending => Some(pending()),
+        FeedStatus::Resolved(d) => Some(submitted(&d.summary(), c).into_any_element()),
+        FeedStatus::Expired => None,
+    }
 }
 
 /// SwiftUI's system colours (light, dark) and the label colours the Feed uses.
 #[derive(Clone, Copy)]
-struct FeedColors {
-    primary: Rgba,
-    secondary: Rgba,
-    orange: Rgba,
-    purple: Rgba,
-    blue: Rgba,
-    green: Rgba,
-    accent: Rgba,
+pub(super) struct FeedColors {
+    pub primary: Rgba,
+    pub secondary: Rgba,
+    pub orange: Rgba,
+    pub purple: Rgba,
+    pub blue: Rgba,
+    pub green: Rgba,
+    pub accent: Rgba,
 }
 
 impl FeedColors {
@@ -189,6 +246,10 @@ impl WindowView {
     }
 
     fn on_feed_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        // Only the list itself navigates; the feedback field stops its keys before here.
+        if !self.feed_focus.is_focused(window) {
+            return;
+        }
         let Some(key) = feed_key(&ev.keystroke) else {
             return;
         };
@@ -211,7 +272,11 @@ impl WindowView {
         }
     }
 
-    pub(super) fn render_right_sidebar(&self, cx: &Context<Self>) -> impl IntoElement + use<> {
+    pub(super) fn render_right_sidebar(
+        &self,
+        window: &Window,
+        cx: &Context<Self>,
+    ) -> impl IntoElement + use<> {
         let p = self.palette();
         let c = FeedColors::new(p);
         let now_ms = SystemTime::now()
@@ -221,7 +286,7 @@ impl WindowView {
             .feed
             .items()
             .enumerate()
-            .map(|(k, item)| self.render_card(item, k > 0, now_ms, c, cx))
+            .map(|(k, item)| self.render_card(item, k > 0, now_ms, c, window, cx))
             .collect();
         let body = if rows.is_empty() {
             empty_state(c).into_any_element()
@@ -290,6 +355,7 @@ impl WindowView {
         divider: bool,
         now_ms: u64,
         c: FeedColors,
+        window: &Window,
         cx: &Context<Self>,
     ) -> impl IntoElement + use<> {
         let id = item.id;
@@ -297,18 +363,6 @@ impl WindowView {
             FeedKind::Permission { .. } => ("icons/shield.svg", c.orange),
             FeedKind::ExitPlan { .. } => ("icons/list.svg", c.purple),
             FeedKind::Question { .. } => ("icons/circle-help.svg", c.blue),
-        };
-        let chip = |label: String, fg: Rgba, bg: Rgba| {
-            div()
-                .flex_none()
-                .px(px(5.))
-                .py(px(2.))
-                .rounded(px(CHIP_RADIUS))
-                .bg(bg)
-                .text_color(fg)
-                .text_size(px(CHIP_PX))
-                .font_weight(FontWeight::MEDIUM)
-                .child(label)
         };
         let claude = Rgba {
             r: 0.92,
@@ -345,7 +399,7 @@ impl WindowView {
             )
             .when(item.source == "claude", |d| {
                 d.child(chip(
-                    "Claude".into(),
+                    "Claude",
                     claude,
                     with_alpha(claude, CLAUDE_CHIP_ALPHA),
                 ))
@@ -355,13 +409,30 @@ impl WindowView {
                 c.secondary,
                 with_alpha(c.primary, CODE_FILL_ALPHA),
             ));
-        let body = match (&item.kind, &item.status) {
-            (FeedKind::Permission { tool, preview }, status) => Some(
-                self.render_permission(id, tool, preview, status, c, cx)
-                    .into_any_element(),
-            ),
-            (_, FeedStatus::Resolved(d)) => Some(submitted(&d.summary(), c).into_any_element()),
-            _ => None,
+        let status = &item.status;
+        let body = match &item.kind {
+            FeedKind::Permission { tool, preview } => self
+                .render_permission(id, tool, preview, status, c, cx)
+                .into_any_element(),
+            FeedKind::ExitPlan {
+                plan,
+                allowed_prompts,
+                plan_file,
+            } => self
+                .render_plan(
+                    id,
+                    plan,
+                    allowed_prompts,
+                    plan_file.as_deref(),
+                    status,
+                    c,
+                    window,
+                    cx,
+                )
+                .into_any_element(),
+            FeedKind::Question { prompts } => self
+                .render_question(id, prompts, status, c, cx)
+                .into_any_element(),
         };
         let selected = self.feed_selected == Some(id);
         div()
@@ -381,7 +452,7 @@ impl WindowView {
                 d.opacity(DONE_OPACITY)
             })
             .child(header)
-            .children(body)
+            .child(body)
             .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
                 this.feed_selected = Some(id);
                 if ev.click_count() == 2 {
@@ -450,11 +521,9 @@ impl WindowView {
                     .text_ellipsis()
                     .child(clip_message(&n).to_string())
             }));
-        let footer = match status {
-            FeedStatus::Pending => Some(self.permission_buttons(id, c, cx).into_any_element()),
-            FeedStatus::Resolved(d) => Some(submitted(&d.summary(), c).into_any_element()),
-            FeedStatus::Expired => None,
-        };
+        let footer = card_footer(status, c, || {
+            self.permission_buttons(id, c, cx).into_any_element()
+        });
         div()
             .flex()
             .flex_col()
@@ -489,34 +558,14 @@ impl WindowView {
             ("Always Allow", PermissionMode::Always, white(1.), c.accent),
             ("All tools", PermissionMode::All, white(1.), c.accent),
         ];
-        div()
-            .flex()
-            .flex_row()
-            .gap(px(BUTTON_GAP))
-            .children(buttons.into_iter().map(|(label, mode, fg, bg)| {
-                div()
-                    .id(SharedString::from(label))
-                    .flex()
-                    .flex_1()
-                    .flex_basis(px(0.))
-                    .min_w(px(0.))
-                    .items_center()
-                    .justify_center()
-                    .px(px(BUTTON_PAD_X))
-                    .py(px(BUTTON_PAD_Y))
-                    .rounded(px(BUTTON_RADIUS))
-                    .bg(bg)
-                    .text_color(fg)
-                    .text_size(px(BUTTON_PX))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_center()
-                    .hover(|s| s.opacity(0.85))
-                    .child(label)
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        cx.stop_propagation();
-                        this.feed_answer(id, cmux_core::Decision::Permission(mode), cx);
-                    }))
-            }))
+        button_row().children(buttons.into_iter().map(|(label, mode, fg, bg)| {
+            feed_button(label, fg, bg, true).on_click(cx.listener(
+                move |this, _: &ClickEvent, _, cx| {
+                    cx.stop_propagation();
+                    this.feed_answer(id, Decision::Permission(mode), cx);
+                },
+            ))
+        }))
     }
 }
 
