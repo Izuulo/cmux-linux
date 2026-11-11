@@ -269,6 +269,18 @@ impl WindowView {
                 self.group_from_socket(&snap, method, params, window, cx)
             }
             "surface.split" => self.split_from_socket(&snap, params, window, cx),
+            // cmux's name; the tmux shim's `kill-pane` (M9 plan T4). Same as closing the tab.
+            "surface.close" => {
+                require(params, "surface_id")?;
+                let t = snap.surface(params)?;
+                let reply = snap.target_payload(&t);
+                if let Some(view) = self.views.get(&WorkspaceId(t.ws.key)).cloned() {
+                    view.update(cx, |v, cx| {
+                        v.close_surface(SurfaceId(t.surface.key), window, cx)
+                    });
+                }
+                Ok(reply)
+            }
             "surface.send_text" | "surface.send_key" | "terminal.paste" => {
                 self.send_from_socket(&snap, method, params, cx)
             }
