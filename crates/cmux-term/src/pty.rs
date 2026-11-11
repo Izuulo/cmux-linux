@@ -6,8 +6,10 @@
 //!
 //! The reader `poll`s the master, a wake socket and (Linux) a pidfd of the shell, so it never
 //! blocks forever: dropping the `Session` wakes it, and the shell exiting ends the session even
-//! when a `setsid` grandchild still holds the PTY slave open.
+//! when a `setsid` grandchild still holds the PTY slave open (macOS needs no pidfd: it revokes
+//! the slave when the shell exits, so the master sees EOF).
 
+use std::ffi::OsString;
 use std::io::{self, Read, Write};
 use std::os::fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::os::unix::net::UnixStream;
@@ -81,6 +83,14 @@ impl Drop for ChildGuard {
     }
 }
 
+/// Names starting `CMUX_` (not `CMUXTERM_*`, the CLI tuning knobs).
+fn inherited_cmux_keys(names: impl IntoIterator<Item = OsString>) -> Vec<OsString> {
+    names
+        .into_iter()
+        .filter(|k| k.as_encoded_bytes().starts_with(b"CMUX_"))
+        .collect()
+}
+
 impl Session {
     /// The user's login shell (`$SHELL`, else the passwd entry) in `$HOME`.
     pub fn shell_command() -> CommandBuilder {
@@ -89,6 +99,10 @@ impl Session {
         // keyboard is negotiated by escape sequence either way. Ship terminfo in M6.
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
+        // A parent cmux's hook shims and token must not leak; the caller re-adds ours.
+        for k in inherited_cmux_keys(std::env::vars_os().map(|(k, _)| k)) {
+            cmd.env_remove(k);
+        }
         if let Some(home) = std::env::var_os("HOME") {
             cmd.cwd(home);
         }
@@ -322,9 +336,7 @@ fn wait(
     })
 }
 
-/// A pidfd that becomes readable when `pid` exits.
-// shortcut: Linux only (pidfd_open, 5.3+); elsewhere the session ends on PTY EOF as in M1, so a
-// setsid grandchild can keep a pane open. Use kqueue EVFILT_PROC in the M6 macOS build.
+/// A pidfd that becomes readable when `pid` exits (Linux only).
 fn pidfd(pid: u32) -> Option<OwnedFd> {
     #[cfg(target_os = "linux")]
     {
@@ -336,6 +348,8 @@ fn pidfd(pid: u32) -> Option<OwnedFd> {
     }
     #[cfg(not(target_os = "linux"))]
     {
+        // macOS revokes the slave when the session leader exits, so the master sees EOF even
+        // while a job holds it.
         let _ = pid;
         None
     }
@@ -348,8 +362,37 @@ pub fn process_cwd(pid: u32) -> Option<String> {
     dir.into_os_string().into_string().ok()
 }
 
-// shortcut: no cwd fallback off Linux, so macOS splits rely on OSC 7; use proc_pidinfo in M6.
-#[cfg(not(target_os = "linux"))]
+/// A process's working directory via `proc_pidinfo`.
+#[cfg(target_os = "macos")]
+pub fn process_cwd(pid: u32) -> Option<String> {
+    // SAFETY: zeroed proc_vnodepathinfo is valid; proc_pidinfo writes at most `size` bytes.
+    let mut info: libc::proc_vnodepathinfo = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<libc::proc_vnodepathinfo>() as libc::c_int;
+    let n = unsafe {
+        libc::proc_pidinfo(
+            pid as libc::c_int,
+            libc::PROC_PIDVNODEPATHINFO,
+            0,
+            (&mut info as *mut libc::proc_vnodepathinfo).cast(),
+            size,
+        )
+    };
+    if n != size {
+        return None;
+    }
+    let raw = &info.pvi_cdir.vip_path;
+    // SAFETY: c_char is u8-sized; libc declares vip_path as nested arrays, so use the byte size.
+    let bytes = unsafe {
+        std::slice::from_raw_parts(raw.as_ptr().cast::<u8>(), std::mem::size_of_val(raw))
+    };
+    let path = std::ffi::CStr::from_bytes_until_nul(bytes).ok()?;
+    path.to_str()
+        .ok()
+        .filter(|p| !p.is_empty())
+        .map(String::from)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub fn process_cwd(_pid: u32) -> Option<String> {
     None
 }
@@ -357,6 +400,21 @@ pub fn process_cwd(_pid: u32) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inherited_cmux_keys_matches_cmux_prefix_only() {
+        let names = [
+            "PATH",
+            "CMUX_SURFACE_ID",
+            "CMUX_CLAUDE_HOOK_SHIM",
+            "CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC",
+        ];
+        let got = inherited_cmux_keys(names.map(OsString::from));
+        assert_eq!(
+            got,
+            ["CMUX_SURFACE_ID", "CMUX_CLAUDE_HOOK_SHIM"].map(OsString::from)
+        );
+    }
 
     #[test]
     fn a_panic_under_the_lock_is_caught_and_unpoisoned() {
@@ -368,7 +426,7 @@ mod tests {
         assert_eq!(*m.lock().unwrap(), 1);
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn process_cwd_reads_proc() {
         let here = std::env::current_dir().unwrap();

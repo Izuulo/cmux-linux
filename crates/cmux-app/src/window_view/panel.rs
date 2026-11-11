@@ -20,14 +20,33 @@ const MARGIN: f32 = 8.0;
 const HEADER_PAD_X: f32 = 14.0;
 const HEADER_PAD_Y: f32 = 10.0;
 const ROW_MIN_H: f32 = 56.0;
+const ROW_LEAD: f32 = 4.0;
 const UNREAD_BAR: f32 = 2.5;
+const UNREAD_BAR_INSET: f32 = 6.0;
+const CONTENT_PAD_L: f32 = 10.0;
+const CONTENT_PAD_Y: f32 = 8.0;
+/// Room after the time for the hover clear button.
+const TIME_PAD_R: f32 = 34.0;
 const CLOSE: f32 = 20.0;
+const CLOSE_RIGHT: f32 = 10.0;
 const HOVER_ALPHA: f32 = 0.11;
+/// Clear button: circle fill and glyph, both primary at these alphas.
+const CLOSE_FILL_ALPHA: f32 = 0.1;
+const CLOSE_GLYPH_ALPHA: f32 = 0.7;
+/// Header buttons: secondary fill when enabled / disabled.
+const BUTTON_FILL_ALPHA: f32 = 0.12;
+const BUTTON_FILL_DISABLED_ALPHA: f32 = 0.05;
+/// Empty-state icon: secondary at this alpha.
+const EMPTY_ICON_ALPHA: f32 = 0.7;
+/// Row dividers: separator at this alpha, indented from the leading edge.
+const DIVIDER_ALPHA: f32 = 0.4;
+const DIVIDER_INSET: f32 = 18.0;
 /// A click outside closes the panel; a click on the bell right after must not reopen it.
 const REOPEN_GUARD: Duration = Duration::from_millis(300);
 
+/// SwiftUI `color.opacity(a)`: scales the colour's own alpha.
 fn alpha(c: Rgba, a: f32) -> Rgba {
-    Rgba { a, ..c }
+    Rgba { a: c.a * a, ..c }
 }
 
 impl WindowView {
@@ -80,8 +99,16 @@ impl WindowView {
                 .flex_1()
                 .min_h(px(0.))
                 .overflow_y_scroll()
-                .children(list.iter().map(|n| {
-                    self.render_panel_row(
+                .children(list.iter().enumerate().flat_map(|(k, n)| {
+                    let divider = (k > 0).then(|| {
+                        div()
+                            .flex_none()
+                            .h(px(1.))
+                            .ml(px(DIVIDER_INSET))
+                            .bg(alpha(p.border, DIVIDER_ALPHA))
+                            .into_any_element()
+                    });
+                    let row = self.render_panel_row(
                         n.id,
                         self.title_of(n.workspace),
                         n.title.clone(),
@@ -90,7 +117,8 @@ impl WindowView {
                         !n.read,
                         p,
                         cx,
-                    )
+                    );
+                    divider.into_iter().chain([row.into_any_element()])
                 }))
                 .into_any_element()
         };
@@ -135,13 +163,18 @@ impl WindowView {
             div()
                 .id(id)
                 .px(px(8.))
-                .py(px(3.))
-                .rounded(px(6.))
-                .text_size(px(12.))
-                .text_color(p.title)
-                .bg(alpha(p.title, 0.08))
-                .when(!enabled, |d| d.opacity(0.4))
-                .when(enabled, |d| d.hover(|s| s.bg(alpha(p.title, 0.14))))
+                .py(px(4.))
+                .rounded(px(5.))
+                .text_size(px(11.))
+                .text_color(if enabled { p.title } else { p.detail })
+                .bg(alpha(
+                    p.detail,
+                    if enabled {
+                        BUTTON_FILL_ALPHA
+                    } else {
+                        BUTTON_FILL_DISABLED_ALPHA
+                    },
+                ))
                 .child(label)
         };
         div()
@@ -165,6 +198,7 @@ impl WindowView {
                 d.child(
                     div()
                         .px(px(6.))
+                        .py(px(1.))
                         .rounded_full()
                         .bg(p.accent)
                         .text_size(px(11.))
@@ -216,13 +250,13 @@ impl WindowView {
             .flex_row()
             .flex_none()
             .min_h(px(ROW_MIN_H))
-            .border_b_1()
-            .border_color(p.border)
+            .pl(px(ROW_LEAD))
             .hover(|s| s.bg(alpha(p.title, HOVER_ALPHA)))
             .child(
                 div()
                     .flex_none()
                     .w(px(UNREAD_BAR))
+                    .my(px(UNREAD_BAR_INSET))
                     .when(unread, |d| d.bg(p.accent)),
             )
             .child(
@@ -232,21 +266,26 @@ impl WindowView {
                     .flex_1()
                     .min_w(px(0.))
                     .gap(px(2.))
-                    .px(px(12.))
-                    .py(px(8.))
+                    .pl(px(CONTENT_PAD_L))
+                    .py(px(CONTENT_PAD_Y))
                     .child(
                         div()
                             .flex()
                             .flex_row()
                             .items_center()
-                            .gap(px(8.))
+                            .gap(px(6.))
                             .child(
                                 line(12.5, p.title)
                                     .flex_1()
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .child(workspace),
                             )
-                            .child(line(10.5, p.detail).flex_none().child(time)),
+                            .child(
+                                line(10.5, p.detail)
+                                    .flex_none()
+                                    .mr(px(TIME_PAD_R))
+                                    .child(time),
+                            ),
                     )
                     .when(!title.trim().is_empty(), |d| {
                         d.child(
@@ -267,25 +306,37 @@ impl WindowView {
                     }),
             )
             .child(
+                // Vertically centred at the trailing edge, shown while the row is hovered.
                 div()
-                    .id(("notif-x", id.0 as usize))
                     .absolute()
-                    .top(px(8.))
-                    .right(px(8.))
+                    .top_0()
+                    .bottom_0()
+                    .right(px(CLOSE_RIGHT))
                     .flex()
                     .items_center()
-                    .justify_center()
-                    .size(px(CLOSE))
-                    .rounded_full()
                     .opacity(0.)
                     .group_hover(group, |s| s.opacity(1.))
-                    .hover(|s| s.bg(alpha(p.title, HOVER_ALPHA)))
-                    .child(svg().path("icons/x.svg").size(px(9.)).text_color(p.detail))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        cx.stop_propagation();
-                        let gone = this.notifications.remove(id);
-                        this.after_change(gone, cx);
-                    })),
+                    .child(
+                        div()
+                            .id(("notif-x", id.0 as usize))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .size(px(CLOSE))
+                            .rounded_full()
+                            .bg(alpha(p.title, CLOSE_FILL_ALPHA))
+                            .child(
+                                svg()
+                                    .path("icons/x.svg")
+                                    .size(px(9.))
+                                    .text_color(alpha(p.title, CLOSE_GLYPH_ALPHA)),
+                            )
+                            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                                cx.stop_propagation();
+                                let gone = this.notifications.remove(id);
+                                this.after_change(gone, cx);
+                            })),
+                    ),
             )
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                 this.close_panel(cx);
@@ -301,24 +352,26 @@ fn empty_state(p: SidebarPalette) -> impl IntoElement {
         .flex_1()
         .items_center()
         .justify_center()
-        .gap(px(6.))
+        .gap(px(10.))
+        .p(px(24.))
         .child(
             svg()
                 .path("icons/bell-off.svg")
-                .size(px(28.))
-                .text_color(p.detail),
+                .size(px(30.))
+                .text_color(alpha(p.detail, EMPTY_ICON_ALPHA)),
         )
         .child(
             div()
-                .text_size(px(13.))
-                .font_weight(FontWeight::SEMIBOLD)
+                .text_size(px(14.))
+                .font_weight(FontWeight::MEDIUM)
                 .text_color(p.title)
                 .child("No notifications yet"),
         )
         .child(
             div()
-                .text_size(px(11.5))
+                .text_size(px(12.))
                 .text_color(p.detail)
+                .text_center()
                 .child("Desktop notifications will appear here."),
         )
 }

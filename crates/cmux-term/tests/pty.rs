@@ -59,6 +59,8 @@ fn terminal_replies_are_written_back_to_the_child() {
         "stty -icanon -echo; printf '\\033[6n'; head -c 6 | od -An -tx1",
         None,
     );
+    // BSD od pads each byte with extra spaces; normalise.
+    let out = out.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(out.contains("1b 5b 31 3b 31 52"), "{out}");
 }
 
@@ -147,13 +149,22 @@ fn no_events_after_drop() {
     }
 }
 
-#[cfg(target_os = "linux")]
 #[test]
 fn shell_exit_ends_the_session_even_if_a_setsid_grandchild_holds_the_pty() {
     // Before M2 the reader waited for EOF, which never came while `sleep` kept the slave open.
+    // Also guards macOS revoking the slave when the shell exits.
+    // macOS has no `setsid`; perl makes the grandchild's session (a same-session job gets
+    // hung up with the shell on macOS).
+    // The shell waits for perl's "detached" marker (printed after setsid) before exiting, so
+    // the shell's exit never races the setsid.
     let t = Instant::now();
-    let out = run("setsid -f sleep 5; echo started", None);
-    assert!(out.contains("started"), "{out}");
+    let out = run(
+        "f=$(mktemp -u); mkfifo $f; \
+         perl -MPOSIX -e 'POSIX::setsid(); open F, \">$ARGV[0]\"; print F \"detached\\n\"; close F; \
+         exec \"sleep\", \"5\"' $f & read l < $f; rm $f; echo started $l",
+        None,
+    );
+    assert!(out.contains("started detached"), "{out}");
     assert!(
         t.elapsed() < Duration::from_secs(2),
         "took {:?}",
@@ -224,4 +235,36 @@ fn foreground_busy_tracks_a_running_job() {
         std::thread::sleep(Duration::from_millis(20));
     }
     assert!(session.foreground_busy(), "sleep is the foreground job");
+}
+
+#[test]
+fn spawned_shell_has_no_inherited_cmux_vars() {
+    let (tx, rx) = mpsc::channel();
+    let mut cmd = Session::shell_command();
+    cmd.env("CMUX_SURFACE_ID", "ours");
+    let session = Session::spawn(
+        cmd,
+        300,
+        200,
+        |_| {},
+        move |ev| {
+            let _ = tx.send(matches!(ev, PtyEvent::Exited));
+        },
+    )
+    .unwrap();
+    session.write(b"env; exit\r".to_vec());
+    while !rx.recv_timeout(Duration::from_secs(10)).unwrap() {}
+    let out = session
+        .term
+        .lock()
+        .unwrap()
+        .text_lines()
+        .unwrap()
+        .join("\n");
+    assert!(out.contains("CMUX_SURFACE_ID=ours"), "{out}");
+    let others: Vec<_> = out
+        .lines()
+        .filter(|l| l.starts_with("CMUX_") && !l.starts_with("CMUX_SURFACE_ID="))
+        .collect();
+    assert!(others.is_empty(), "{others:?}");
 }

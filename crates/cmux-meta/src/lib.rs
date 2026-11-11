@@ -1,5 +1,7 @@
 //! cmux-meta: sidebar metadata collectors: pure functions over the filesystem, unit-tested on fixtures.
 
+#[cfg(target_os = "macos")]
+pub mod darwin;
 pub mod git;
 pub mod path;
 pub mod ports;
@@ -42,12 +44,14 @@ pub fn collect(
     proc_root: &Path,
     home: Option<&str>,
 ) -> Vec<WorkspaceMeta> {
+    #[cfg(target_os = "macos")]
+    let _ = proc_root;
     let ttys: Vec<Vec<Option<i32>>> = inputs
         .iter()
         .map(|w| {
             w.panels
                 .iter()
-                .map(|p| p.pid.and_then(|pid| ports::tty_of(proc_root, pid)))
+                .map(|p| p.pid.and_then(|pid| tty_of(proc_root, pid)))
                 .collect()
         })
         .collect();
@@ -55,7 +59,7 @@ pub fn collect(
     let by_tty = if all.is_empty() {
         Default::default()
     } else {
-        ports::listening_ports(proc_root, &all)
+        listening_ports(proc_root, &all)
     };
     inputs
         .iter()
@@ -104,7 +108,26 @@ pub fn collect(
         .collect()
 }
 
+#[cfg(target_os = "linux")]
+use ports::{listening_ports, tty_of};
+
+#[cfg(target_os = "macos")]
+fn tty_of(_: &Path, pid: u32) -> Option<i32> {
+    darwin::tty_of(pid)
+}
+
+#[cfg(target_os = "macos")]
+fn listening_ports(_: &Path, ttys: &HashSet<i32>) -> std::collections::HashMap<i32, BTreeSet<u16>> {
+    darwin::listening_ports(ttys)
+}
+
+#[cfg(target_os = "macos")]
+fn proc_cwd(_: &Path, pid: u32) -> Option<String> {
+    darwin::cwd(pid)
+}
+
 /// The process's cwd from `<proc_root>/<pid>/cwd`; None if it is gone or unreadable.
+#[cfg(not(target_os = "macos"))]
 fn proc_cwd(proc_root: &Path, pid: u32) -> Option<String> {
     let link = std::fs::read_link(proc_root.join(pid.to_string()).join("cwd")).ok()?;
     let s = link.to_str()?;
@@ -120,7 +143,7 @@ pub(crate) fn scratch(name: &str) -> std::path::PathBuf {
     dir
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
 

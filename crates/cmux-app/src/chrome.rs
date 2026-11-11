@@ -6,6 +6,10 @@
 use cmux_config::ghostty::{Config, Rgb};
 use gpui::Rgba;
 
+/// Hover overlay on a shared-backdrop tab bar (Bonsplit `TabBarColors.swift:194`).
+const HOVER_LIGHT_ALPHA: f32 = 0.055;
+const HOVER_DARK_ALPHA: f32 = 0.075;
+
 pub fn rgba(c: Rgb, a: f32) -> Rgba {
     Rgba {
         r: f32::from(c.r) / 255.0,
@@ -163,7 +167,9 @@ pub struct TabPalette {
 }
 
 /// The strip palette for a bar drawn on `bg`; an unfocused pane's strip is greyscale
-/// (Bonsplit `TabBarView.swift:923`).
+/// (Bonsplit `TabBarView.swift:923`). cmux always shares the window backdrop
+/// (`Workspace.swift:3886`), so Bonsplit's `usesSharedBackdrop` fills apply: no active-tab
+/// fill and a flat hover overlay (`TabBarColors.swift:177, 194`).
 pub fn tab_palette(bg: Rgba, focused: bool) -> TabPalette {
     let light = wcag_is_light(bg);
     let white_or_black = |a: f32| {
@@ -177,15 +183,21 @@ pub fn tab_palette(bg: Rgba, focused: bool) -> TabPalette {
     };
     let palette = TabPalette {
         bar: bg,
-        active_fill: if light {
-            shift(bg, -0.065, bg.a)
-        } else {
-            shift(bg, 0.12, bg.a)
-        },
+        active_fill: Rgba { a: 0.0, ..bg },
         hover_fill: if light {
-            shift(bg, -0.03, 0.78)
+            Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: HOVER_LIGHT_ALPHA,
+            }
         } else {
-            shift(bg, 0.07, 0.78)
+            Rgba {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: HOVER_DARK_ALPHA,
+            }
         },
         active_text: white_or_black(0.82),
         inactive_text: white_or_black(if light { 0.62 } else { 0.68 }),
@@ -263,8 +275,16 @@ mod tests {
             1.0,
         );
         let p = tab_palette(dark, true);
-        assert!(close(p.active_fill, shift(dark, 0.12, 1.0)));
-        assert!(close(p.hover_fill, shift(dark, 0.07, 0.78)));
+        assert_eq!(p.active_fill.a, 0.0);
+        assert!(close(
+            p.hover_fill,
+            Rgba {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 0.075
+            }
+        ));
         assert!(close(
             p.active_text,
             Rgba {
@@ -293,7 +313,16 @@ mod tests {
             1.0,
         );
         let p = tab_palette(light, true);
-        assert!(close(p.active_fill, shift(light, -0.065, 1.0)));
+        assert_eq!(p.active_fill.a, 0.0);
+        assert!(close(
+            p.hover_fill,
+            Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.055
+            }
+        ));
         assert!(close(
             p.inactive_text,
             Rgba {

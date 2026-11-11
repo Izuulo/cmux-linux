@@ -1,0 +1,61 @@
+# Maintainer: cmux-linux contributors
+pkgname=cmux-linux-git
+pkgver=0
+pkgrel=1
+pkgdesc='Terminal workspace for coding agents (Rust port of cmux for KDE Wayland)'
+arch=('x86_64')
+url='https://github.com/Izuulo/cmux-linux'
+license=('GPL-3.0-or-later')
+# fontconfig, freetype2, wayland, vulkan-icd-loader and libx11 are dlopen()ed by gpui, so
+# namcap reports them as unneeded; the app does not start without them.
+depends=('fontconfig' 'freetype2' 'libxkbcommon' 'libxkbcommon-x11' 'wayland'
+         'vulkan-icd-loader' 'libx11' 'libxcb' 'glibc')
+options=('!debug')
+makedepends=('git' 'rustup' 'clang')
+provides=('cmux-linux')
+conflicts=('cmux-linux')
+source=("cmux-linux::git+${_repo:-https://github.com/Izuulo/cmux-linux.git}"
+        'ghostty::git+https://github.com/manaflow-ai/ghostty.git'
+        'https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz')
+sha256sums=('SKIP'
+            'SKIP'
+            '70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00')
+
+pkgver() {
+  cd cmux-linux
+  if v=$(git describe --long --tags 2>/dev/null); then
+    printf '%s' "$v" | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+  else
+    printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+  fi
+}
+
+prepare() {
+  cd cmux-linux
+  git config submodule.vendor/ghostty.url "$srcdir/ghostty"
+  git -c protocol.file.allow=always submodule update --init vendor/ghostty
+  cargo fetch --locked
+}
+
+build() {
+  cd cmux-linux
+  export ZIG="$srcdir/zig-x86_64-linux-0.16.0/zig" # overrides .cargo/config.toml
+  export PATH="${ZIG%/zig}:$PATH"
+  cargo build --release --locked -p cmux-app -p cmux-ipc
+}
+
+package() {
+  cd cmux-linux
+  install -Dm755 target/release/cmux-app "$pkgdir/usr/lib/cmux-linux/cmux-linux"
+  install -Dm755 target/release/cmux "$pkgdir/usr/lib/cmux-linux/cmux"
+  install -d "$pkgdir/usr/bin"
+  ln -s /usr/lib/cmux-linux/cmux-linux "$pkgdir/usr/bin/cmux-linux"
+  ln -s /usr/lib/cmux-linux/cmux "$pkgdir/usr/bin/cmux"
+  install -Dm644 packaging/cmux-linux.desktop "$pkgdir/usr/share/applications/cmux-linux.desktop"
+  local l="$pkgdir/usr/share/licenses/cmux-linux"
+  install -Dm644 NOTICE "$l/NOTICE"
+  install -Dm644 LICENSE "$l/LICENSE"
+  install -Dm644 vendor/LICENSE-MIT "$l/LICENSE-MIT"
+  install -Dm644 crates/cmux-app/assets/icons/LICENSE-lucide.txt "$l/LICENSE-lucide.txt"
+  install -Dm644 crates/cmux-app/assets/fonts/OFL.txt "$l/OFL.txt"
+}

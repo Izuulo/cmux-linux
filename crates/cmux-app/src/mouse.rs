@@ -9,8 +9,8 @@ use cmux_term::ghostty_vt::{
 };
 use cmux_term::selection::{SelectMode, Selection};
 use gpui::{
-    ClipboardItem, Context, Keystroke, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, Pixels, Point, ScrollWheelEvent, Window, px,
+    Context, Keystroke, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    Pixels, Point, ScrollWheelEvent, Window, px,
 };
 
 use crate::keys;
@@ -214,7 +214,7 @@ impl TerminalView {
         // the Term lock held, and never an empty string over the previous PRIMARY.
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         if let Some(text) = text.filter(|t| !t.is_empty()) {
-            cx.write_to_primary(ClipboardItem::new_string(text));
+            cx.write_to_primary(gpui::ClipboardItem::new_string(text));
         }
         #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
         let _ = text;

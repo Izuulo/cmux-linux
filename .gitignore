@@ -7,3 +7,7 @@
 
 # Pinned toolchains installed by scripts/
 /.tools/
+
+# makepkg output
+/packaging/arch/*
+!/packaging/arch/PKGBUILD

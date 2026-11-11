@@ -9,6 +9,9 @@ version. See LICENSE.
 Third-party material
 --------------------
 
+All Rust dependencies: licences are checked in CI against the allow-list in deny.toml
+(cargo deny check licenses); only GPL-3.0-compatible licences pass.
+
 cmux (https://github.com/manaflow-ai/cmux)
   Copyright (c) 2024-present Manaflow, Inc. and contributors.
   GPL-3.0-or-later. cmux-linux is a port of cmux's application code; files
