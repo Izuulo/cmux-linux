@@ -27,6 +27,7 @@ pub(crate) mod control;
 mod feed;
 mod feed_cards;
 mod feed_ctl;
+mod group_ctl;
 mod groups;
 mod menu;
 mod notify;

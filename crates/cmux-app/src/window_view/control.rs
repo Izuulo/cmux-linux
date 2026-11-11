@@ -5,11 +5,11 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use cmux_core::{Direction, Notification, PaneId, SurfaceId, WorkspaceId};
-use cmux_ipc::handles::{Handles, Kind};
+use cmux_ipc::handles::{Handle, Handles, Kind};
 use cmux_ipc::keys::{KeySpec, parse_key, sanitize_paste, typed_bytes};
 use cmux_ipc::paths;
 use cmux_ipc::server::{Access, DEADLINE, Request, Server};
-use cmux_ipc::snapshot::{PaneSnap, Snapshot, SurfSnap, Target, WsSnap};
+use cmux_ipc::snapshot::{GroupSnap, PaneSnap, Snapshot, SurfSnap, Target, WsSnap};
 use cmux_ipc::wire::{Reply, RpcError};
 use cmux_term::ghostty_vt::KeyAction;
 use futures::channel::mpsc::UnboundedReceiver;
@@ -157,11 +157,38 @@ impl WindowView {
             .iter()
             .position(|w| w.key == self.workspaces.selected().0)
             .unwrap_or(0);
+        let groups = self
+            .workspaces
+            .groups()
+            .into_iter()
+            .map(|g| GroupSnap {
+                key: g.id.0,
+                handle: h.handle(Kind::WorkspaceGroup, (g.id.0, 0)),
+                name: g.name.clone(),
+                collapsed: g.collapsed,
+                pinned: g.pinned,
+                generated_anchor: g.generated_anchor,
+                members: self
+                    .workspaces
+                    .group_members(g.id)
+                    .iter()
+                    .map(|w| w.0)
+                    .collect(),
+            })
+            .collect();
         Snapshot {
             window,
             selected,
             workspaces,
+            groups,
         }
+    }
+
+    pub(super) fn workspace_handle(&self, ws: WorkspaceId) -> Handle {
+        self.shell
+            .handles
+            .borrow_mut()
+            .handle(Kind::Workspace, (ws.0, 0))
     }
 
     /// Answers one socket request (everything but ping/auth, which the server answers).
@@ -218,6 +245,9 @@ impl WindowView {
                 Ok(snap.target_payload(&t))
             }
             "workspace.create" => self.create_workspace(params, window, cx),
+            m if m.starts_with("workspace.group.") => {
+                self.group_from_socket(&snap, method, params, window, cx)
+            }
             "surface.split" => self.split_from_socket(&snap, params, window, cx),
             "surface.send_text" | "surface.send_key" | "terminal.paste" => {
                 self.send_from_socket(&snap, method, params, cx)
