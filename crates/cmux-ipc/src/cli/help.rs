@@ -2,7 +2,7 @@
 
 /// (command, usage line, help text). Groups are cmux's task groups.
 pub(crate) const GROUPS: &[(&str, &[&str])] = &[
-    ("Start & Resume", &["new-workspace"]),
+    ("Start & Resume", &["new-workspace", "claude-teams"]),
     (
         "Navigate & Arrange",
         &[
@@ -74,6 +74,7 @@ pub(crate) fn usage_line(cmd: &str) -> Option<&'static str> {
             "agent message <target> [--from <name>] <text|-> | agent message --reply-to <id> <text|-> | agent inbox [--surface <target>] [--state <state>] [--limit <n>] [--mark-read]"
         }
         "automation" => "automation <list|reload>",
+        "claude-teams" => "claude-teams [claude-args...]",
         "hooks" => {
             "hooks <setup|uninstall> [--settings-file <path>] | hooks <feed|message> --source claude"
         }
@@ -145,6 +146,7 @@ pub(crate) fn command(cmd: &str) -> Option<String> {
         "workspace-group" => WORKSPACE_GROUP,
         "agent" => AGENT,
         "automation" => AUTOMATION,
+        "claude-teams" => CLAUDE_TEAMS,
         "ping" => PING,
         _ => return None,
     };
@@ -390,6 +392,26 @@ Example:
   cmux workspace-group new-workspace workspace_group:1
   cmux workspace-group list
 "#;
+
+const CLAUDE_TEAMS: &str = "Usage: cmux claude-teams [claude-args...]
+
+Launch Claude Code with agent teams enabled. Run it in a cmux-linux terminal.
+
+This command:
+  - defaults Claude teammate mode to auto
+  - sets a tmux-like environment so Claude auto mode uses cmux splits
+  - sets CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+  - prepends a private tmux shim to PATH
+  - forwards all remaining arguments to claude
+
+The tmux shim translates the tmux pane commands a team uses (split-window, send-keys,
+kill-pane, list-panes, display-message, select-pane) into cmux splits in this workspace.
+
+Examples:
+  cmux claude-teams
+  cmux claude-teams --continue
+  cmux claude-teams --model sonnet
+";
 
 const AUTOMATION: &str = "Usage: cmux automation <list|reload>
 
