@@ -59,6 +59,8 @@ fn terminal_replies_are_written_back_to_the_child() {
         "stty -icanon -echo; printf '\\033[6n'; head -c 6 | od -An -tx1",
         None,
     );
+    // BSD od pads each byte with extra spaces; normalise.
+    let out = out.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(out.contains("1b 5b 31 3b 31 52"), "{out}");
 }
 
