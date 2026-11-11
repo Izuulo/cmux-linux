@@ -361,6 +361,30 @@ line of at most 64 characters. Messages are kept in memory and are lost when the
 Not ported from cmux: waking an idle agent, turning messages off per agent or workspace,
 Codex and Kiro delivery.
 
+## Workspace auto-naming
+
+Off by default. When on, the end of each Claude Code turn may rename the workspace to a 2-5
+word title summarised from the conversation, so several agent workspaces stop looking alike.
+
+```toml
+# ~/.config/cmux-linux/config.toml
+[auto_naming]
+enabled = true
+# Optional. A shell line that reads the prompt on stdin and prints the title.
+# The default is a tool-less `claude -p --model haiku` call.
+# command = "my-summarizer --short"
+```
+
+It needs the hooks from `cmux hooks setup` (the `Stop` hook reports the turn). The setting is
+read at every turn end, so no restart is needed. The command runs on your own account, in the
+temp directory, with no `CMUX_*` variables and a 60 second limit; if it fails, the name stays.
+
+A name you set yourself is never replaced; clear it to let auto-naming back in. To keep calls
+rare, sessions under 12 transcript lines are skipped, and a new name needs 6 new lines and 3
+minutes since the last try.
+
+Not ported from cmux: naming the agent's tab, and agents other than Claude Code.
+
 ## Contributing
 
 Issues and ideas are welcome. Before working on code, read [`STATUS.md`](STATUS.md)
