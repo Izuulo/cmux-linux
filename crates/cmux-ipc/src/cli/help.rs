@@ -30,6 +30,7 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
             "notify",
             "dismiss-notification",
             "agent",
+            "automation",
             "hooks",
         ],
     ),
@@ -72,6 +73,7 @@ pub(crate) fn usage_line(cmd: &str) -> Option<&'static str> {
         "agent" => {
             "agent message <target> [--from <name>] <text|-> | agent message --reply-to <id> <text|-> | agent inbox [--surface <target>] [--state <state>] [--limit <n>] [--mark-read]"
         }
+        "automation" => "automation <list|reload>",
         "hooks" => {
             "hooks <setup|uninstall> [--settings-file <path>] | hooks <feed|message> --source claude"
         }
@@ -142,6 +144,7 @@ pub(crate) fn command(cmd: &str) -> Option<String> {
         "focus-panel" => FOCUS_PANEL,
         "workspace-group" => WORKSPACE_GROUP,
         "agent" => AGENT,
+        "automation" => AUTOMATION,
         "ping" => PING,
         _ => return None,
     };
@@ -387,6 +390,14 @@ Example:
   cmux workspace-group new-workspace workspace_group:1
   cmux workspace-group list
 "#;
+
+const AUTOMATION: &str = "Usage: cmux automation <list|reload>
+
+Rules in ~/.config/cmux-linux/automations.json run actions when the app emits an event.
+
+  list    Show the loaded rules, how often each fired, and why any rule was left out
+  reload  Read automations.json again
+";
 
 const AGENT: &str = r#"Usage: cmux agent message <target> [--from <name>] <text|->
        cmux agent message --reply-to <message-id> <text|->

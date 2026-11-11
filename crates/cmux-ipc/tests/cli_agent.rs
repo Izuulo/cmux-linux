@@ -125,3 +125,27 @@ fn inbox_empty() {
     let t = t(&[("agent.message.list", Ok(json!({"messages": []})))]);
     assert_eq!(ok(t.run(&["agent", "inbox"])), "No messages\n");
 }
+
+#[test]
+fn automation_lists_rules_and_warnings() {
+    let reply = Ok(
+        json!({"path": "/c/automations.json", "warnings": ["rule `x`: bad"], "rules": [
+            {"id": "a", "enabled": true, "events": ["workspace.*"], "categories": [], "actions": 2, "firings": 3},
+            {"id": "b", "enabled": false, "events": [], "categories": ["feed"], "actions": 1, "firings": 0},
+        ]}),
+    );
+    let t = t(&[
+        ("automation.list", reply),
+        ("automation.reload", Ok(json!({"rules": []}))),
+    ]);
+    assert_eq!(
+        ok(t.run(&["automation", "list"])),
+        "a  workspace.*  actions=2 firings=3\nb  feed  actions=1 firings=0  [disabled]\nwarning: rule `x`: bad\n"
+    );
+    assert_eq!(ok(t.run(&["automation", "reload"])), "No automations\n");
+    assert_eq!(t.last().0, "automation.reload");
+    assert_eq!(
+        err(t.run(&["automation"])),
+        "Error: Usage: cmux automation <list|reload>\n"
+    );
+}

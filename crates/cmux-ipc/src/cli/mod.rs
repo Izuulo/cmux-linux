@@ -12,6 +12,7 @@ use crate::wire::RpcError;
 
 mod agent;
 mod args;
+mod automation;
 mod client;
 mod commands;
 mod groups;
@@ -133,6 +134,7 @@ fn run_inner(args: &[String], ctx: &Ctx) -> Result<String, CliError> {
         "hooks" => hooks::hooks(&mut cmd),
         "workspace-group" => groups::workspace_group(&mut cmd),
         "agent" => agent::agent(&mut cmd),
+        "automation" => automation::automation(&mut cmd),
         other => fail(format!("{other} is not available yet")),
     }
 }
