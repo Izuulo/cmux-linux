@@ -29,6 +29,7 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
             "send-key",
             "notify",
             "dismiss-notification",
+            "agent",
             "hooks",
         ],
     ),
@@ -68,7 +69,12 @@ pub(crate) fn usage_line(cmd: &str) -> Option<&'static str> {
             "notify [--title <text>] [--subtitle <text>] [--body <text>] [--reply] [--desktop <true|false>] [--clear] [--workspace <id|ref|index>] [--surface <id|ref|index>] [--window <id|ref|index>]"
         }
         "dismiss-notification" => "dismiss-notification (--id <uuid> | --all-read)",
-        "hooks" => "hooks <setup|uninstall> [--settings-file <path>] | hooks feed --source claude",
+        "agent" => {
+            "agent message <target> [--from <name>] <text|-> | agent message --reply-to <id> <text|-> | agent inbox [--surface <target>] [--state <state>] [--limit <n>] [--mark-read]"
+        }
+        "hooks" => {
+            "hooks <setup|uninstall> [--settings-file <path>] | hooks <feed|message> --source claude"
+        }
         "workspace-group" => {
             "workspace-group <list|create|ungroup|delete|rename|collapse|expand|pin|unpin|add|remove|set-anchor|new-workspace|focus> [options]"
         }
@@ -135,6 +141,7 @@ pub(crate) fn command(cmd: &str) -> Option<String> {
         "focus-pane" => FOCUS_PANE,
         "focus-panel" => FOCUS_PANEL,
         "workspace-group" => WORKSPACE_GROUP,
+        "agent" => AGENT,
         "ping" => PING,
         _ => return None,
     };
@@ -170,11 +177,13 @@ Example:
 "#;
 
 const HOOKS: &str = "Usage: cmux hooks <setup|uninstall> [--settings-file <path>]
-       cmux hooks feed --source claude
+       cmux hooks <feed|message> --source claude
 
   setup      Add cmux's hooks to Claude Code's settings
   uninstall  Remove cmux's hooks from Claude Code's settings
   feed       Run as Claude Code's PermissionRequest hook: show the prompt in the cmux Feed
+  message    Run as Claude Code's UserPromptSubmit, PostToolUse and Stop hook: hand over
+             the messages other agents left with `cmux agent message`
 ";
 
 const DISMISS: &str = "Usage: cmux dismiss-notification (--id <uuid> | --all-read)
@@ -376,4 +385,25 @@ Example:
   cmux workspace-group create --name api --from workspace:1,workspace:2
   cmux workspace-group new-workspace workspace_group:1
   cmux workspace-group list
+"#;
+
+const AGENT: &str = r#"Usage: cmux agent message <target> [--from <name>] <text|->
+       cmux agent message --reply-to <message-id> <text|->
+       cmux agent inbox [--surface <target>] [--state queued|delivered|read] [--limit <n>] [--mark-read]
+
+Leave a message for the agent in another workspace or surface. It is delivered
+through that agent's hooks (install them with `cmux hooks setup`), never typed
+into its terminal: a busy agent sees it at its next step, an idle one with its
+next prompt.
+
+The target is a workspace or surface id or ref, or a workspace title (exact
+match first, then a unique prefix). A workspace means the surface running its
+agent. --from defaults to the sending workspace's title. `-` reads the text
+from standard input.
+
+Example:
+  cmux agent message workspace:4 --from reviewer "Review posted on #123."
+  echo "long text" | cmux agent message surface:12 -
+  cmux agent message --reply-to 3F2A... "Done."
+  cmux agent inbox --state queued
 "#;

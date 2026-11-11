@@ -10,6 +10,7 @@ use crate::json::IdFormat;
 use crate::paths;
 use crate::wire::RpcError;
 
+mod agent;
 mod args;
 mod client;
 mod commands;
@@ -131,6 +132,7 @@ fn run_inner(args: &[String], ctx: &Ctx) -> Result<String, CliError> {
         "dismiss-notification" => notify::dismiss(&mut cmd),
         "hooks" => hooks::hooks(&mut cmd),
         "workspace-group" => groups::workspace_group(&mut cmd),
+        "agent" => agent::agent(&mut cmd),
         other => fail(format!("{other} is not available yet")),
     }
 }
