@@ -33,6 +33,9 @@ jobs:
         run: |
           scripts/install-zig.sh
           echo "$PWD/.tools/zig" >> "$GITHUB_PATH"
+      - uses: EmbarkStudios/cargo-deny-action@v2.1.1
+        with:
+          command: check licenses
       - name: Format (our crates; vendored code is left as upstream wrote it)
         run: cargo fmt --check -p cmux-app -p cmux-config -p cmux-core -p cmux-ipc -p cmux-meta -p cmux-term
       - run: cargo build --workspace --locked
@@ -58,3 +61,34 @@ jobs:
       # Release: a debug gpui app build hangs in Application::new.
       - run: cargo build --workspace --locked --release --features gpui/runtime_shaders
       - run: cargo test --workspace --locked --release --features gpui/runtime_shaders
+
+  arch:
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    steps:
+      - name: Packages
+        run: |
+          pacman -Syu --noconfirm git rustup clang namcap desktop-file-utils sudo \
+            fontconfig freetype2 libxkbcommon libxkbcommon-x11 wayland vulkan-icd-loader \
+            libx11 libxcb
+          rustup default 1.99.0
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: Build the package
+        run: |
+          useradd -m builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/builder
+          cp -r "$GITHUB_WORKSPACE" /home/builder/repo
+          chown -R builder /home/builder/repo
+          sudo -u builder git config --global --add safe.directory '*'
+          sudo -u builder bash -c 'cd /home/builder/repo/packaging/arch &&
+            _repo="file:///home/builder/repo" makepkg -s --noconfirm'
+      - name: Check the package
+        run: |
+          cd /home/builder/repo/packaging/arch
+          namcap *.pkg.tar.zst
+          pacman -Qlp *.pkg.tar.zst | tee files
+          grep -q ' /usr/lib/cmux-linux/cmux$' files
+          grep -q ' /usr/bin/cmux-linux$' files
+          desktop-file-validate /home/builder/repo/packaging/cmux-linux.desktop

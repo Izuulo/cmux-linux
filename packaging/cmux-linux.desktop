@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=cmux-linux
+GenericName=Terminal
+Comment=Terminal workspace for coding agents
+Exec=cmux-linux
+Icon=utilities-terminal
+Terminal=false
+Categories=System;TerminalEmulator;
+StartupWMClass=cmux-linux
