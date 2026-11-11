@@ -14,9 +14,11 @@ use std::sync::mpsc::Sender;
 use ghostty_vt::{Callbacks, Cell, CursorInfo, Error, RenderState, Rgb, Scrollbar, Terminal};
 use osc::{OscEvent, OscScanner};
 
-/// Scrollback bytes kept per terminal (Ghostty's default `scrollback-limit`).
-// shortcut: fixed; the Ghostty `scrollback-limit` config key is not mapped yet. Add with M10.
-const SCROLLBACK: usize = 50_000_000;
+/// Scrollback bytes per terminal (upstream Ghostty's default `scrollback-limit`). Not cmux's
+/// 50 MB: history is never compressed here (libghostty-vt leaves that to the caller,
+/// `vendor/ghostty/include/ghostty/vt/terminal.h:43-52`), so 20 full panes would hold ~1 GB.
+// shortcut: fixed; config key `scrollback-limit` not mapped and no idle compression. Add with M10.
+const SCROLLBACK: usize = 10_000_000;
 
 const TITLE_CHANGED: u8 = 1;
 const BELL: u8 = 2;
