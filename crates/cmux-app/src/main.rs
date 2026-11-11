@@ -53,6 +53,9 @@ fn main() {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 window_background,
                 app_id: Some("cmux-linux".into()),
+                // We draw the window buttons ourselves (csd.rs); macOS keeps its title bar.
+                window_decorations: cfg!(target_os = "linux")
+                    .then_some(gpui::WindowDecorations::Client),
                 ..Default::default()
             },
             |window, cx| cx.new(|cx| WindowView::new(style, window, cx)),
