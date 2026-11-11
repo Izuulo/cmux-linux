@@ -24,6 +24,7 @@ use crate::style::TermStyle;
 use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
 pub(crate) mod control;
+mod dock;
 mod feed;
 mod feed_cards;
 mod feed_ctl;
@@ -72,8 +73,16 @@ pub struct WindowView {
     /// Agent prompts (M7) and the `feed.push` requests still waiting on them, by request id.
     feed: FeedStore,
     feed_waiters: HashMap<String, feed_ctl::Waiter>,
-    /// The right sidebar (Feed, plan M7 D7): closed at launch, fixed width.
+    /// The right sidebar (plan M7 D7, M8 D12): closed at launch.
     right_sidebar_open: bool,
+    right_mode: dock::RightMode,
+    /// The requested width; drawn clamped to the window (`dock::clamp_right_width`).
+    right_width: f32,
+    /// The Dock (M8 plan D13), once it has a terminal; `None` shows the empty pane.
+    dock: Option<Entity<WorkspaceView>>,
+    _dock_sub: Option<Subscription>,
+    /// `dock.json` was looked at (it only seeds the first showing).
+    dock_seeded: bool,
     feed_focus: FocusHandle,
     /// The card j/k moved to; Enter jumps to its surface.
     feed_selected: Option<FeedItemId>,
@@ -150,6 +159,11 @@ impl WindowView {
             feed: FeedStore::default(),
             feed_waiters: HashMap::new(),
             right_sidebar_open: false,
+            right_mode: Default::default(),
+            right_width: dock::RIGHT_SIDEBAR_MIN,
+            dock: None,
+            _dock_sub: None,
+            dock_seeded: false,
             feed_focus: cx.focus_handle(),
             feed_selected: None,
             feed_scroll: ScrollHandle::new(),
@@ -282,7 +296,7 @@ impl WindowView {
     fn select(&mut self, id: WorkspaceId, window: &mut Window, cx: &mut Context<Self>) {
         self.workspaces.select(id);
         let inset = self.sidebar_px(window).unwrap_or(0.);
-        let right = self.right_sidebar_px();
+        let right = self.right_sidebar_px(window);
         for (wid, view) in &self.views {
             view.update(cx, |v, _| v.set_active(*wid == id));
         }
@@ -500,16 +514,18 @@ impl Render for WindowView {
         self.refresh_title(self.workspaces.selected(), cx);
         let selected = self.views.get(&self.workspaces.selected()).cloned();
         let width = self.sidebar_px(window);
-        let right = self.right_sidebar_px();
+        let right = self.right_sidebar_px(window);
         if let Some(v) = &selected {
             v.update(cx, |v, _| v.set_insets(width.unwrap_or(0.), right));
         }
+        self.place_dock(window, cx);
         div()
             .relative()
             .flex()
             .flex_row()
             .size_full()
             .on_drag_move(cx.listener(Self::on_sidebar_drag))
+            .on_drag_move(cx.listener(Self::on_right_sidebar_drag))
             .on_action(
                 cx.listener(|this, _: &NewWorkspace, w, cx| this.new_workspace(false, w, cx)),
             )
@@ -552,10 +568,13 @@ impl Render for WindowView {
                 cx.listener(|this, _: &ToggleRightSidebar, w, cx| this.toggle_right_sidebar(w, cx)),
             )
             .on_action(
-                cx.listener(|this, _: &FocusRightSidebar, w, cx| this.focus_right_sidebar(w, cx)),
+                cx.listener(|this, _: &FocusRightSidebar, w, cx| this.show_right(None, w, cx)),
             )
             .on_action(cx.listener(|this, _: &SwitchRightSidebarToFeed, w, cx| {
-                this.focus_right_sidebar(w, cx)
+                this.show_right(Some(dock::RightMode::Feed), w, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SwitchRightSidebarToDock, w, cx| {
+                this.show_right(Some(dock::RightMode::Dock), w, cx)
             }))
             .on_action(cx.listener(|this, _: &ShowNotifications, _, cx| {
                 this.panel_open = !this.panel_open;
@@ -590,6 +609,9 @@ impl Render for WindowView {
                 d.child(self.render_right_sidebar(window, cx))
             })
             .when_some(width, |d, w| d.child(self.render_resize_band(w)))
+            .when(self.right_sidebar_open, |d| {
+                d.child(self.render_right_resize_band(right))
+            })
             .children(self.render_panel(window, cx))
             .children(self.render_menu(cx))
     }
