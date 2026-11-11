@@ -348,8 +348,33 @@ pub fn process_cwd(pid: u32) -> Option<String> {
     dir.into_os_string().into_string().ok()
 }
 
-// shortcut: no cwd fallback off Linux, so macOS splits rely on OSC 7; use proc_pidinfo in M6.
-#[cfg(not(target_os = "linux"))]
+/// A process's working directory via `proc_pidinfo`.
+#[cfg(target_os = "macos")]
+pub fn process_cwd(pid: u32) -> Option<String> {
+    // SAFETY: zeroed proc_vnodepathinfo is valid; proc_pidinfo writes at most `size` bytes.
+    let mut info: libc::proc_vnodepathinfo = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<libc::proc_vnodepathinfo>() as libc::c_int;
+    let n = unsafe {
+        libc::proc_pidinfo(
+            pid as libc::c_int,
+            libc::PROC_PIDVNODEPATHINFO,
+            0,
+            (&mut info as *mut libc::proc_vnodepathinfo).cast(),
+            size,
+        )
+    };
+    if n != size {
+        return None;
+    }
+    // SAFETY: the kernel NUL-terminates vip_path within its buffer.
+    let path = unsafe { std::ffi::CStr::from_ptr(info.pvi_cdir.vip_path.as_ptr().cast()) };
+    path.to_str()
+        .ok()
+        .filter(|p| !p.is_empty())
+        .map(String::from)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub fn process_cwd(_pid: u32) -> Option<String> {
     None
 }
@@ -368,7 +393,7 @@ mod tests {
         assert_eq!(*m.lock().unwrap(), 1);
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn process_cwd_reads_proc() {
         let here = std::env::current_dir().unwrap();
