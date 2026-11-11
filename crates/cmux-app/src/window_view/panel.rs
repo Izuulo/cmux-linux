@@ -30,6 +30,14 @@ const TIME_PAD_R: f32 = 34.0;
 const CLOSE: f32 = 20.0;
 const CLOSE_RIGHT: f32 = 10.0;
 const HOVER_ALPHA: f32 = 0.11;
+/// Clear button: circle fill and glyph, both primary at these alphas.
+const CLOSE_FILL_ALPHA: f32 = 0.1;
+const CLOSE_GLYPH_ALPHA: f32 = 0.7;
+/// Header buttons: secondary fill when enabled / disabled.
+const BUTTON_FILL_ALPHA: f32 = 0.12;
+const BUTTON_FILL_DISABLED_ALPHA: f32 = 0.05;
+/// Empty-state icon: secondary at this alpha.
+const EMPTY_ICON_ALPHA: f32 = 0.7;
 /// Row dividers: separator at this alpha, indented from the leading edge.
 const DIVIDER_ALPHA: f32 = 0.4;
 const DIVIDER_INSET: f32 = 18.0;
@@ -159,7 +167,14 @@ impl WindowView {
                 .rounded(px(5.))
                 .text_size(px(11.))
                 .text_color(if enabled { p.title } else { p.detail })
-                .bg(alpha(p.detail, if enabled { 0.12 } else { 0.05 }))
+                .bg(alpha(
+                    p.detail,
+                    if enabled {
+                        BUTTON_FILL_ALPHA
+                    } else {
+                        BUTTON_FILL_DISABLED_ALPHA
+                    },
+                ))
                 .child(label)
         };
         div()
@@ -309,12 +324,12 @@ impl WindowView {
                             .justify_center()
                             .size(px(CLOSE))
                             .rounded_full()
-                            .bg(alpha(p.title, 0.1))
+                            .bg(alpha(p.title, CLOSE_FILL_ALPHA))
                             .child(
                                 svg()
                                     .path("icons/x.svg")
                                     .size(px(9.))
-                                    .text_color(alpha(p.title, 0.7)),
+                                    .text_color(alpha(p.title, CLOSE_GLYPH_ALPHA)),
                             )
                             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                                 cx.stop_propagation();
@@ -343,7 +358,7 @@ fn empty_state(p: SidebarPalette) -> impl IntoElement {
             svg()
                 .path("icons/bell-off.svg")
                 .size(px(30.))
-                .text_color(alpha(p.detail, 0.7)),
+                .text_color(alpha(p.detail, EMPTY_ICON_ALPHA)),
         )
         .child(
             div()

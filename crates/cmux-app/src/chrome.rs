@@ -6,6 +6,10 @@
 use cmux_config::ghostty::{Config, Rgb};
 use gpui::Rgba;
 
+/// Hover overlay on a shared-backdrop tab bar (Bonsplit `TabBarColors.swift:194`).
+const HOVER_LIGHT_ALPHA: f32 = 0.055;
+const HOVER_DARK_ALPHA: f32 = 0.075;
+
 pub fn rgba(c: Rgb, a: f32) -> Rgba {
     Rgba {
         r: f32::from(c.r) / 255.0,
@@ -185,14 +189,14 @@ pub fn tab_palette(bg: Rgba, focused: bool) -> TabPalette {
                 r: 0.0,
                 g: 0.0,
                 b: 0.0,
-                a: 0.055,
+                a: HOVER_LIGHT_ALPHA,
             }
         } else {
             Rgba {
                 r: 1.0,
                 g: 1.0,
                 b: 1.0,
-                a: 0.075,
+                a: HOVER_DARK_ALPHA,
             }
         },
         active_text: white_or_black(0.82),

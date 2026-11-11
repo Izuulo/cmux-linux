@@ -76,3 +76,12 @@ Append-only, newest last. One entry per session: date, what was tried, what was 
 | window | default theme with no Ghostty colours: cmux injects "Apple System Colors" (dark, #1e1e1e/#ffffff) / "…Light" by appearance | ours: Ghostty default #282c34 | `P/CmuxTerminalCore/…/Config/GhosttyConfig.swift:25-28,451-458`; `P/CmuxSettings/…/TerminalCatalogSection.swift:110-113`; `S/GhosttyTerminalView.swift:1278-1295` | gap: needs a bundled theme + system appearance detection (new behaviour) |
 
 - Gaps above need behaviour, not values; none is under ~30 lines except the pressed-icon opacity, which gpui's `active` cannot express on a child svg without new state.
+
+**Addendum (review round 1)**
+
+| Area | Item | Ours (file: const) | cmux (source) | Result |
+|---|---|---|---|---|
+| sidebar | row height: content-driven, 8 above the title, blocks 4 apart, 8 below; no fixed height | `sidebar.rs` `ROW_PAD_Y` 8 (py), `SECTION_GAP` 4, rows `flex_none` | `S/Sidebar/AppKitList/Cells/SidebarWorkspaceRowCellView.swift:1273-1274,1525` (`layoutContent` starts y at 8, adds 8 at the end; the table caches the measured height, `S/Sidebar/AppKitList/SidebarWorkspaceTableRowHeightCalculator.swift`) | ✓ |
+| ring | tab highlight: the pane's tab gets Bonsplit's `showsNotificationBadge` under the same unread-indicator rule as the ring; Bonsplit draws it as the 6 pt dot on an unselected, unhovered tab | `workspace/tab_strip.rs` dot when `!selected && attention.contains(surface)` (`attention` = the ring set), `UNREAD_DOT` 6 | `S/Workspace.swift:5838-5850` (`syncUnreadBadgeStateForPanel`); dot: `B/Internal/Views/TabItemView.swift:1159-1165` | ✓ (colour fixed in 3518001) |
+
+- Provenance of the `B/` (Bonsplit) rows and the two `parity(tab-strip)` commits: Bonsplit is not in the cmux sparse clone. I read it from a separate clone of https://github.com/manaflow-ai/bonsplit checked out at `58b73fde506ef6aa5fc371b8990e528ac83f0929`, the `vendor/bonsplit` gitlink of cmux 43ce5e2. Its `LICENSE` is MIT, not BUSL-1.1. Values were read for matching only; no code copied. The commit messages' `TabBarColors.swift:363` and `TabItemView.swift:1159-1165` are paths under `Sources/Bonsplit/Internal/Styling/` and `…/Internal/Views/` in that clone.
