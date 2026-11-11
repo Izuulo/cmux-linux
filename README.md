@@ -40,8 +40,9 @@ original. It is a **local app**: no cloud services, no browser, no account.
 - **Keyboard first:** cmux's shortcuts with ⌘ mapped to Super; every binding can
   be remapped.
 
-Also here: an agent approval Feed, workspace groups, a Dock and agent-to-agent
-messages (below). Later: session restore, a command palette and SSH workspaces.
+Also here: an agent approval Feed, workspace groups, a Dock, agent-to-agent
+messages, workspace auto-naming, automations and Claude Code teams in splits
+(below). Later: session restore, a command palette and SSH workspaces.
 
 ## How it's built
 
@@ -433,6 +434,29 @@ Not ported from cmux: the `rpc` and `webhook` actions (call `cmux ...` or `curl`
 a rule using them is left out), `workspace.tag`, `cmux events`, and `automation
 show|test|enable|disable|logs`. A notification made by a rule triggers no rule, but a `run`
 that calls `cmux notify` can: give such rules a rate limit.
+
+## Claude Teams
+
+`cmux claude-teams` starts Claude Code with agent teams enabled, and each named teammate
+opens as a split in the workspace instead of needing tmux.
+
+```sh
+cmux claude-teams
+cmux claude-teams --continue
+cmux claude-teams --model sonnet
+```
+
+Run it in a cmux-linux terminal; everything after `claude-teams` goes to `claude`. It sets
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, defaults `--teammate-mode auto`, and puts a private
+`tmux` script first on `PATH` that turns the tmux pane commands Claude sends (`split-window`,
+`send-keys`, `kill-pane`, `list-panes`, `display-message`, `select-pane`) into splits here.
+A teammate is an ordinary terminal: its notifications, directory and ports show as usual, and
+with `cmux hooks setup` its prompts reach the Feed.
+
+Not ported from cmux: the tidy teammate column (splits go where Claude asks, and fail when
+there is no room), `capture-pane`, tmux windows and sessions, and restoring a team after a
+restart. A tmux command the script doesn't know fails with "Unsupported tmux compatibility
+command", so a new Claude Code version shows what it needs.
 
 ## Contributing
 
