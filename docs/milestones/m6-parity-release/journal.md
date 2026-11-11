@@ -129,3 +129,7 @@ Run by the agent on the CachyOS desktop (Plasma 6.8.2, Wayland), driving the app
 - **M7 Feed on screen:** permission card (four buttons, command box, description), question card (options, disabled submit), header badge, Claude and age chips, and the empty state all draw. Buttons not clicked.
 - **"Opening the right sidebar wipes the terminal" (M7 risk): not a bug.** Each terminal gets exactly one resize (42 → 27 columns here) and keeps its content. The two extra prompt lines appear only when the narrowed pane is exactly as wide as the bash prompt (27 columns): readline redraws a prompt that now wraps. Ghostty avoids this with its shell integration's prompt marks (OSC 133), which we don't ship.
 - **Step 4** (M2–M5 desktop checks): the socket-driven parts are covered above (splits, tabs strip, workspaces, sidebar metadata with git branch, notifications). Divider drag, tab drag, row drag, rename typing, IME, and clicking a bubble remain for the owner.
+
+### Addendum 2026-11-11 — package build
+
+`makepkg -f -d` in a copy of `packaging/arch` builds `cmux-linux-git-r237.f314c00-1-x86_64.pkg.tar.zst` (8.8 MB) from the pushed `master`. `-d` because Rust here comes from rustup.rs, not the `rustup` package the PKGBUILD lists. File list: `/usr/lib/cmux-linux/{cmux-linux,cmux}`, the two `/usr/bin` symlinks, the desktop entry, and five licence files, as planned in Task 5. Not installed (sudo), `namcap` not available.
