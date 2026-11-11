@@ -29,15 +29,27 @@ const SECTION_GAP: f32 = 4.0;
 const TITLE_PX: f32 = 12.5;
 const DETAIL_PX: f32 = 10.0;
 const CLOSE_GLYPH: f32 = 9.0;
+/// The close button's slot, reserved whenever the row can close (`SidebarWorkspaceRowCellView`).
+const CLOSE_SLOT: f32 = 16.0;
+/// Gap between the title and its leading badge / trailing close slot.
+const TITLE_ROW_GAP: f32 = 8.0;
 const ITEM_GAP: f32 = 4.0;
-/// Unread badge on a row (rn §6) and on the bell (rn §9).
+/// Lines inside the branch/dir and PR blocks.
+const LINE_GAP: f32 = 1.0;
+/// Unread badge on a row (rn §6) and on the bell (classic titlebar style).
 const BADGE: f32 = 16.0;
 const BADGE_PX: f32 = 9.0;
-const BELL_BADGE: f32 = 13.0;
+const BELL_BADGE: f32 = 12.0;
+const BELL_BADGE_PX: f32 = 7.0;
 const BELL_BADGE_OFFSET: f32 = 3.0;
-/// Notification message under the title (rn §6).
+/// Band icon tint: secondary at these opacities (`HeaderChromeIconStyle`).
+const ICON_ALPHA: f32 = 0.86;
+const ICON_HOVER_ALPHA: f32 = 0.96;
+/// Notification message under the title (rn §6); the selected row's white is at this alpha.
 const MESSAGE_LINES: usize = 12;
 const MESSAGE_ALPHA: f32 = 0.8;
+/// The close glyph on the selected row: white at this alpha.
+const CLOSE_ALPHA: f32 = 0.7;
 /// The resize band reaches this far into the sidebar and into the content.
 const RESIZE_IN: f32 = 6.0;
 const RESIZE_OUT: f32 = 4.0;
@@ -271,13 +283,13 @@ impl WindowView {
         let button = |id: &'static str, icon: &'static str| {
             div()
                 .id(id)
+                .group(id)
                 .flex()
                 .items_center()
                 .justify_center()
                 .size(px(BUTTON))
                 .rounded(px(RADIUS))
-                .child(svg().path(icon).size(px(BUTTON_ICON)).text_color(p.detail))
-                .active(|s| s.opacity(0.72))
+                .child(band_icon(id, icon, p))
         };
         let band = div()
             .flex()
@@ -387,32 +399,25 @@ impl WindowView {
                 .flex()
                 .items_center()
                 .justify_center()
-                .min_w(px(BELL_BADGE))
-                .h(px(BELL_BADGE))
-                .px(px(2.))
+                .size(px(BELL_BADGE))
                 .rounded_full()
                 .bg(p.accent)
-                .text_size(px(BADGE_PX))
+                .text_size(px(BELL_BADGE_PX))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(gpui::white())
                 .child(label)
         });
         div()
             .id("sidebar-bell")
+            .group("sidebar-bell")
             .relative()
             .flex()
             .items_center()
             .justify_center()
             .size(px(BUTTON))
             .rounded(px(RADIUS))
-            .child(
-                svg()
-                    .path("icons/bell.svg")
-                    .size(px(BUTTON_ICON))
-                    .text_color(p.detail),
-            )
+            .child(band_icon("sidebar-bell", "icons/bell.svg", p))
             .children(badge)
-            .active(|s| s.opacity(0.72))
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_panel(cx)))
     }
 
@@ -462,17 +467,29 @@ impl WindowView {
         };
         let group = SharedString::from(format!("ws-row-{}", id.0));
         let close = closable.then(|| {
+            let glyph = if selected {
+                Rgba {
+                    a: CLOSE_ALPHA,
+                    ..title_c
+                }
+            } else {
+                detail_c
+            };
             div()
                 .id(("ws-close", id.0 as usize))
+                .flex()
                 .flex_none()
-                .ml(px(ITEM_GAP))
+                .items_center()
+                .justify_center()
+                .ml(px(TITLE_ROW_GAP))
+                .size(px(CLOSE_SLOT))
                 .opacity(0.)
                 .group_hover(group.clone(), |s| s.opacity(1.))
                 .child(
                     svg()
                         .path("icons/x.svg")
                         .size(px(CLOSE_GLYPH))
-                        .text_color(detail_c),
+                        .text_color(glyph),
                 )
                 .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
                     cx.stop_propagation();
@@ -501,10 +518,8 @@ impl WindowView {
                 .flex_none()
                 .items_center()
                 .justify_center()
-                .mr(px(ITEM_GAP + 2.))
-                .min_w(px(BADGE))
-                .h(px(BADGE))
-                .px(px(3.))
+                .mr(px(TITLE_ROW_GAP))
+                .size(px(BADGE))
                 .rounded_full()
                 .bg(fill)
                 .text_size(px(BADGE_PX))
@@ -519,9 +534,13 @@ impl WindowView {
             .map(|text| {
                 div()
                     .text_size(px(DETAIL_PX))
-                    .text_color(Rgba {
-                        a: detail_c.a * MESSAGE_ALPHA,
-                        ..detail_c
+                    .text_color(if selected {
+                        Rgba {
+                            a: MESSAGE_ALPHA,
+                            ..title_c
+                        }
+                    } else {
+                        detail_c
                     })
                     .line_clamp(MESSAGE_LINES)
                     .text_ellipsis()
@@ -547,54 +566,68 @@ impl WindowView {
                     .into_any_element(),
             })
             .children(close);
-        let dirs = m.dirs.into_iter().map(|(branch, dir)| {
-            let text = match (branch, dir) {
-                (Some(b), Some(d)) => format!("{b} · {d}"),
-                (Some(s), None) | (None, Some(s)) => s,
-                (None, None) => String::new(),
-            };
-            detail().child(text)
-        });
-        let prs = m.prs.into_iter().enumerate().map(|(k, (pr, stale))| {
-            let (icon, word) = match pr.state {
-                PrState::Open => ("icons/git-pull-request.svg", "open"),
-                PrState::Merged => ("icons/git-merge.svg", "merged"),
-                PrState::Closed => ("icons/circle-x.svg", "closed"),
-            };
-            let url = pr.url;
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(ITEM_GAP))
-                .text_size(px(DETAIL_PX))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(detail_c)
-                .whitespace_nowrap()
-                .when(stale, |d| d.opacity(0.5))
-                .child(
-                    svg()
-                        .path(icon)
-                        .flex_none()
-                        .size(px(DETAIL_PX))
-                        .text_color(detail_c),
-                )
-                .child(
-                    div()
-                        .id(SharedString::from(format!("ws-pr-{}-{k}", id.0)))
-                        .underline()
-                        .child(format!("PR #{}", pr.number))
-                        .on_click(move |_, _, cx| {
-                            cx.stop_propagation();
-                            cx.open_url(&url);
-                        }),
-                )
-                .child(word)
-        });
+        let dirs: Vec<_> = m
+            .dirs
+            .into_iter()
+            .map(|(branch, dir)| {
+                let text = match (branch, dir) {
+                    (Some(b), Some(d)) => format!("{b} · {d}"),
+                    (Some(s), None) | (None, Some(s)) => s,
+                    (None, None) => String::new(),
+                };
+                detail().child(text)
+            })
+            .collect();
+        let prs: Vec<_> = m
+            .prs
+            .into_iter()
+            .enumerate()
+            .map(|(k, (pr, stale))| {
+                let (icon, word) = match pr.state {
+                    PrState::Open => ("icons/git-pull-request.svg", "open"),
+                    PrState::Merged => ("icons/git-merge.svg", "merged"),
+                    PrState::Closed => ("icons/circle-x.svg", "closed"),
+                };
+                let url = pr.url;
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(ITEM_GAP))
+                    .text_size(px(DETAIL_PX))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(detail_c)
+                    .whitespace_nowrap()
+                    .when(stale, |d| d.opacity(0.5))
+                    .child(
+                        svg()
+                            .path(icon)
+                            .flex_none()
+                            .size(px(DETAIL_PX))
+                            .text_color(detail_c),
+                    )
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("ws-pr-{}-{k}", id.0)))
+                            .underline()
+                            .child(format!("PR #{}", pr.number))
+                            .on_click(move |_, _, cx| {
+                                cx.stop_propagation();
+                                cx.open_url(&url);
+                            }),
+                    )
+                    .child(word)
+            })
+            .collect();
+        // Lines inside one block sit 1 apart; blocks sit SECTION_GAP apart.
+        let block = |lines: Vec<_>| {
+            (!lines.is_empty()).then(|| div().flex().flex_col().gap(px(LINE_GAP)).children(lines))
+        };
         let ports = (!m.ports.is_empty()).then(|| {
             detail()
                 .flex()
                 .flex_row()
+                .flex_wrap()
                 .gap(px(ITEM_GAP))
                 .children(m.ports.into_iter().map(|port| {
                     div()
@@ -630,10 +663,23 @@ impl WindowView {
             }))
             .child(title)
             .children(message)
-            .children(dirs)
-            .children(prs)
+            .children(block(dirs))
+            .children(block(prs))
             .children(ports)
     }
+}
+
+/// A band button's glyph: secondary at 0.86, brighter while hovered (`HeaderChromeIconStyle`).
+fn band_icon(group: &'static str, icon: &'static str, p: SidebarPalette) -> impl IntoElement {
+    let tint = |a: f32| Rgba {
+        a: p.detail.a * a,
+        ..p.detail
+    };
+    svg()
+        .path(icon)
+        .size(px(BUTTON_ICON))
+        .text_color(tint(ICON_ALPHA))
+        .group_hover(group, move |s| s.text_color(tint(ICON_HOVER_ALPHA)))
 }
 
 #[cfg(test)]
