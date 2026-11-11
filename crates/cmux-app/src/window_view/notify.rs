@@ -30,6 +30,11 @@ impl WindowView {
         } else {
             title
         };
+        let mut payload = serde_json::Map::new();
+        payload.insert("title".into(), title.as_str().into());
+        payload.insert("subtitle".into(), subtitle.as_str().into());
+        payload.insert("body".into(), body.as_str().into());
+        self.emit("notification.created", Some(ws), Some(surface), payload, cx);
         let selected = ws == self.workspaces.selected();
         let focused = is_focused_arrival(
             window.is_window_active(),

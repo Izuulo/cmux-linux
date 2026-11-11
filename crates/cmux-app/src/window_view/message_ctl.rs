@@ -185,6 +185,11 @@ impl WindowView {
             .map_err(|e| err("invalid_params", e.text()))?
             .clone();
         cx.notify();
+        let mut payload = Map::new();
+        payload.insert("id".into(), sent.id.as_str().into());
+        payload.insert("sender_name".into(), sent.from.as_str().into());
+        payload.insert("body_length".into(), sent.body.chars().count().into());
+        self.emit("agent.message.queued", Some(to.0), Some(to.1), payload, cx);
         let mut reply = self.message_payload(&sent);
         reply["recipient_workspace_title"] = json!(self.title_of(to.0));
         reply["recipient_has_agent"] = json!(self.messages.agent_surface(to.0) == Some(to.1));

@@ -23,6 +23,7 @@ use crate::actions::*;
 use crate::style::TermStyle;
 use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
+mod automation_ctl;
 mod autoname_ctl;
 pub(crate) mod control;
 mod dock;
@@ -79,6 +80,10 @@ pub struct WindowView {
     messages: MessageStore,
     /// Auto-naming's throttle state per workspace (M9 Part 2).
     naming: HashMap<WorkspaceId, autoname_ctl::Naming>,
+    /// Automation rules (M9 Part 3) and whether one of their notifications is being made.
+    automations: cmux_ipc::automation::Rules,
+    automating: bool,
+    window_handle: gpui::AnyWindowHandle,
     /// The right sidebar (plan M7 D7, M8 D12): closed at launch.
     right_sidebar_open: bool,
     right_mode: dock::RightMode,
@@ -166,6 +171,9 @@ impl WindowView {
             feed_waiters: HashMap::new(),
             messages: MessageStore::default(),
             naming: HashMap::new(),
+            automations: automation_ctl::load(),
+            automating: false,
+            window_handle: window.window_handle(),
             right_sidebar_open: false,
             right_mode: Default::default(),
             right_width: dock::RIGHT_SIDEBAR_MIN,
@@ -275,6 +283,7 @@ impl WindowView {
         self.subs.insert(id, sub);
         self.views.insert(id, view);
         self.refresh_title(id, cx);
+        self.emit("workspace.created", Some(id), None, Default::default(), cx);
         true
     }
 
@@ -346,6 +355,10 @@ impl WindowView {
 
     fn close_now(&mut self, id: WorkspaceId, window: &mut Window, cx: &mut Context<Self>) {
         let was_selected = id == self.workspaces.selected();
+        // Before it goes: the event still names it. (Closing the last one quits instead.)
+        if self.workspaces.len() > 1 && self.workspaces.index_of(id).is_some() {
+            self.emit("workspace.closed", Some(id), None, Default::default(), cx);
+        }
         match self.workspaces.close(id) {
             WorkspaceClosed::Last => cx.quit(),
             WorkspaceClosed::Closed => {

@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use cmux_core::WorkspaceId;
+use cmux_core::{SurfaceId, WorkspaceId};
 use cmux_ipc::snapshot::Snapshot;
 use cmux_ipc::wire::{Reply, RpcError};
 use cmux_meta::autoname::{self, NamingState, Pass};
@@ -38,7 +38,19 @@ impl WindowView {
         let Some(path) = text("transcript_path").filter(|p| !p.is_empty()) else {
             return Err(RpcError::new("invalid_params", "Missing transcript_path"));
         };
-        let queued = self.start_naming(WorkspaceId(t.ws.key), PathBuf::from(path), cx);
+        let ws = WorkspaceId(t.ws.key);
+        // The turn's end is an event whether or not naming is on (plan A2).
+        let mut payload = Map::new();
+        payload.insert("source".into(), "claude".into());
+        payload.insert("transcript_path".into(), path.into());
+        self.emit(
+            "agent.hook.Stop",
+            Some(ws),
+            Some(SurfaceId(t.surface.key)),
+            payload,
+            cx,
+        );
+        let queued = self.start_naming(ws, PathBuf::from(path), cx);
         Ok(json!({ "queued": queued }))
     }
 
