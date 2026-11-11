@@ -81,6 +81,9 @@ To build your local checkout instead, run
 `_repo="file://$(git rev-parse --show-toplevel)" makepkg -si` in `packaging/arch`; only
 committed changes are built.
 
+The PKGBUILD needs `rustup` (it honours `rust-toolchain.toml`), which conflicts with Arch's `rust`
+package; if you have `rust` installed, replace it with `rustup` first.
+
 It installs `cmux-linux` and the `cmux` CLI side by side in `/usr/lib/cmux-linux/`, with
 symlinks in `/usr/bin` and a `.desktop` entry.
 
