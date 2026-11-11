@@ -18,6 +18,8 @@ use crate::wire::{self, Line, Reply, RpcError};
 
 /// How long a request waits for the app (cmux's main-actor hop deadline).
 pub const DEADLINE: Duration = Duration::from_secs(10);
+/// Slack on top of `feed.push`'s own wait; the app answers `timed_out` at the wait itself.
+pub const FEED_GRACE: Duration = Duration::from_secs(5);
 const MAX_LINE: u64 = 4 << 20;
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -253,6 +255,10 @@ fn handle(
                     "Authentication required. Send auth <password> first.",
                 )),
                 "system.ping" => Ok(json!({ "pong": true })),
+                "feed.push" => match crate::feed::wait_of(&params) {
+                    Ok(wait) => ask_app(tx, method, params, wait + FEED_GRACE),
+                    Err(e) => Err(e),
+                },
                 _ => ask_app(tx, method, params, deadline),
             };
             wire::response(&id, &reply)
