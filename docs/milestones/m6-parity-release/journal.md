@@ -14,3 +14,65 @@ Append-only, newest last. One entry per session: date, what was tried, what was 
 
 ## 2026-11-10 — Task 3
 - Plan D2 (kqueue exit watch on macOS) dropped: macOS revokes the slave when the session leader exits (python pty probe: master reads EOF at once while a setsid'd `sleep` lives), so no exit watch is needed there. `pidfd` stays Linux-only; the shell-exit test now runs on macOS (perl setsid grandchild) as a guard for that behaviour.
+
+## 2026-11-10 — Task 6 parity checklist
+
+- Reference: cmux.app **0.65.2 (build 111)**; source `manaflow-ai/cmux` @ **43ce5e2** (`Sources/`, plus `Packages/macOS/{CmuxFoundation,CmuxAppKitSupportUI,CmuxSettings,CmuxTerminalCore}`, all GPL), Bonsplit (MIT) @ its pinned gitlink **58b73fd** (unchanged since M2). Shorthands: `S/` = cmux `Sources/`, `P/` = cmux `Packages/macOS/`, `B/` = `bonsplit/Sources/Bonsplit/`.
+- Method (D9, amended by the controller): the owner's cmux.app was never driven; its window was only screenshotted read-only (`screencapture -l`, window on another Space, so terminal surfaces render blank but chrome is drawn). That window runs a custom sidebar provider, groups and the AppKit-list flag, so its sidebar is not a default reference; Swift values win everywhere. Ours ran from `target/release` on a scratch socket with `XDG_CONFIG_HOME` pointing at an empty config (Ghostty default theme) and at `theme = Apple System Colors` (cmux's default dark theme, via cmux.app's theme dir) for the dark pair; layout 2 workspaces, 2 × 2 splits, one unread notification on a background pane, 1100 × 700 pt.
+- Not captured: a 3-tab strip and the open panel need key/mouse events; posting events to our pid needs the macOS PostEvent permission (prompt), so both are compared from source only. `flash.mov` skipped (flash = source values below). The ring is not on screen in cmux; source only.
+- Screenshots (`~/Pictures/cmux-m6/`, not committed): `cmux-window-raw`, `cmux-sidebar`, `cmux-tab-strip`; `ours-window-before`, `ours-window`, `ours-sidebar`, `ours-tab-strip`, `ours-splits`, `ours-ring`, `ours-window-dark-theme`, `ours-sidebar-dark-theme`.
+- Pixel check: cmux's sidebar border is #353336 on its #262427 backdrop = our `chrome::separator` (+0.16 @ 0.36) exactly; our selected row samples #0091FF.
+
+| Area | Item | Ours (file: const) | cmux (source) | Result |
+|---|---|---|---|---|
+| sidebar | width default / min / max | `window_view.rs` `SIDEBAR_DEFAULT/MIN/MAX` 240/240/600, `CONTENT_MIN` 300 | `S/SessionPersistence.swift:26-31` | ✓ |
+| sidebar | resize band 6 in / 4 out | `sidebar.rs` `RESIZE_IN/OUT` | `S/Sidebar/SidebarState.swift:72,76` | ✓ |
+| sidebar | band 28, first row 30 | `BAND_H`, `LIST_TOP` | `S/WindowChromeMetrics.swift:5-7,90` | ✓ |
+| sidebar | row pad outer 6 / inner 10 / vertical 8 | `OUTER_PAD_X`, `ROW_PAD_X`, `ROW_PAD_Y` | `S/WindowChromeMetrics.swift:92-94` | ✓ |
+| sidebar | row spacing 2, section spacing 4, radius 6 | `ROW_GAP`, `SECTION_GAP`, `RADIUS` | `S/ContentView.swift:11641`; `S/Sidebar/AppKitList/Cells/SidebarWorkspaceRowCellView.swift:1274,319` | ✓ |
+| sidebar | title 12.5 semibold; detail 10 mono; message 10 regular | `TITLE_PX`, `DETAIL_PX` | `…RowCellView.swift:624,693`; `…RowSupportViews.swift:416` | ✓ |
+| sidebar | badge↔title and title↔close gap 8 | was `ITEM_GAP+2` (6) / `ITEM_GAP` (4) → `TITLE_ROW_GAP` 8 | `…RowCellView.swift:1277-1278,1301,1338` | fixed |
+| sidebar | close slot 16, reserved while closable; glyph 9; tint secondary(0.7) | was glyph only → `CLOSE_SLOT` 16, `CLOSE_ALPHA` 0.7 | `…RowCellView.swift:1336-1340,640-642` | fixed |
+| sidebar | row badge: fixed 16 circle, 9 semibold, accent / primary@0.25 when selected | was min-width pill → `.size(BADGE)` | `…RowCellView.swift:786-793,1280`; `…RowSlotViews.swift:51` | fixed |
+| sidebar | message colour secondary(0.8) = plain secondary / white@0.8 selected | was detail × 0.8 | `…RowCellView.swift:694`; `…RowSupportViews.swift:51-62` | fixed |
+| sidebar | dir lines / PR lines 1 apart inside a block; ports wrap, gap 4 | was 4 between every line, no wrap → `LINE_GAP` 1 | `…RowCellView.swift:1455-1500` | fixed |
+| sidebar | branch line "branch · dir", secondary(0.75); PR 10 semibold, icon+4+title+4+word, stale 0.5 | `row_model`, `ITEM_GAP` | `…RowSupportViews.swift:416-427,558-614` | ✓ |
+| sidebar | selected fill = solid accent (#0088FF / #0091FF), white text; detail 0.75 | `chrome::sidebar_palette`, `cmux_accent` | `S/Sidebar/SidebarAppearanceSupport.swift:405-417,440`; `P/CmuxSettings/…/WorkspaceColorsCatalogSection.swift:5-24`; `P/CmuxFoundation/…/CmuxAccentColor.swift:49-56` | ✓ |
+| sidebar | label alphas: title labelColor 0.85, detail secondaryLabel 0.5/0.55 | `sidebar_palette` | `…RowSupportViews.swift:47-62` (macOS label colours) | ✓ |
+| sidebar | trailing border 1 px separator | `border_r_1`, `p.border` | `P/CmuxAppKitSupportUI/…/WindowChromeBorder.swift:23-24,50` | ✓ (pixel-checked) |
+| sidebar | band buttons 20, icon 12, radius 6, spacing 6 | `BUTTON`, `BUTTON_ICON`, `RADIUS`, `BUTTON_GAP` | `S/WindowChromeMetrics.swift:23-26`; `S/Update/UpdateTitlebarAccessory.swift:63-74` | ✓ |
+| sidebar | band icon tint secondary@0.86, hover 0.96, pressed 1.0 | was detail, press dims 0.72 → `ICON_ALPHA`, `ICON_HOVER_ALPHA` | `S/RightSidebarChromeStyle.swift:16-21`; `UpdateTitlebarAccessory.swift:1418-1420` | fixed (pressed 1.0 not modelled) |
+| sidebar | bell badge 12 circle, label max(7, 12−6)=7 semibold, offset (3, −3), cap 99 | was 13 / 9 pt pill → `BELL_BADGE` 12, `BELL_BADGE_PX` 7 | `UpdateTitlebarAccessory.swift:67-68,258-259,987-1005` | fixed |
+| sidebar | band position | ours: band inside the sidebar, buttons right-aligned | cmux: 28 pt titlebar across the whole window after the traffic lights, leading pad 4 (`S/WindowChromeMetrics.swift:27`) | gap: layout (M3 D3), Linux has no traffic lights |
+| sidebar | list top/bottom scroll fades, Chief Home row | none | `S/WindowChromeMetrics.swift:72-99` | gap: behaviour / out of scope (Chief) |
+| tab strip | height 28 | `TAB_BAR_HEIGHT` | `S/WindowChromeMetrics.swift:7`; `S/Workspace.swift:4159` | ✓ |
+| tab strip | min 48 / max 220, padding 6, spacing 0 | `TAB_MIN_W`, `TAB_MAX_W`, `TAB_PAD` | `B/Internal/Styling/TabBarMetrics.swift:13-17`; `B/Internal/Views/TabItemView.swift:224-225` | ✓ |
+| tab strip | icon 14 (glyph 11.5), gap 6, title 11 regular | `ICON_SLOT`, `ICON_GLYPH`, `CONTENT_GAP`, `TITLE_PX` | `TabBarMetrics.swift:24-25,30`; `TabItemView.swift:652,976` | ✓ |
+| tab strip | text alphas active 0.82, inactive 0.62 light / 0.68 dark | `chrome::tab_palette` | `B/Internal/Styling/TabBarColors.swift:7-10,96-109` | ✓ |
+| tab strip | active fill / hover fill | was bg ±0.12 / ±0.07 @ 0.78 → clear / black@0.055, white@0.075 | cmux always shares the backdrop (`S/Workspace.swift:3886-3888,4166`) → `TabBarColors.swift:177-179,194-199` | fixed |
+| tab strip | active indicator 1.5 top, inset 1 right, controlAccentColor, greyscale when unfocused | `INDICATOR_H`, `chrome::accent`, `desaturate` | `TabBarMetrics.swift:18-19`; `TabBarColors.swift:342-344`; `B/Internal/Views/TabBarView.swift:1089` | ✓ |
+| tab strip | separators: right edge + bottom except under selected; colour = window separator | `border_r_1`, `border_b_1`, `separator` | `S/Workspace.swift:3995-4013`; `B/Internal/Views/TabBarSelectionChromeView.swift:81-119` | ✓ |
+| tab strip | unread dot 6, systemBlue, not desaturated, only on unselected unhovered tab | was cmux accent → `chrome::accent` | `TabBarMetrics.swift:29`; `TabBarColors.swift:363-366`; `TabItemView.swift:1159-1165` | fixed |
+| tab strip | close slot 16, glyph 9 semibold, inactive→active text on hover with hover-fill circle; shown on selected or hovered | `CLOSE_SLOT`, `CLOSE_GLYPH` | `TabBarMetrics.swift:26-27`; `TabItemView.swift:1184-1203` | ✓ (glyph weight: svg stroke) |
+| tab strip | split lane: lead 6, trail 8, button 22, spacing 4, glyph 12 | `LANE_*`, `BUTTON_*` | `TabBarView.swift:186-189` | ✓ (browser button skipped, M2) |
+| splits | divider 1 px; hit 8 each side | `cmux_core::geometry::DIVIDER`; `workspace.rs` `DIVIDER_HIT` | `TabBarMetrics.swift:41`; `S/PortalSplitDividerRegion.swift:57` | ✓ |
+| splits | divider colour: Ghostty `split-divider-color` else separator | `chrome::divider` | `S/Workspace.swift:3967-3975,4010-4013` | ✓ |
+| splits | unfocused dim: `unfocused-split-fill` or bg at 1 − clamp(opacity 0.7, 0.15…1) | `chrome::dim_overlay` | `P/CmuxTerminalCore/…/Config/GhosttyConfig.swift:65,193-202`; `S/Panels/TerminalPanelView.swift:114` | ✓ |
+| ring | inset 2, radius 6, stroke 2 | `attention.rs` `INSET`, `RADIUS`, `STROKE` | `S/Panels/Panel.swift:227-229`; `P/CmuxFoundation/…/CGFloat+PaneIndicator.swift:7` | ✓ |
+| ring | colour = cmux accent; glow 0.35 / 3 (ring), 0.6 / 6 (flash) | `attention_color`; glow as wider faint stroke | `Panel.swift:180-190` | ✓ (glow approximated, M4) |
+| ring | flash: double blink default, 0→1→0→1→0 at .25 steps, 0.9 s, ease-out up / ease-in down | `FLASH`, `flash_opacity` | `Panel.swift:274-285,322-333`; `S/TerminalNotificationStoreSettings.swift:28` (`defaultDoubleBlink = true`; the doc comment at `Panel.swift:268` says pulse, the value wins) | ✓ |
+| panel | size 560 × 760 (min 420 × 320, max 1000 × 1200) | `WIDTH`, `HEIGHT` | `S/Update/NotificationsPopoverMetrics.swift:4-9` | ✓ size; resize handle = gap (behaviour) |
+| panel | header "Notifications" 14 semibold, pad 14/10, capsule 11 semibold px 6 py 1 | `HEADER_PAD_*` | `S/Update/NotificationsPopoverView.swift:188-197,258-259` | fixed (capsule py) |
+| panel | header buttons 11 pt, pad 8/4, radius 5, fill secondary@0.12 (0.05 disabled), secondary text when disabled | was 12 pt, 8/3, r6, title@0.08, opacity 0.4 | `NotificationsPopoverView.swift:209,225-252` | fixed |
+| panel | "Jump to Latest" icon + shortcut chip; phone-forwarding row | none | `NotificationsPopoverView.swift:201-224,262-280` | gap: icon/chip (new UI); phone row out of scope |
+| panel | row min 56; lead 4; unread bar 2.5 inset 6; content pl 10 py 8; line gap 2; title–time gap 6; time pad 34 | was bar full height, px 12, gap 8 → `ROW_LEAD`, `UNREAD_BAR_INSET`, `CONTENT_PAD_*`, `TIME_PAD_R` | `S/Update/NotificationPopoverRow.swift:25,114-180` | fixed |
+| panel | fonts 12.5 semibold / 10.5 / 10.5 medium / 11.5 ×2 lines; hover primary@0.11 | as before | `NotificationPopoverRow.swift:43,124-170` | ✓ |
+| panel | clear button 20 circle primary@0.1, xmark 9 primary@0.7, trailing 10, centred | was top-right 8, fill on hover only | `NotificationPopoverRow.swift:66-67,185-191` | fixed |
+| panel | dividers between rows only, @0.4, leading 18 | was bottom border on every row | `NotificationsPopoverView.swift:355-358` | fixed |
+| panel | empty state bell.slash 30 @ secondary 0.7, gap 10, 14 medium, 12 centred, pad 24 | was 28 / gap 6 / 13 semibold / 11.5 | `NotificationsPopoverView.swift:292-297,415-429` | fixed |
+| panel | background windowBackgroundColor, NSPopover chrome | terminal bg, 8 radius, shadow | `NotificationsPopoverView.swift:77` | gap: no portable system colour |
+| window | sidebar/content backdrop = terminal bg (matchTerminalBackground) | `sidebar_palette(bg)` | `S/Workspace.swift:3886-3888` | ✓ |
+| window | separators on default theme (#282c34) and dark theme (#1e1e1e) | `chrome::separator` | `P/CmuxAppKitSupportUI/…/WindowChromeColorResolver.swift:24-42` | ✓ |
+| window | default theme with no Ghostty colours: cmux injects "Apple System Colors" (dark, #1e1e1e/#ffffff) / "…Light" by appearance | ours: Ghostty default #282c34 | `P/CmuxTerminalCore/…/Config/GhosttyConfig.swift:25-28,451-458`; `P/CmuxSettings/…/TerminalCatalogSection.swift:110-113`; `S/GhosttyTerminalView.swift:1278-1295` | gap: needs a bundled theme + system appearance detection (new behaviour) |
+
+- Gaps above need behaviour, not values; none is under ~30 lines except the pressed-icon opacity, which gpui's `active` cannot express on a child svg without new state.
