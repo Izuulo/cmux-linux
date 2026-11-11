@@ -39,7 +39,20 @@ Not done: naming the agent's tab, Codex and other agents' transcripts, a setting
 Tasks: 1 title provenance in `cmux-core`; 2 setting in `cmux-config`; 3 engine in `cmux-meta::autoname` (throttle, transcript, prompt, title, runner); 4 `workspace.auto_name` in the app; 5 the hook sends it; 6 check against the app with a fake command, docs.
 
 ## Part 3: automations (exit 4)
-Event bus and ordered actions from a versioned JSON file. To plan after reading `docs/automations.md` against the Swift source.
+
+Reference: cmux `docs/automations.md`, `docs/events.md`, `Sources/AutomationRule.swift` and `AutomationEngine.swift` @ `88b87c05`.
+
+| | Decision | Why |
+|---|---|---|
+| A1 | Rules in `~/.config/cmux-linux/automations.json`, cmux's format: `version: 1`, `rules[]` with `id`, `enabled`, `when` (`event`, `category`; exact or a `*` prefix/suffix), `where`, `rate_limit`, `then`. Loaded at start and by `cmux automation reload`. A rule that doesn't parse, or uses an action we don't have, is left out with a warning; the rest load. | cmux "Configuration". A half-run rule is worse than a missing one. |
+| A2 | The event bus is one `emit` in the app, called where the thing happens: `workspace.created`, `workspace.closed`, `notification.created`, `feed.item.received`, `agent.message.queued`, `agent.hook.Stop`. cmux's names; the payload carries `workspace_id`, `workspace_title`, `surface_id` and the event's own fields. | The events with one clear source today. No `cmux events` stream, log file, sequence numbers or redaction: nothing leaves the process except through a rule. |
+| A3 | `where`: cmux's aliases (`workspace.title`/`title`, `agent`, `surface.kind`) and plain payload keys; a value is equal ignoring case, or an object of `equals`, `contains`, `prefix`, `suffix`, `in`, `not`. | cmux `AutomationRule`. `workspace.tag` never matches: we have no tags. |
+| A4 | Rate limit per rule, default one firing a second (`interval_seconds`, `maximum`). | cmux. |
+| A5 | Actions, in order, the next after the last ends: `notify` (title, subtitle, body with `{{event.name}}`, `{{event.category}}`, `{{event.source}}`, `{{payload.<key>}}`; target defaults to the event's surface) and `run` (`sh -c`, cmux's `CMUX_AUTOMATION_*` variables, 60 s, `timeout_seconds` up to 300). No `rpc` or `webhook`. | `run` reaches both: `cmux ...` for the socket, `curl` for a webhook. Deviation. |
+| A6 | A notification made by a rule emits no event. | cmux tracks a rule chain; this stops the one loop that needs no outside process. A `run` that calls `cmux` can still loop, at the rate limit. |
+| A7 | Socket `automation.list` and `automation.reload`; CLI `cmux automation list` and `reload`. | Enough to see what loaded and why not. No `show`, `test`, `enable`, `disable`, `logs`. |
+
+Tasks: 1 rules, matching, rate limit and templates in `cmux-ipc::automation`; 2 `emit` and the two actions in the app; 3 the emit points; 4 socket and CLI; 5 check a sample rule against the app, docs.
 
 ## Part 4: Claude Teams (exit 2)
 `cmux claude-teams`: teammates as native splits. Largest and least certain part (depends on Claude Code's teammate mode and its tmux shim); planned last.
