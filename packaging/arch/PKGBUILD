@@ -36,7 +36,8 @@ prepare() {
 
 build() {
   cd cmux-linux
-  export PATH="$srcdir/zig-x86_64-linux-0.16.0:$PATH"
+  export ZIG="$srcdir/zig-x86_64-linux-0.16.0/zig" # overrides .cargo/config.toml
+  export PATH="${ZIG%/zig}:$PATH"
   cargo build --release --locked -p cmux-app -p cmux-ipc
 }
 
