@@ -8,8 +8,8 @@ use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use cmux_core::{
-    FeedItemId, FeedStore, GroupId, Notifications, Placement, WorkspaceClosed, WorkspaceId,
-    Workspaces,
+    FeedItemId, FeedStore, GroupId, MessageStore, Notifications, Placement, WorkspaceClosed,
+    WorkspaceId, Workspaces,
 };
 use cmux_meta::pr::{self, PrKey, PrPoller};
 use cmux_meta::{WorkspaceInput, WorkspaceMeta};
@@ -31,6 +31,7 @@ mod feed_ctl;
 mod group_ctl;
 mod groups;
 mod menu;
+mod message_ctl;
 mod notify;
 mod panel;
 mod rename;
@@ -73,6 +74,8 @@ pub struct WindowView {
     /// Agent prompts (M7) and the `feed.push` requests still waiting on them, by request id.
     feed: FeedStore,
     feed_waiters: HashMap<String, feed_ctl::Waiter>,
+    /// Agent-to-agent messages (M9), claimed by the recipients' hooks.
+    messages: MessageStore,
     /// The right sidebar (plan M7 D7, M8 D12): closed at launch.
     right_sidebar_open: bool,
     right_mode: dock::RightMode,
@@ -158,6 +161,7 @@ impl WindowView {
             notifications: Notifications::new(),
             feed: FeedStore::default(),
             feed_waiters: HashMap::new(),
+            messages: MessageStore::default(),
             right_sidebar_open: false,
             right_mode: Default::default(),
             right_width: dock::RIGHT_SIDEBAR_MIN,
@@ -260,6 +264,7 @@ impl WindowView {
             }
             WorkspaceEvent::Closed(s) => {
                 this.feed_close_surface(id, *s, cx);
+                this.messages.forget(id, Some(*s));
                 this.on_closed(id, *s, cx);
             }
         });
@@ -349,6 +354,7 @@ impl WindowView {
                 self.views.remove(&id);
                 self.titles.remove(&id);
                 self.feed_close_workspace(id, cx);
+                self.messages.forget(id, None);
                 let gone = self.notifications.remove_workspace(id);
                 self.after_change(gone, cx);
                 if was_selected {

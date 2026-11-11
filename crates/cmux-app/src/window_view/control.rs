@@ -260,6 +260,9 @@ impl WindowView {
                 Ok(snap.target_payload(&t))
             }
             "workspace.create" => self.create_workspace(params, window, cx),
+            m if m.starts_with("agent.message.") => {
+                self.message_from_socket(&snap, method, params, cx)
+            }
             m if m.starts_with("workspace.group.") => {
                 self.group_from_socket(&snap, method, params, window, cx)
             }
