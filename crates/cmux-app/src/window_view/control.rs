@@ -260,6 +260,7 @@ impl WindowView {
                 Ok(snap.target_payload(&t))
             }
             "workspace.create" => self.create_workspace(params, window, cx),
+            "workspace.auto_name" => self.auto_name_from_socket(&snap, params, cx),
             m if m.starts_with("agent.message.") => {
                 self.message_from_socket(&snap, method, params, cx)
             }

@@ -183,7 +183,8 @@ const HOOKS: &str = "Usage: cmux hooks <setup|uninstall> [--settings-file <path>
   uninstall  Remove cmux's hooks from Claude Code's settings
   feed       Run as Claude Code's PermissionRequest hook: show the prompt in the cmux Feed
   message    Run as Claude Code's UserPromptSubmit, PostToolUse and Stop hook: hand over
-             the messages other agents left with `cmux agent message`
+             the messages other agents left with `cmux agent message`; on Stop also
+             report the turn's end for workspace auto-naming
 ";
 
 const DISMISS: &str = "Usage: cmux dismiss-notification (--id <uuid> | --all-read)

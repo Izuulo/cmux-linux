@@ -23,6 +23,7 @@ use crate::actions::*;
 use crate::style::TermStyle;
 use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
+mod autoname_ctl;
 pub(crate) mod control;
 mod dock;
 mod feed;
@@ -76,6 +77,8 @@ pub struct WindowView {
     feed_waiters: HashMap<String, feed_ctl::Waiter>,
     /// Agent-to-agent messages (M9), claimed by the recipients' hooks.
     messages: MessageStore,
+    /// Auto-naming's throttle state per workspace (M9 Part 2).
+    naming: HashMap<WorkspaceId, autoname_ctl::Naming>,
     /// The right sidebar (plan M7 D7, M8 D12): closed at launch.
     right_sidebar_open: bool,
     right_mode: dock::RightMode,
@@ -162,6 +165,7 @@ impl WindowView {
             feed: FeedStore::default(),
             feed_waiters: HashMap::new(),
             messages: MessageStore::default(),
+            naming: HashMap::new(),
             right_sidebar_open: false,
             right_mode: Default::default(),
             right_width: dock::RIGHT_SIDEBAR_MIN,
@@ -355,6 +359,7 @@ impl WindowView {
                 self.titles.remove(&id);
                 self.feed_close_workspace(id, cx);
                 self.messages.forget(id, None);
+                self.naming.remove(&id);
                 let gone = self.notifications.remove_workspace(id);
                 self.after_change(gone, cx);
                 if was_selected {
