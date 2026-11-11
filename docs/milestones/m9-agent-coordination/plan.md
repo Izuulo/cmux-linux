@@ -55,4 +55,17 @@ Reference: cmux `docs/automations.md`, `docs/events.md`, `Sources/AutomationRule
 Tasks: 1 rules, matching, rate limit and templates in `cmux-ipc::automation`; 2 `emit` and the two actions in the app; 3 the emit points; 4 socket and CLI; 5 check a sample rule against the app, docs.
 
 ## Part 4: Claude Teams (exit 2)
-`cmux claude-teams`: teammates as native splits. Largest and least certain part (depends on Claude Code's teammate mode and its tmux shim); planned last.
+
+Reference: cmux `CLI/cmux.swift` @ `88b87c05` (`claude-teams` usage text, `configureTmuxCompatEnvironment`, the `__tmux-compat` cases) and `CMUXCLI+ExecutableResolution.swift` (`claudeTeams*Arguments`).
+
+| | Decision | Why |
+|---|---|---|
+| T1 | `cmux claude-teams [claude-args...]`, from one of our terminals only: writes a private `tmux` script that calls `cmux __tmux-compat`, puts it first on `PATH`, sets `TMUX`, `TMUX_PANE` and `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, removes `TERM_PROGRAM`, then execs `claude --teammate-mode auto` with cmux's system-prompt nudge (named teammates get panes) unless the user passed a teammate mode or system prompt. | cmux's usage text and launch code. Claude's auto mode uses tmux when it believes it is inside one. |
+| T2 | A tmux pane is one of our terminals: `%N` is `surface:N`. No target means the caller's pane (`TMUX_PANE`, else `CMUX_SURFACE_ID`). | Refs are per-run numbers already; no id table to keep. |
+| T3 | `__tmux-compat` translates what a team needs: `split-window` (`-h` right, else down, `-b` the other side, `-d` no focus, `-c` dir, `-P -F`, a command typed into the new shell), `send-keys` (text, with tmux key names turned into their bytes), `kill-pane`, `list-panes -F`, `display-message -p`, `select-pane` (focus; `-T`/`-P` ignored), `-V`. Layout, option, hook and rename commands succeed and do nothing. Anything else fails with cmux's "Unsupported tmux compatibility command". | The cmux cases a Claude team reaches. Failing loudly on the rest shows what a new Claude version starts to need. |
+| T4 | New socket method `surface.close` (cmux's name) for `kill-pane`. | The only missing app-side piece. |
+| T5 | Notifications and sidebar metadata need nothing new: a teammate is an ordinary terminal with its own `CMUX_*` variables, so its Claude's hooks, OSC notifications, directory and ports show like any other. | Spec: "sidebar metadata and notifications". |
+
+Not done: cmux's anchored column layout and re-equalizing (splits go where tmux asked, and can fail for lack of room), `capture-pane`, windows and sessions (`new-window`, `kill-session`), buffers, `wait-for`, session restore of a team, the per-surface Claude wrapper, `codex-teams`.
+
+Tasks: 1 `surface.close`; 2 tmux argument parsing, formats and key names; 3 the `__tmux-compat` commands; 4 the launcher; 5 check by hand-run tmux commands against the app, docs. A real Claude team run is the owner's (it spends usage).
