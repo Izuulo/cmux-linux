@@ -164,3 +164,48 @@ fn claude_teams_needs_one_of_our_terminals() {
     );
     assert!(ok(t.run(&["claude-teams", "--help"])).starts_with("cmux claude-teams\n\nUsage:"));
 }
+
+#[test]
+fn respawn_pane_runs_the_command_from_a_script() {
+    let home = std::env::temp_dir().join(format!("cmux-respawn-test-{}", std::process::id()));
+    let env = [
+        ("HOME", home.to_str().unwrap()),
+        ("PATH", "/shim:/usr/bin"),
+        ("TMUX", "/tmp/cmux-claude-teams/W,0,1"),
+    ];
+    let t = t();
+    let command = "cd /w && env A='b c' claude --agent-id a";
+    let args = [
+        "__tmux-compat",
+        "respawn-pane",
+        "-k",
+        "-t",
+        "%2",
+        "-c",
+        "/w dir",
+        command,
+    ];
+    assert_eq!(ok(t.run_env(&args, &env)), "");
+    let sent = t.fake.requests();
+    assert_eq!(
+        sent[sent.len() - 2].1["text"],
+        "\x03",
+        "ends the placeholder first"
+    );
+    let (method, params) = t.last();
+    assert_eq!(method, "surface.send_text");
+    let line = params["text"].as_str().unwrap();
+    let file = line
+        .strip_prefix("exec sh '")
+        .and_then(|l| l.strip_suffix("'\n"))
+        .expect(line);
+    assert_eq!(
+        std::fs::read_to_string(file).unwrap(),
+        format!(
+            "rm -f \"$0\"\nexport PATH='/shim:/usr/bin'\nexport TMUX='/tmp/cmux-claude-teams/W,0,1'\n\
+             export TMUX_PANE='%2'\ncd '/w dir' || exit\n{command}\n"
+        )
+    );
+    std::fs::remove_dir_all(home).unwrap();
+    assert!(err(tmux(&t, &["respawn-pane", "-k", "-t", "%2"])).contains("needs a command"));
+}

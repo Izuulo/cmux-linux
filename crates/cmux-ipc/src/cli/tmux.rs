@@ -260,6 +260,51 @@ pub(crate) fn compat(cmd: &mut Cmd) -> Result<String, CliError> {
             }
             Ok(String::new())
         }
+        // How Claude Code starts a teammate in the pane it just split off.
+        "respawn-pane" | "respawnp" => {
+            let a = parse(rest, "ct", "k")?;
+            let panes = panes(cmd)?;
+            let pane = target(cmd, &panes, a.value('t'))?;
+            let command = a.positional.join(" ");
+            if command.trim().is_empty() {
+                return fail("respawn-pane needs a command in cmux tmux compatibility mode");
+            }
+            let env = |k: &str| cmd.ctx.env.get(k).cloned();
+            let Some(dir) = paths::state_dir(&env).map(|d| d.join("claude-teams-bin")) else {
+                return fail("cannot find a place for the respawn script: set HOME");
+            };
+            // The lead's PATH (with the shim) and tmux identity, which the pane's shell lacks.
+            let mut script = String::from("rm -f \"$0\"\n");
+            for key in ["PATH", "TMUX", "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"] {
+                if let Some(v) = cmd.env(key) {
+                    script += &format!("export {key}={}\n", quote(v));
+                }
+            }
+            script += &format!("export TMUX_PANE={}\n", quote(&format!("%{}", pane.n)));
+            if let Some(cwd) = a.value('c') {
+                script += &format!("cd {} || exit\n", quote(cwd));
+            }
+            script += &command;
+            script.push('\n');
+            let file = dir.join(format!("respawn-{}.sh", pane.id));
+            std::fs::create_dir_all(&dir)
+                .and_then(|()| std::fs::write(&file, script))
+                .map_err(|e| format!("cannot write {}: {e}", file.display()))?;
+            // shortcut: Ctrl-C, a pause, then a typed line: not a real respawn. Claude parks a
+            // new pane on `cat`, which this ends; a program that ignores Ctrl-C swallows the
+            // line. Add `surface.respawn` if that bites.
+            let mut params = surface_params(pane);
+            params.insert("text".into(), "\x03".into());
+            cmd.call("surface.send_text", params)?;
+            // The shell drops input that arrives while it takes the terminal back.
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            // A file, not the command itself, so the user's shell syntax doesn't matter.
+            let mut params = surface_params(pane);
+            let line = format!("exec sh {}\n", quote(&file.to_string_lossy()));
+            params.insert("text".into(), line.into());
+            cmd.call("surface.send_text", params)?;
+            Ok(String::new())
+        }
         "kill-pane" | "killp" => {
             let a = parse(rest, "t", "")?;
             let panes = panes(cmd)?;
