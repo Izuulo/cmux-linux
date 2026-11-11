@@ -97,3 +97,10 @@ Host: Apple M5, 16 GiB, macOS, release build. Window 1100 x 732 pt (default, not
 | idle, 1 pane | 10.8 ms | 13.5 ms | 14.6 ms | | |
 
 Verdict vs D8: p50 <= 16.7 ms pass, p95 <= 33 ms pass, RSS <= 1 GiB pass, CPU < 5 % after stop pass, idle p95 <= 16.7 ms pass. Caveats: the 60 s `ps` CPU is a decayed average, not an instantaneous reading; socket path was /tmp/cmux-perf.sock because the scratchpad path exceeds macOS SUN_LEN.
+
+### Addendum 2026-11-10 — Task 7 memory and CPU re-measure
+
+- Memory: `footprint <pid>` (phys_footprint) on a fresh 20-pane flood run: 70 MB at 60 s under load and 70 MB after the stop (ps RSS 72.7 MB / 70.8 MB). So the earlier ~80 MB RSS was not hiding compressed pages. Dirty: ~27 MB malloc, ~16 MB app tag 1, ~12 MB IOSurface.
+- `SCROLLBACK = 10_000` is **bytes**, not lines. The C header (`vendor/ghostty/include/ghostty/vt/terminal.h:188`) says "lines", but the value goes straight to `Screen.Options.max_scrollback` (`vendor/ghostty/src/terminal/Screen.zig:264`, "maximum size of scrollback in bytes", rounded up to a page). So each terminal keeps about one page of history, far less than 10 000 lines. D8's "10 000 lines x 20" memory premise is wrong: the 70 MB figure is with almost no scrollback, and the RSS target is not yet proven for real history. Constant not changed; follow-up: map `scrollback-limit` (bytes) or size it for ~10 000 lines and re-measure.
+- CPU: `scripts/perf-panes.sh` now measures CPU over a 5 s window (Linux: /proc utime+stime ticks / CLK_TCK; macOS: `top -l 2` second sample). Under load 43.6 %, after stop (from +1 s) 0.1 %. The 2nd macOS sample is a delta over the window, so these are real window readings. Linux not run here.
+- Idle p50 (10.8 ms) above loaded p50 (8.5 ms) is unexplained; a guess is that the render loop is already awake under load while idle must wake from sleep. Not investigated.
