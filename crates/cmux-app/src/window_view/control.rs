@@ -243,6 +243,19 @@ impl WindowView {
                 self.feed_refocus(window);
                 Ok(json!({ "delivered": true }))
             }
+            // cmux's test-only `debug.shortcut.simulate`: scripted UI checks press chords here.
+            "debug.shortcut.simulate" => {
+                let combo = params.get("combo").and_then(Value::as_str).unwrap_or("");
+                let chord = combo.to_lowercase().replace('+', "-").replace("opt-", "alt-");
+                let Ok(ks) = Keystroke::parse(&chord) else {
+                    return Err(RpcError::new("invalid_params", "Invalid combo"));
+                };
+                // After this update: the handlers update this view again.
+                window.defer(cx, move |window, cx| {
+                    window.dispatch_keystroke(ks, cx);
+                });
+                Ok(json!({}))
+            }
             _ => Err(RpcError::new("method_not_found", "Unknown method")),
         }
     }
