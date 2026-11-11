@@ -51,7 +51,7 @@ impl Render for DraggedTab {
             .h(px(TAB_BAR_HEIGHT))
             .max_w(px(TAB_MAX_W))
             .px(px(TAB_PAD))
-            .bg(self.palette.active_fill)
+            .bg(self.palette.bar)
             .text_size(px(TITLE_PX))
             .text_color(self.palette.active_text)
             .whitespace_nowrap()
