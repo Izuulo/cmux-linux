@@ -14,9 +14,9 @@ use std::sync::mpsc::Sender;
 use ghostty_vt::{Callbacks, Cell, CursorInfo, Error, RenderState, Rgb, Scrollbar, Terminal};
 use osc::{OscEvent, OscScanner};
 
-/// Scrollback lines kept per terminal.
-// shortcut: fixed; Ghostty's `scrollback-limit` (bytes) is not mapped yet. Add with M10 persistence.
-const SCROLLBACK: usize = 10_000;
+/// Scrollback bytes kept per terminal (Ghostty's default `scrollback-limit`).
+// shortcut: fixed; the Ghostty `scrollback-limit` config key is not mapped yet. Add with M10.
+const SCROLLBACK: usize = 50_000_000;
 
 const TITLE_CHANGED: u8 = 1;
 const BELL: u8 = 2;
@@ -282,5 +282,15 @@ mod tests {
         assert!(e3 > e2);
         t.feed(b"\x1b[?1049l");
         assert!(t.epoch() > e3);
+    }
+
+    #[test]
+    fn five_thousand_lines_stay_in_history() {
+        let (mut t, _rx) = term(80, 24);
+        for n in 1..=5000 {
+            t.feed(format!("{n}\r\n").as_bytes());
+        }
+        t.scroll(-100_000);
+        assert_eq!(t.text_lines().unwrap()[0].trim_end(), "1");
     }
 }
