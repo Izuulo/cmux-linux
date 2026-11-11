@@ -4,8 +4,8 @@
      current version to docs/status-archive.md. -->
 
 **Updated:** 2026-11-11
-**Current milestone:** M7 feed: plan written on branch `m7-feed` (cut from the unmerged `m6-parity-release`), awaiting the owner's review. M6 Tasks 1–7 done; M6 Task 8 (KDE desktop) still left.
-**Next action:** owner reviews `docs/milestones/m7-feed/plan.md` and picks an execution method. Separately, at the CachyOS desktop, M6 plan Task 8: install with `cd packaging/arch && makepkg -si` (needs `rustup`, not `rust`), Steps 1–4 (installed-app checks, `scripts/perf-panes.sh` on KDE = also M1 exit 3, parity spot check, the pending M2–M5 desktop checks), then Step 5 docs, PR and merge.
+**Current milestone:** M7 feed on branch `m7-feed` (cut from the unmerged `m6-parity-release`): Tasks 1–8 done and reviewed; Task 9 Step 1 (Mac smoke) partial, Step 3 docs done. M6 Task 8 (KDE desktop) still left.
+**Next action:** owner, in this order: (a) manual UI check of the Feed on the Mac (buttons, feedback field typing, question picks, `✓ Submitted` and expired dimming, and the possible bug where opening the right sidebar wipes visible terminal content); (b) M7 Task 9 Step 2, a real Claude Code run (`cmux hooks setup` twice, a Bash permission from a background workspace answered in the Feed, a plan approved with Manual, then `cmux hooks uninstall` and a diff of the settings; edits `~/.claude/settings.json` and spends Claude usage); (c) at the CachyOS desktop, M6 plan Task 8: `cd packaging/arch && makepkg -si` (needs `rustup`, not `rust`), Steps 1–4 (installed-app checks, `scripts/perf-panes.sh` on KDE = also M1 exit 3, parity spot check, pending M2–M5 desktop checks), Step 5 docs, PR, merge; then rebase M7 onto `master` and PR it.
 
 ## Where things are
 - Project design and milestone table: `docs/design.md`
@@ -23,7 +23,7 @@
 | M4 notifications | merged (PR #5); desktop checks (plan Task 9 Step 1) pending |
 | M5 cli-socket | merged (PR #6); criterion 1 = `cmux notify` hooks (owner's ruling), automated by `hook_commands_work_unchanged`; KDE desktop check pending |
 | M6 parity-release | Tasks 1–7 done (macOS); Task 8 at the KDE desktop pending; exit 2 (CachyOS install) and Linux perf not yet run |
-| M7 feed | plan written (`docs/milestones/m7-feed/plan.md`), not started |
+| M7 feed | Tasks 1–8 done + reviewed (`m7-feed`); smoke partial (socket side passes, UI unseen); Task 9 Steps 2, 4 pending |
 | M8 groups-dock | not started (post-v1) |
 | M9 agent-coordination | not started (post-v1) |
 | M10 persistence | not started (post-v1) |
@@ -44,9 +44,10 @@
 - Sidebar metadata: `.git/HEAD` + `/proc` polled every 1.5 s, PR via `gh pr list --json` (cmux cadence), all on the background executor.
 - Blur: own `ext_background_effect_v1` shim on gpui 0.2.2's surface (no gpui upgrade); whole window, only with Ghostty `background-blur`.
 - macOS dev builds: `--features gpui/runtime_shaders` (no Metal Toolchain); Linux CI is the gate; a `macos` CI job builds/tests release.
+- Feed (M7): cmux's hook protocol (one `PermissionRequest` hook, v2 `feed.push` held until answered, 115 s wait then `{}` so Claude shows its own prompt); `cmux hooks setup|uninstall` edits Claude's settings (no `claude` wrapper); hook acts only with `CMUX_LINUX=1`; one `FeedEnd` exit, wrong-kind replies rejected; store newest first, cap 2000, not persisted; no Ultraplan/Bypass/free-text answers; ctrl+4 = Feed only inside the sidebar.
 - M6: macOS cwd/ports via libproc (`cmux-meta/darwin.rs`); no exit watch on macOS (it revokes the slave on shell exit, so EOF suffices); inherited `CMUX_*` removed in `Session::shell_command()`; package installs to `/usr/lib/cmux-linux/` + `/usr/bin` symlinks; licence gate `deny.toml`; scrollback 10 MB/terminal (cmux ships 50 MB, but our history is uncompressed).
 
-## Code map (M1–M6)
+## Code map (M1–M7)
 - `cmux-config`: Ghostty config parser/loader.
 - `cmux-term`: `Term` (libghostty-vt wrapper, epoch for selection safety), OSC 7/9/99/777 scanner (Ghostty's ConEmu and kitty rules), PTY `Session` (non-blocking drop), `Selection`, paste/focus encoding.
 - `cmux-core`: split tree (`tree`: panes, tabs, focus, zoom) and `geometry` (rects, admission, divider drag, resize, equalize). No UI.
@@ -54,6 +55,7 @@
 - `cmux-core` also: `workspaces` (list, selection, rename, reorder); M4 `notifications` (store, read rules).
 - `cmux-meta`: `git`, `path`, `ports`, `pr` (`PrPoller`), `collect`; M6 `darwin` (macOS libproc).
 - `cmux-ipc` (M5, no gpui): `wire`, `handles`, `json`, `snapshot` (reads + target resolution), `server`, `paths`, `env`, `keys`, `cli/*`; binary `cmux`. App side: `window_view/control.rs`.
+- M7: `cmux-core::feed` (`FeedStore`, `FeedKind::accepts`, `Decision`); `cmux-ipc::feed` (JSON <-> model, `hook_output`), `cli/hooks.rs` (`feed`, `setup`, `uninstall`); `cmux-config` `Binding.context`; app `window_view/feed_ctl.rs` (waiters, `feed_finish`, timer), `feed.rs` (right sidebar, permission cards, keys), `feed_cards.rs` (plan, question).
 - `cmux-app`: gpui `TerminalView` + `TerminalElement`, keys, colours, style, mouse, IME; M2 adds `actions`, `chrome`, `workspace`, `workspace/tab_strip`, `assets`; M3 adds `window_view` (root, pollers), `window_view/sidebar`, `window_view/rename`, `blur` (Linux); M4 adds `attention` (ring, flash), `window_view/notify` (rules wiring, jump), `window_view/panel`, `desktop_notify` (zbus, Linux), `activation` + `wayland` (Linux).
 
 ## Open risks
@@ -62,6 +64,8 @@
 - No M2–M5 UI has been seen on screen yet (all built against CI + reviews). On macOS a **debug** build hangs in gpui's `Application::new` (ActionRegistry insert loop); a **release** build (`cargo build --release --features gpui/runtime_shaders`) runs.
 - M5 hooks fail silently if a login shell's startup files hide our `cmux` on `PATH`, or if the agent runs outside the app's process tree (tmux) in cmuxOnly mode (README documents both; cmux's shell integration and capability tokens are not ported).
 - Real IME (fcitx/ibus) unverified.
+- M7 Feed UI never seen drawn (cards, ring, badge, dimming, button clicks, feedback field, question picks all unverified; only socket/hook behaviour was smoke-tested). Possible bug: opening the right sidebar wiped visible terminal content (check `terminal_view` resize/reflow and scrollback). Real Claude Code run (Task 9 Step 2) not done.
+- M7 parked (details in its journal): one notification per surface (two cards on a surface share it); stdin read has no timeout; `CMUX_LINUX` would leak into cmux.app launched from our terminal; settings key order relies on workspace `preserve_order` feature unification (check packaging); socket question reply with too few selections accepted.
 - M6 parity: panel, 3-tab strip and ring flash were matched from Swift source only, never rendered; owner's cmux.app wasn't a clean reference (non-default config). Remaining gaps (default theme, full-width titlebar band, panel extras, pressed-icon opacity, scroll fades) are in the M6 journal.
 - M6 perf on macOS: loaded p95 10.7 ms, CPU 0.1 % after stop; footprint 971 MB at the old 50 MB scrollback, not re-measured at 10 MB. Linux CPU path of `perf-panes.sh` untested.
 

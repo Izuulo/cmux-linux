@@ -219,6 +219,45 @@ Two things can keep a hook from reaching the app:
   ours, link it into a directory early on your `PATH`, e.g. `ln -s "$PWD/target/release/cmux"
   ~/.local/bin/cmux`.
 
+## Feed
+
+The Feed is a right sidebar that collects what a coding agent is waiting on, so you can answer
+from any workspace. Claude Code's permission prompts, plan approvals and questions appear as
+cards, newest first; the answer goes back to Claude and its own prompt never shows. Open it
+with Super+Alt+B, or move focus into it with Super+Shift+E.
+
+Install the hook once:
+
+```sh
+cmux hooks setup       # adds a PermissionRequest hook to Claude Code's settings
+cmux hooks uninstall   # removes only that entry
+```
+
+The settings file is `--settings-file <path>`, else `$CLAUDE_CONFIG_DIR/settings.json`, else
+`~/.claude/settings.json`. Both commands are idempotent and touch only our own entry. Restart
+running Claude Code sessions to pick the hook up.
+
+What the buttons send back to Claude:
+- **Permission:** Deny refuses, Allow Once allows this call, Always Allow and All tools allow
+  it and apply Claude's own permission suggestions (so later calls aren't asked).
+- **Plan:** Manual approves and keeps asking for each edit, Auto approves and switches to
+  auto-accept, Send feedback rejects the plan with your text.
+- **Question:** pick an option for every question, then Submit All Answers (multi-select
+  answers are joined with ", ").
+
+If you don't answer within 115 s the card dims and Claude shows its own prompt as usual.
+Closing the workspace ends the wait at once. A card also rings and notifies like any other
+notification (see above).
+
+The hook acts only inside cmux-linux terminals (they set `CMUX_LINUX=1`). Anywhere else, such
+as a Mac terminal of cmux.app, it prints `{}` and does nothing, so it is safe to leave
+installed.
+
+Keys, all remappable under `[keybindings]`: `toggleRightSidebar` (Super+Alt+B),
+`focusRightSidebar` (Super+Shift+E), `switchRightSidebarToFeed` (Ctrl+4, only while the
+sidebar has focus; in a terminal it still selects tab 4). In the sidebar, j/k or Down/Up
+choose a card, Enter jumps to its terminal and Escape returns to the terminal.
+
 ## Contributing
 
 Issues and ideas are welcome. Before working on code, read [`STATUS.md`](STATUS.md)
