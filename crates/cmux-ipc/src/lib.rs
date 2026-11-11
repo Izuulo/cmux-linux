@@ -2,6 +2,7 @@
 
 pub mod cli;
 pub mod env;
+pub mod feed;
 pub mod handles;
 pub mod json;
 pub mod keys;
