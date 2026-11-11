@@ -66,3 +66,22 @@ Source: cmux `docs/automations.md`, `docs/events.md`; from the Swift only the `w
 
 **Checked (exit 4)**
 - Against the running app on KDE: a `workspace.created` rule fired at start and on `cmux new-workspace`; its `notify` put an unread badge on the new workspace (screenshot) and its `run` then wrote the rule id, event name and event JSON from the `CMUX_AUTOMATION_*` variables. An `agent.hook.*` rule with `where workspace.title prefix "build"` fired for the `Stop` hook run in "Build API" and not for the one in the other workspace. A `category: notification` rule did not fire on the first rule's notification. A rule with an `rpc` action was left out, with the warning on stderr and in `cmux automation list`; `reload` picked up an edit.
+
+## 2026-11-11 — Part 4 built: Claude Teams (plan T1–T5)
+
+Source: cmux `CLI/cmux.swift` @ `88b87c05` (usage text, `configureTmuxCompatEnvironment`, the `split-window`, `select-pane`, `kill-pane`, `send-keys`, `display-message` cases) and `CMUXCLI+ExecutableResolution.swift` (launch arguments, the system-prompt nudge, copied word for word).
+
+**What exists**
+- `cmux-ipc` `cli/tmux.rs`: `cmux claude-teams` (shim script in `<state dir>/claude-teams-bin/tmux`, environment, exec `claude`) and `cmux __tmux-compat` (tmux option parsing, `#{...}` formats, key names, the commands of plan T3). Both skip our own option parsing, so `-h` and `--json` reach tmux's parser or `claude`.
+- App: socket `surface.close`.
+
+**Deviations from cmux**
+- No anchored layout: cmux sends every teammate split to a column beside the lead and re-equalizes after `kill-pane`; ours splits the pane tmux named, in the direction asked. `select-layout` and `resize-pane` do nothing.
+- A pane is a surface (`%N` = `surface:N`), with no stored id table; a window or session target means the caller's workspace.
+- No `capture-pane`, `new-window`, `new-session`, `kill-session`, `respawn-pane`, `wait-for`, buffers, `if-shell`; no managed Claude wrapper, no restore of a team, no `CLAUDE_CODE_SANDBOXED` handling for `--dangerously-skip-permissions`, no `codex-teams`.
+- `claude` is found on `PATH`; cmux also has a custom-path setting.
+
+**Checked (exit 2, without Claude)**
+- In the running app on KDE, `cmux claude-teams --continue` typed into a terminal with a fake `claude` first on `PATH`: it got `--teammate-mode auto --append-system-prompt <nudge> --continue`, `TMUX`, `TMUX_PANE=%1`, `TERM=screen-256color`, the teams variable, no `TERM_PROGRAM`, and our script as `tmux`. Acting as a lead it split twice (`-h` from the lead, `-v` from the first teammate), got `%2` and `%3`, typed a command into each with `send-keys ... Enter` (each ran in its own shell with its own `CMUX_SURFACE_ID`), listed three panes, saw `capture-pane` refused, and `kill-pane` closed one (screenshot: lead left, teammate right). An OSC 9 notification from the teammate pane drew its ring and the sidebar badge.
+- Not checked: a real Claude Code team. Which tmux commands Claude really sends is taken from cmux's shim, not observed; that run is the owner's (it spends usage).
+
