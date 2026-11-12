@@ -5,9 +5,7 @@
 use std::rc::Rc;
 
 use cmux_config::ghostty::{CursorStyle, Rgb, parse_rgb};
-use gpui::{
-    AnyElement, Context, IntoElement, KeyDownEvent, MouseButton, TextSystem, Window, prelude::*,
-};
+use gpui::{AnyElement, Context, IntoElement, TextSystem, Window, prelude::*};
 
 use super::controls::{self, Colors};
 use super::{FieldId, SettingsView, step};
@@ -221,32 +219,17 @@ impl SettingsView {
         c: Colors,
         cx: &Context<Self>,
     ) -> AnyElement {
-        let id = FieldId::Ghostty(key);
-        let value = hex(current);
-        let editing = self
-            .editing(id)
-            .filter(|_| self.field_focus.is_focused(window));
         let swatch = current.map(|c| rgba(c, 1.0));
-        let start_value = value.clone();
-        let field = controls::text_field(
+        let field = self.field(
+            FieldId::Ghostty(key),
             key,
-            &value,
-            editing,
+            &hex(current),
             "Default",
             swatch,
             HEX_FIELD_W,
-            c,
-            self.handler(cx, move |this, window, cx| {
-                this.start_field(id, &start_value, window, cx)
-            }),
-        )
-        .when(editing.is_some(), |d| d.track_focus(&self.field_focus))
-        .on_key_down(
-            cx.listener(|this, ev: &KeyDownEvent, window, cx| this.on_field_key(ev, window, cx)),
-        )
-        // The root's mouse-down ends an edit; a press on the field itself must not.
-        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .into_any_element();
+            window,
+            cx,
+        );
         self.ghostty_row(title, key, field, c)
     }
 

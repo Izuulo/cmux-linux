@@ -291,6 +291,47 @@ fn expand(action: &'static str, chords: &[String]) -> Result<Vec<Binding>, Strin
     Ok(out)
 }
 
+/// A recorded key press as a cmux chord (`super+shift+d`), from gpui's key name and
+/// modifiers. `None` without Super, Ctrl, Alt or Shift (cmux's recorder rejects bare keys).
+pub fn recorded_chord(key: &str, ctrl: bool, alt: bool, shift: bool, sup: bool) -> Option<String> {
+    if !(ctrl || alt || shift || sup) {
+        return None;
+    }
+    let mut out = String::new();
+    for (on, name) in [
+        (sup, "super+"),
+        (ctrl, "ctrl+"),
+        (alt, "opt+"),
+        (shift, "shift+"),
+    ] {
+        if on {
+            out.push_str(name);
+        }
+    }
+    // `+` would split the chord; gpui reports Shift+= as `+`, which `shift+=` binds.
+    match key {
+        "+" if !shift => out.push_str("shift+="),
+        "+" => out.push('='),
+        k => out.push_str(k),
+    }
+    Some(out)
+}
+
+/// Whether `chord` can be bound to `action`: `Err` for a chord that doesn't parse (or a
+/// numbered action's chord without a digit), else the binding of another action that already
+/// uses one of its keystrokes.
+pub fn conflict(
+    k: &Keybindings,
+    action: &'static str,
+    chord: &str,
+) -> Result<Option<Binding>, String> {
+    let new = expand(action, &[chord.to_string()])?;
+    Ok(k.bindings
+        .iter()
+        .find(|b| b.action != action && new.iter().any(|n| n.keystroke == b.keystroke))
+        .cloned())
+}
+
 /// A TOML value as a chord list: a string, or an array of strings. `""` / `"none"` = none.
 fn chords(value: &toml::Value) -> Result<Vec<String>, String> {
     let list = match value {
@@ -374,6 +415,40 @@ mod tests {
             .filter(|b| b.action == action)
             .map(|b| b.keystroke.clone())
             .collect()
+    }
+
+    #[test]
+    fn recorded_chords_round_trip() {
+        assert_eq!(recorded_chord("d", false, false, false, false), None);
+        let c = recorded_chord("d", true, false, true, true).unwrap();
+        assert_eq!(c, "super+ctrl+shift+d");
+        assert_eq!(chord_to_gpui(&c).unwrap(), "ctrl-shift-super-d");
+        // gpui on Linux: Shift+] arrives as `}` without Shift; Shift+= as `+`.
+        let c = recorded_chord("}", false, false, false, true).unwrap();
+        assert_eq!(chord_to_gpui(&c).unwrap(), "super-}");
+        let c = recorded_chord("+", true, false, false, false).unwrap();
+        assert_eq!(chord_to_gpui(&c).unwrap(), "ctrl-+");
+        let c = recorded_chord("enter", false, true, false, false).unwrap();
+        assert_eq!(chord_to_gpui(&c).unwrap(), "alt-enter");
+    }
+
+    #[test]
+    fn conflicts_name_the_other_action() {
+        let k = keybindings(None, "test");
+        let hit = conflict(&k, "newSurface", "super+d").unwrap().unwrap();
+        assert_eq!(hit.action, "splitRight");
+        assert_eq!(
+            conflict(&k, "newSurface", "super+t").unwrap(),
+            None,
+            "its own chord"
+        );
+        assert_eq!(conflict(&k, "newSurface", "super+y").unwrap(), None);
+        // A numbered action conflicts on any digit it would bind.
+        let hit = conflict(&k, "selectSurfaceByNumber", "super+5")
+            .unwrap()
+            .unwrap();
+        assert_eq!(hit.action, "selectWorkspaceByNumber");
+        assert!(conflict(&k, "selectSurfaceByNumber", "super+x").is_err());
     }
 
     #[test]

@@ -464,7 +464,7 @@ pub fn dropdown_list(
 /// (or `placeholder` when empty). `swatch` draws a colour square before the text.
 #[allow(clippy::too_many_arguments)]
 pub fn text_field(
-    id: &'static str,
+    id: impl Into<gpui::ElementId>,
     value: &str,
     editing: Option<&str>,
     placeholder: &str,

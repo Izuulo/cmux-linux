@@ -7,7 +7,9 @@
 pub mod edit;
 mod load;
 
-pub use load::{Env, Loaded, load, origin};
+pub use load::{
+    Env, Loaded, ThemePreview, load, origin, theme_dirs, theme_pair, theme_setting, themes,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Rgb {

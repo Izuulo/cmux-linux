@@ -81,6 +81,47 @@ pub fn registrations(text: &str) -> (Vec<Registration>, Vec<String>) {
     (regs, warnings)
 }
 
+/// Every `[[vault.agents]]` entry as written, unfinished ones included (for the Settings
+/// window, which must not drop what it can't use yet). A missing name is the id. Entries
+/// without an id are left out, as `write::set_agents` leaves them alone.
+pub fn entries_as_written(text: &str) -> Vec<Registration> {
+    let Ok(table) = text.parse::<toml::Table>() else {
+        return Vec::new();
+    };
+    let Some(agents) = table
+        .get("vault")
+        .and_then(|v| v.get("agents"))
+        .and_then(toml::Value::as_array)
+    else {
+        return Vec::new();
+    };
+    agents
+        .iter()
+        .filter(|a| {
+            a.get("id")
+                .and_then(toml::Value::as_str)
+                .is_some_and(|id| !id.trim().is_empty())
+        })
+        .map(|a| {
+            let s = |k: &str| {
+                a.get(k)
+                    .and_then(toml::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string()
+            };
+            let id = s("id").trim().to_string();
+            let name = a.get("name").map_or_else(|| id.clone(), |_| s("name"));
+            Registration {
+                id,
+                name,
+                process_name: s("process_name"),
+                argv_option: s("argv_option"),
+                resume_command: s("resume_command"),
+            }
+        })
+        .collect()
+}
+
 pub fn load(path: &Path) -> (Vec<Registration>, Vec<String>) {
     registrations(&std::fs::read_to_string(path).unwrap_or_default())
 }
@@ -182,6 +223,17 @@ resume_command = "c {{sessionId}}"
 
     fn argv(a: &[&str]) -> Vec<String> {
         a.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn entries_as_written_keeps_unfinished_ones() {
+        let all = entries_as_written(&format!("{CFG}\n[[vault.agents]]\nname = \"no id\"\n"));
+        let ids: Vec<&str> = all.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, ["pi", "broken", "claude"]);
+        assert_eq!(all[0].name, "Pi");
+        assert_eq!(all[1].name, "broken");
+        assert_eq!(all[1].resume_command, "x --continue");
+        assert!(entries_as_written("not toml [").is_empty());
     }
 
     #[test]

@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use super::{Config, entries};
+use super::{Config, DynColor, Rgb, entries};
 
 /// Where to look. `from_system` reads the real environment; tests build their own.
 #[derive(Debug, Clone)]
@@ -237,11 +237,89 @@ fn resolve_theme(env: &Env, value: &str) -> Result<PathBuf, String> {
             "theme names cannot contain path separators: {name}"
         ));
     }
-    std::iter::once(env.config_dir.join("themes"))
-        .chain(env.resources_dirs.iter().map(|d| d.join("themes")))
+    theme_dirs(env)
+        .into_iter()
         .map(|dir| dir.join(name))
         .find(|p| p.is_file())
         .ok_or_else(|| format!("not found: {name}"))
+}
+
+/// Where theme names are looked up, first match wins: the user's `themes/`, then each
+/// resources dir's.
+pub fn theme_dirs(env: &Env) -> Vec<PathBuf> {
+    std::iter::once(env.config_dir.join("themes"))
+        .chain(env.resources_dirs.iter().map(|d| d.join("themes")))
+        .collect()
+}
+
+/// The `theme` value in effect among the user's files, as written.
+pub fn theme_setting(env: &Env) -> Option<String> {
+    let user = user_entries(env, &mut Vec::new(), &mut Vec::new());
+    user.into_iter()
+        .rev()
+        .find(|e| e.key == "theme")
+        .map(|e| e.value)
+}
+
+/// The light and dark theme names of a `theme` value; a plain name is both.
+pub fn theme_pair(value: &str) -> (Option<String>, Option<String>) {
+    let side = |dark| {
+        pick_theme(value, dark)
+            .ok()
+            .filter(|n| !n.is_empty())
+            .map(str::to_string)
+    };
+    (side(false), side(true))
+}
+
+/// What a theme card shows (M12 plan S4).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThemePreview {
+    pub name: String,
+    pub background: Rgb,
+    pub foreground: Rgb,
+    pub palette: [Option<Rgb>; 16],
+    pub cursor: Option<Rgb>,
+}
+
+/// Every theme in `theme_dirs`, sorted by name ignoring case; a name in an earlier dir hides
+/// the same name in later ones, as in lookup.
+pub fn themes(env: &Env) -> Vec<ThemePreview> {
+    let mut out: Vec<ThemePreview> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for dir in theme_dirs(env) {
+        let Ok(list) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in list.flatten() {
+            let path = entry.path();
+            let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+                continue;
+            };
+            if name.starts_with('.') || !path.is_file() || !seen.insert(name.clone()) {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let mut c = Config::default();
+            for (_, key, value) in entries(&text) {
+                let _ = c.apply(key, value);
+            }
+            out.push(ThemePreview {
+                name,
+                background: c.background,
+                foreground: c.foreground,
+                palette: std::array::from_fn(|k| c.palette[k]),
+                cursor: match c.cursor_color {
+                    Some(DynColor::Rgb(rgb)) => Some(rgb),
+                    _ => None,
+                },
+            });
+        }
+    }
+    out.sort_by_key(|t| t.name.to_lowercase());
+    out
 }
 
 fn pick_theme(value: &str, dark: bool) -> Result<&str, String> {
@@ -401,6 +479,44 @@ mod tests {
         let files = load(&env).files;
         let want = ["ghostty/config.ghostty", "ghostty/config", "ghostty/extra"];
         assert_eq!(files, want.map(|f| root.join(f)));
+    }
+
+    #[test]
+    fn themes_lists_each_name_once_with_its_colors() {
+        let (root, env) = fixture("theme-list");
+        write(
+            &root,
+            "res/themes/night",
+            "background = #000000\ncursor-color = #ff0000\n",
+        );
+        write(
+            &root,
+            "res/themes/Day",
+            "palette = 1=#ff0000\nforeground = #000000\n",
+        );
+        write(&root, "ghostty/themes/night", "background = #ff0000\n");
+        let t = themes(&env);
+        let names: Vec<&str> = t.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["Day", "night"]);
+        assert_eq!(t[0].palette[1], Some(RED));
+        assert_eq!(t[0].foreground, BLACK);
+        assert_eq!(t[1].background, RED, "the user's themes/ wins");
+        assert_eq!(t[1].cursor, None);
+    }
+
+    #[test]
+    fn theme_setting_and_pair() {
+        let (root, env) = fixture("theme-setting");
+        assert_eq!(theme_setting(&env), None);
+        write(
+            &root,
+            "ghostty/config.ghostty",
+            "theme = A\ntheme = light:Day,dark:Night\n",
+        );
+        let v = theme_setting(&env).unwrap();
+        assert_eq!(theme_pair(&v), (Some("Day".into()), Some("Night".into())));
+        assert_eq!(theme_pair("X"), (Some("X".into()), Some("X".into())));
+        assert_eq!(theme_pair("dark:Night"), (None, Some("Night".into())));
     }
 
     #[test]

@@ -1,9 +1,12 @@
-//! The Settings window (M12 plan S1–S3, S5, S8): a second gpui window with grouped sections.
+//! The Settings window (M12 plan S1–S8): a second gpui window with grouped sections.
 //! Controls only write the user's files (`config.toml`, the Ghostty main file); the main
 //! window's config poll applies them and hands the new style back here (`set_style`).
 
+mod automation;
 mod controls;
+mod shortcuts;
 mod terminal;
+mod themes;
 
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -11,12 +14,15 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
-use cmux_config::ghostty::{self, Config, Env, edit};
+use cmux_config::auto_naming::AutoNaming;
+use cmux_config::ghostty::{self, Config, Env, ThemePreview, edit};
+use cmux_config::keybindings::Keybindings;
+use cmux_config::vault::Registration;
 use gpui::{
-    App, AppContext, Bounds, ClickEvent, Context, FocusHandle, FontWeight, InteractiveElement,
-    IntoElement, KeyDownEvent, MouseButton, MouseMoveEvent, ParentElement, Pixels, Render,
-    ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Subscription, Task,
-    TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, div, prelude::*, svg,
+    AnyWindowHandle, App, AppContext, Bounds, ClickEvent, Context, FocusHandle, FontWeight,
+    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseMoveEvent, ParentElement,
+    Pixels, Render, ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Subscription,
+    Task, TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, div, prelude::*, svg,
 };
 
 use crate::actions::{CloseTab, OpenSettings, Quit};
@@ -80,6 +86,10 @@ impl Section {
 pub(crate) enum FieldId {
     /// A Ghostty colour key.
     Ghostty(&'static str),
+    ThemeSearch,
+    AutoNamingCommand,
+    /// Agent `n`'s key in `[[vault.agents]]`.
+    Agent(usize, &'static str),
 }
 
 /// A slider being dragged: its key, range and the value under the pointer.
@@ -113,6 +123,25 @@ pub struct SettingsView {
     drag: Option<Drag>,
     /// Each slider's track, from its last paint.
     tracks: HashMap<&'static str, Rc<Cell<Bounds<Pixels>>>>,
+    /// All themes, read on the first open of Themes (plan S4).
+    themes: Option<Rc<Vec<ThemePreview>>>,
+    theme_scan: Option<Task<()>>,
+    /// The `theme` value in effect, as written.
+    theme: Option<String>,
+    /// Which side of the light/dark pair a pick writes.
+    theme_dark: bool,
+    theme_query: String,
+    /// config.toml as last read: shortcuts, auto-naming, agents.
+    keys: Keybindings,
+    auto: AutoNaming,
+    agents: Vec<Registration>,
+    agent_warnings: Vec<String>,
+    /// The action whose shortcut is being recorded, and the interceptor that catches the keys.
+    recording: Option<&'static str>,
+    record_sub: Option<Subscription>,
+    /// A rejected recording: the action and why (plan S6's red banner).
+    shortcut_note: Option<(&'static str, String)>,
+    window: AnyWindowHandle,
     focus: FocusHandle,
     scroll: ScrollHandle,
     _subs: Vec<Subscription>,
@@ -194,6 +223,7 @@ impl SettingsView {
             // Closing within the debounce must not lose the last change.
             cx.on_release(|this, _| this.write_pending()),
         ];
+        let theme_dark = env.dark;
         let mut this = Self {
             cfg: style.cfg.clone(),
             env,
@@ -211,11 +241,26 @@ impl SettingsView {
             font_scan: None,
             drag: None,
             tracks: HashMap::new(),
+            themes: None,
+            theme_scan: None,
+            theme: None,
+            theme_dark,
+            theme_query: String::new(),
+            keys: Keybindings::default(),
+            auto: AutoNaming::default(),
+            agents: Vec::new(),
+            agent_warnings: Vec::new(),
+            recording: None,
+            record_sub: None,
+            shortcut_note: None,
+            window: window.window_handle(),
             focus,
             scroll: ScrollHandle::new(),
             _subs: subs,
         };
         this.origins = this.find_origins();
+        this.theme = ghostty::theme_setting(&this.env);
+        this.reload_toml();
         this
     }
 
@@ -227,6 +272,7 @@ impl SettingsView {
         }
         self.style = style;
         self.origins = self.find_origins();
+        self.theme = ghostty::theme_setting(&self.env);
         cx.notify();
     }
 
@@ -234,6 +280,7 @@ impl SettingsView {
         let main = edit::main_file(&self.env);
         terminal::KEYS
             .iter()
+            .chain(&["theme"])
             .filter_map(|&k| {
                 let (path, _) = ghostty::origin(&self.env, k)?;
                 (path != main).then_some((k, path))
@@ -323,6 +370,26 @@ impl SettingsView {
     /// config.toml changed on disk (the main window's poll).
     pub fn toml_changed(&mut self, cx: &mut Context<Self>) {
         self.ui_scale = crate::ui::scale();
+        self.reload_toml();
+        cx.notify();
+    }
+
+    fn reload_toml(&mut self) {
+        let path = self.env.cmux_config_file();
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        self.keys = cmux_config::keybindings::keybindings(Some(&text), "config.toml");
+        self.auto = cmux_config::auto_naming::auto_naming(&text);
+        self.agents = cmux_config::vault::entries_as_written(&text);
+        self.agent_warnings = cmux_config::vault::registrations(&text).1;
+    }
+
+    /// Runs one `cmux_config::write` call on config.toml, then shows what the file now says.
+    fn write_toml(&mut self, f: impl FnOnce(&Path) -> std::io::Result<()>, cx: &mut Context<Self>) {
+        let path = self.env.cmux_config_file();
+        self.error = f(&path)
+            .err()
+            .map(|e| format!("Couldn't save {}: {e}", path.display()));
+        self.reload_toml();
         cx.notify();
     }
 
@@ -343,6 +410,7 @@ impl SettingsView {
     fn select(&mut self, section: Section, cx: &mut Context<Self>) {
         self.section = section;
         self.dropdown = None;
+        self.stop_recording();
         self.scroll.set_offset(Default::default());
         cx.notify();
     }
@@ -384,8 +452,12 @@ impl SettingsView {
         let Some((id, state)) = self.field.take() else {
             return;
         };
+        let text = state.text.trim();
         match id {
-            FieldId::Ghostty(key) => self.commit_color(key, state.text.trim(), cx),
+            FieldId::Ghostty(key) => self.commit_color(key, text, cx),
+            FieldId::ThemeSearch => self.theme_query = text.to_string(),
+            FieldId::AutoNamingCommand => self.commit_naming_command(text, cx),
+            FieldId::Agent(n, key) => self.commit_agent(n, key, text, cx),
         }
         cx.notify();
     }
@@ -396,6 +468,44 @@ impl SettingsView {
             .as_ref()
             .filter(|(f, _)| *f == id)
             .map(|(_, s)| s.text.as_str())
+    }
+
+    /// A text field for `id`: draws the typed text while it is being edited.
+    #[allow(clippy::too_many_arguments)]
+    fn field(
+        &self,
+        id: FieldId,
+        el: impl Into<gpui::ElementId>,
+        value: &str,
+        placeholder: &str,
+        swatch: Option<gpui::Rgba>,
+        width: f32,
+        window: &Window,
+        cx: &Context<Self>,
+    ) -> gpui::AnyElement {
+        let editing = self
+            .editing(id)
+            .filter(|_| self.field_focus.is_focused(window));
+        let start = value.to_string();
+        controls::text_field(
+            el,
+            value,
+            editing,
+            placeholder,
+            swatch,
+            width,
+            self.colors(),
+            self.handler(cx, move |this, window, cx| {
+                this.start_field(id, &start, window, cx)
+            }),
+        )
+        .when(editing.is_some(), |d| d.track_focus(&self.field_focus))
+        .on_key_down(
+            cx.listener(|this, ev: &KeyDownEvent, window, cx| this.on_field_key(ev, window, cx)),
+        )
+        // The root's mouse-down ends an edit; a press on the field itself must not.
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .into_any_element()
     }
 
     // ---- sliders ----
@@ -553,12 +663,6 @@ impl SettingsView {
         );
         vec![controls::card(vec![row], c).into_any_element()]
     }
-
-    fn render_placeholder(&self, c: Colors) -> Vec<gpui::AnyElement> {
-        vec![
-            controls::card(vec![controls::note("Coming next.", c.secondary)], c).into_any_element(),
-        ]
-    }
 }
 
 impl Render for SettingsView {
@@ -567,9 +671,9 @@ impl Render for SettingsView {
         let body = match self.section {
             Section::App => self.render_app(c, cx),
             Section::Terminal => self.render_terminal(c, window, cx),
-            Section::Themes | Section::Automation | Section::KeyboardShortcuts => {
-                self.render_placeholder(c)
-            }
+            Section::Themes => self.render_themes(c, window, cx),
+            Section::Automation => self.render_automation(c, window, cx),
+            Section::KeyboardShortcuts => self.render_shortcuts(c, cx),
         };
         let detail = div()
             .id("settings-detail")
