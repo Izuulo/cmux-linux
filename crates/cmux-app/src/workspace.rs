@@ -28,6 +28,9 @@ use crate::window_view::control::ShellEnv;
 use crate::window_view::session::{Agent, SavedTerm, detect_agent};
 use cmux_config::vault::Registration;
 
+/// A new terminal's cwd and extra env.
+pub(crate) type Start = (Option<String>, Vec<(String, String)>);
+
 /// Hit band each side of a 1 px divider (cmux `dividerHitExpansion`).
 const DIVIDER_HIT: f32 = 8.0;
 
@@ -121,7 +124,7 @@ impl WorkspaceView {
             shell,
             style,
             Layout::new(),
-            vec![cwd],
+            vec![(cwd, Vec::new())],
             window,
             cx,
         )
@@ -145,8 +148,8 @@ impl WorkspaceView {
         cx: &mut Context<Self>,
     ) -> Self {
         let ids = layout.surfaces();
-        let cwds = terms.iter().map(|t| t.cwd.clone()).collect();
-        let mut this = Self::build(id, dock, shell, style, layout, cwds, window, cx);
+        let starts = terms.iter().map(|t| (t.cwd.clone(), Vec::new())).collect();
+        let mut this = Self::build(id, dock, shell, style, layout, starts, window, cx);
         this.top_inset = top_inset;
         for ((id, term), input) in ids.iter().zip(terms).zip(inputs) {
             let Some(s) = this.surfaces.get_mut(id) else {
@@ -154,6 +157,30 @@ impl WorkspaceView {
             };
             s.agent = term.agent;
             if let Some(line) = input {
+                let bytes = format!("{line}\n").into_bytes();
+                s.view.update(cx, |v, cx| v.send_scripted(bytes, cx));
+            }
+        }
+        this
+    }
+
+    /// A `cmux.json` workspace command's workspace (M11 plan C4): per surface in
+    /// `Layout::surfaces` order, its cwd, extra env (ours wins) and a line typed into it.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn custom(
+        id: WorkspaceId,
+        shell: Rc<ShellEnv>,
+        style: Rc<TermStyle>,
+        layout: Layout,
+        starts: Vec<Start>,
+        inputs: Vec<Option<String>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let ids = layout.surfaces();
+        let this = Self::build(id, false, shell, style, layout, starts, window, cx);
+        for (id, input) in ids.iter().zip(inputs) {
+            if let (Some(s), Some(line)) = (this.surfaces.get(id), input) {
                 let bytes = format!("{line}\n").into_bytes();
                 s.view.update(cx, |v, cx| v.send_scripted(bytes, cx));
             }
@@ -221,7 +248,7 @@ impl WorkspaceView {
             shell,
             style,
             Layout::new(),
-            vec![cwd],
+            vec![(cwd, Vec::new())],
             window,
             cx,
         );
@@ -236,7 +263,7 @@ impl WorkspaceView {
         shell: Rc<ShellEnv>,
         style: Rc<TermStyle>,
         layout: Layout,
-        cwds: Vec<Option<String>>,
+        starts: Vec<Start>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -268,10 +295,10 @@ impl WorkspaceView {
             flash_seq: 0,
             _subscriptions: vec![lost],
         };
-        let mut cwds = cwds.into_iter();
+        let mut starts = starts.into_iter();
         for surface in this.layout.surfaces() {
-            let cwd = cwds.next().flatten();
-            if !this.add_terminal(surface, cwd, window, cx)
+            let (cwd, env) = starts.next().unwrap_or_default();
+            if !this.add_terminal(surface, cwd, &env, window, cx)
                 && this.layout.close_surface(surface) == Closed::LastSurface
             {
                 // The last one left failed: nothing started at all.
@@ -415,18 +442,21 @@ impl WorkspaceView {
         cx.notify();
     }
 
+    /// `extra` env goes first, so ours (`CMUX_*`) wins on a clash.
     fn add_terminal(
         &mut self,
         surface: SurfaceId,
         cwd: Option<String>,
+        extra: &[(String, String)],
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let env = if self.dock {
+        let mut env = extra.to_vec();
+        env.extend(if self.dock {
             self.shell.for_dock(surface)
         } else {
             self.shell.for_surface(self.id, surface)
-        };
+        });
         let started = match TerminalView::start(&self.style, cwd.as_deref(), &env) {
             Ok(started) => started,
             Err(e) => {
@@ -477,7 +507,7 @@ impl WorkspaceView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.add_terminal(surface, cwd, window, cx) {
+        if !self.add_terminal(surface, cwd, &[], window, cx) {
             self.layout.close_surface(surface);
         }
         self.focus_active(window, cx);
@@ -561,7 +591,7 @@ impl WorkspaceView {
             .layout
             .try_split_surface(surface, dir, focus, w, h, scale)
             .map_err(|_| SplitFailed::NoSpace)?;
-        if !self.add_terminal(new, cwd, window, cx) {
+        if !self.add_terminal(new, cwd, &[], window, cx) {
             self.layout.close_surface(new);
             return Err(SplitFailed::Spawn);
         }

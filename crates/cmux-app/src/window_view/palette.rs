@@ -1,8 +1,9 @@
 //! The command palette (M11 plan P1–P6): `>` lists commands, anything else switches workspaces
-//! and the selected workspace's tabs. Rows come from `rows`; other sources (cmux.json commands)
-//! add a `Run` kind and push rows there.
+//! and the selected workspace's tabs. Rows come from `palette_rows`; `cmux.json` commands are
+//! read when it opens (plan C1, C3).
 
 use crate::ui::{px, s};
+use cmux_config::commands::sanitize;
 use cmux_config::keybindings::Binding;
 use cmux_core::{SurfaceId, WorkspaceId};
 use gpui::{
@@ -15,6 +16,7 @@ use super::WindowView;
 use super::rename::{RenameKey, RenameOutcome, RenameState};
 use crate::actions::{Hints, PALETTE, action_for};
 use crate::chrome;
+use cmux_config::commands::Loaded;
 
 const MAX_W: f32 = 560.0;
 const MIN_W: f32 = 340.0;
@@ -37,6 +39,10 @@ pub(super) enum Run {
     Action(&'static str),
     Workspace(WorkspaceId),
     Surface(WorkspaceId, SurfaceId),
+    /// Index into the palette's `cmux.json` commands.
+    Custom(usize),
+    /// A `cmux.json` error row.
+    Nothing,
 }
 
 pub(super) struct Row {
@@ -55,6 +61,7 @@ pub(super) struct Palette {
     /// Focus before opening, given back on close.
     restore: FocusHandle,
     scroll: ScrollHandle,
+    custom: Loaded,
     _blur: Subscription,
 }
 
@@ -114,6 +121,7 @@ impl WindowView {
             focus,
             restore,
             scroll: ScrollHandle::new(),
+            custom: self.load_commands(cx),
             _blur,
         });
         cx.notify();
@@ -133,7 +141,7 @@ impl WindowView {
     fn palette_rows(&self, commands: bool, cx: &Context<Self>) -> Vec<Row> {
         if commands {
             let hints = cx.try_global::<Hints>();
-            return PALETTE
+            let mut rows: Vec<Row> = PALETTE
                 .iter()
                 .map(|(action, title)| Row {
                     title: title.to_string(),
@@ -142,6 +150,21 @@ impl WindowView {
                     run: Run::Action(action),
                 })
                 .collect();
+            if let Some(p) = &self.palette {
+                rows.extend(p.custom.commands.iter().enumerate().map(|(i, c)| Row {
+                    title: format!("Custom: {}", sanitize(&c.name)),
+                    keywords: c.keywords.clone(),
+                    hint: None,
+                    run: Run::Custom(i),
+                }));
+                rows.extend(p.custom.errors.iter().map(|e| Row {
+                    title: format!("cmux.json: {e}"),
+                    keywords: Vec::new(),
+                    hint: None,
+                    run: Run::Nothing,
+                }));
+            }
+            return rows;
         }
         let mut rows: Vec<Row> = self
             .workspaces
@@ -230,6 +253,11 @@ impl WindowView {
         let mut rows = self.palette_matches(cx);
         // As drawn: the highlight is clamped to the last row.
         let row = (!rows.is_empty()).then(|| rows.swap_remove(ix.min(rows.len() - 1)));
+        let mut custom = self
+            .palette
+            .as_mut()
+            .map(|p| std::mem::take(&mut p.custom.commands))
+            .unwrap_or_default();
         self.close_palette(window, cx);
         let Some(row) = row else { return };
         match row.run {
@@ -251,6 +279,10 @@ impl WindowView {
                     v.update(cx, |v, cx| v.focus_surface(s, window, cx));
                 }
             }
+            Run::Custom(i) if i < custom.len() => {
+                self.run_custom(custom.swap_remove(i), window, cx)
+            }
+            Run::Custom(_) | Run::Nothing => {}
         }
     }
 

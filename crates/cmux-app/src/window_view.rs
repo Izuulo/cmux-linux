@@ -25,6 +25,7 @@ use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
 mod automation_ctl;
 mod autoname_ctl;
+mod commands_ctl;
 pub(crate) mod control;
 mod dock;
 mod feed;
