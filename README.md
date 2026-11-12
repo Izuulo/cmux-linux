@@ -138,6 +138,14 @@ Don't `cargo update` libc: it is pinned to 0.2.189 in `Cargo.lock` because xattr
 cmux-linux reads your Ghostty config (`~/.config/ghostty/config`) for fonts, colours,
 opacity and split options such as `unfocused-split-opacity` and `split-divider-color`.
 
+To make the app's own text, icons and buttons bigger (the terminal font stays Ghostty's
+`font-size`), set a top-level `ui_scale` in `~/.config/cmux-linux/config.toml`, from 0.5
+to 3.0, then restart:
+
+```toml
+ui_scale = 1.25
+```
+
 Keyboard shortcuts live in `~/.config/cmux-linux/config.toml`. The defaults are cmux's,
 with ⌘ as Super. Override any action under `[keybindings]`:
 

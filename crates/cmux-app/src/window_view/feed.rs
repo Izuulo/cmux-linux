@@ -3,13 +3,14 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::ui::px;
 use cmux_core::{
     Decision, FeedItem, FeedItemId, FeedKind, FeedStatus, PermissionMode, Preview, age_label,
 };
 use gpui::{
     AnyElement, ClickEvent, Context, Div, FontWeight, InteractiveElement, IntoElement,
     KeyDownEvent, Keystroke, Modifiers, ParentElement, Rgba, SharedString, Stateful,
-    StatefulInteractiveElement, Styled, Window, div, prelude::*, px, rgb, svg,
+    StatefulInteractiveElement, Styled, Window, div, prelude::*, rgb, svg,
 };
 
 use super::WindowView;

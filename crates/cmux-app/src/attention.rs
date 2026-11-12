@@ -3,7 +3,8 @@
 
 use std::time::Duration;
 
-use gpui::{Animation, AnimationExt, Div, IntoElement, ParentElement, Rgba, Styled, div, px};
+use crate::ui::px;
+use gpui::{Animation, AnimationExt, Div, IntoElement, ParentElement, Rgba, Styled, div};
 
 /// How long one flash runs (rn §4 double blink).
 pub const FLASH: Duration = Duration::from_millis(900);

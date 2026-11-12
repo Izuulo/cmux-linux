@@ -5,11 +5,12 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::ui::{px, s};
 use cmux_core::{Direction, WorkspaceId};
 use gpui::{
     AppContext, ClickEvent, Context, CursorStyle, DragMoveEvent, EmptyView, Focusable, FontWeight,
     InteractiveElement, IntoElement, ParentElement, Rgba, StatefulInteractiveElement, Styled,
-    Window, div, prelude::*, px, svg,
+    Window, div, prelude::*, svg,
 };
 use serde_json::Value;
 
@@ -55,9 +56,9 @@ pub(super) struct RightSidebarDrag;
 
 /// [MIN, MAX], leaving the main area `MAIN_MIN`, but never below MIN (rd §2.2).
 pub(crate) fn clamp_right_width(w: f32, window_w: f32) -> f32 {
-    w.clamp(RIGHT_SIDEBAR_MIN, RIGHT_SIDEBAR_MAX)
-        .min(window_w - MAIN_MIN)
-        .max(RIGHT_SIDEBAR_MIN)
+    w.clamp(s(RIGHT_SIDEBAR_MIN), s(RIGHT_SIDEBAR_MAX))
+        .min(window_w - s(MAIN_MIN))
+        .max(s(RIGHT_SIDEBAR_MIN))
 }
 
 /// One terminal `dock.json` asks for.
@@ -211,7 +212,7 @@ impl WindowView {
             .id("right-sidebar-resize")
             .absolute()
             .top_0()
-            .right(px(width - RESIZE_IN))
+            .right(gpui::px(width - s(RESIZE_IN)))
             .w(px(RESIZE_IN + RESIZE_OUT))
             .h_full()
             .cursor(CursorStyle::ResizeLeftRight)
@@ -445,11 +446,11 @@ impl WindowView {
             .flex()
             .flex_col()
             .flex_none()
-            .w(px(width))
+            .w(gpui::px(width))
             .h_full()
             .bg(p.bg)
-            .rounded_tr(px(radius))
-            .rounded_br(px(radius))
+            .rounded_tr(gpui::px(radius))
+            .rounded_br(gpui::px(radius))
             .border_l_1()
             .border_color(p.border)
             .child(bar)

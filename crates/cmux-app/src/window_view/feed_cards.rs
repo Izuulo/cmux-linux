@@ -3,10 +3,11 @@
 
 use std::collections::BTreeSet;
 
+use crate::ui::px;
 use cmux_core::{Decision, FeedItemId, FeedStatus, PlanMode, QuestionPrompt};
 use gpui::{
     ClickEvent, Context, Div, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
-    ParentElement, Rgba, StatefulInteractiveElement, Styled, Window, div, prelude::*, px,
+    ParentElement, Rgba, StatefulInteractiveElement, Styled, Window, div, prelude::*,
 };
 
 use super::WindowView;

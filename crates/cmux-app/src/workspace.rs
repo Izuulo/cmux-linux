@@ -795,7 +795,7 @@ impl Render for WorkspaceView {
         let controls = crate::csd::controls_width(window);
         // No sidebar left of us: the window draws its reopen button in our top-left corner.
         let reopen = match self.left_inset == 0.0 {
-            true => crate::csd::REOPEN_LEAD,
+            true => crate::ui::s(crate::csd::REOPEN_LEAD),
             false => 0.0,
         };
         let radius = crate::csd::corner_radius(window);

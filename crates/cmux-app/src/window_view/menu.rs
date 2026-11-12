@@ -1,11 +1,11 @@
 //! The sidebar's context menu (M8 plan D8): a small popup at the pointer for workspace rows,
 //! group headers and the blank area below the list.
 
+use crate::ui::px;
 use cmux_core::{GroupId, WorkspaceId};
 use gpui::{
     BoxShadow, ClickEvent, Context, InteractiveElement, IntoElement, ParentElement, Pixels, Point,
     Rgba, SharedString, StatefulInteractiveElement, Styled, Window, anchored, deferred, div, point,
-    px,
 };
 
 use super::WindowView;

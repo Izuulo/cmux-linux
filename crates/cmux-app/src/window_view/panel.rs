@@ -3,11 +3,12 @@
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use crate::ui::{px, s};
 use cmux_core::NotificationId;
 use gpui::{
     AnyElement, BoxShadow, ClickEvent, Context, FontWeight, InteractiveElement, IntoElement,
     ParentElement, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, anchored,
-    deferred, div, point, prelude::*, px, svg,
+    deferred, div, point, prelude::*, svg,
 };
 
 use super::WindowView;
@@ -81,10 +82,10 @@ impl WindowView {
         let cfg = &self.style.cfg;
         let p = chrome::sidebar_palette(chrome::rgba(cfg.background, 1.0));
         let size = window.viewport_size();
-        let w = WIDTH.min(f32::from(size.width) - 2. * MARGIN).max(0.);
+        let w = s(WIDTH).min(f32::from(size.width) - 2. * s(MARGIN)).max(0.);
         let at = self.bell_anchor(window);
-        let h = HEIGHT
-            .min(f32::from(size.height) - f32::from(at.y) - MARGIN)
+        let h = s(HEIGHT)
+            .min(f32::from(size.height) - f32::from(at.y) - s(MARGIN))
             .max(0.);
         let list = self.notifications.list();
         let unread = self.notifications.total_unread();
@@ -132,8 +133,8 @@ impl WindowView {
                         .occlude()
                         .flex()
                         .flex_col()
-                        .w(px(w))
-                        .h(px(h))
+                        .w(gpui::px(w))
+                        .h(gpui::px(h))
                         .overflow_hidden()
                         .rounded(px(8.))
                         .border_1()
