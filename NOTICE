@@ -56,7 +56,7 @@ libc (crates.io 0.2, https://github.com/rust-lang/libc)
   MIT OR Apache-2.0.
 
 toml (crates.io 0.8, https://github.com/toml-rs/toml), used by cmux-config, with its
-  toml_edit, toml_datetime, toml_write, serde_spanned and winnow dependencies
+  toml_edit (also used directly by cmux-config to write config.toml), toml_datetime, toml_write, serde_spanned and winnow dependencies
   MIT OR Apache-2.0 (winnow: MIT).
 
 serde_json (crates.io 1, https://github.com/serde-rs/json), used by cmux-config, cmux-meta, cmux-ipc
