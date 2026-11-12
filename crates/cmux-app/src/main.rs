@@ -40,13 +40,15 @@ fn main() {
         let style = Rc::new(TermStyle::new(&loaded.config, &installed));
         // Translucent only when asked. Blurred on macOS (NSVisualEffectView); on Linux KWin blur
         // comes from our own shim (blur.rs), so Transparent there.
-        let window_background = if loaded.config.background_opacity >= 1.0 {
-            WindowBackgroundAppearance::Opaque
-        } else if cfg!(target_os = "macos") && loaded.config.background_blur {
-            WindowBackgroundAppearance::Blurred
-        } else {
-            WindowBackgroundAppearance::Transparent
-        };
+        // Linux is always Transparent: the rounded window corners (csd.rs) must show through.
+        let window_background =
+            if cfg!(target_os = "macos") && loaded.config.background_opacity >= 1.0 {
+                WindowBackgroundAppearance::Opaque
+            } else if cfg!(target_os = "macos") && loaded.config.background_blur {
+                WindowBackgroundAppearance::Blurred
+            } else {
+                WindowBackgroundAppearance::Transparent
+            };
         let bounds = Bounds::centered(None, size(px(1100.), px(700.)), cx);
         cx.open_window(
             WindowOptions {

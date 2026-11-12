@@ -88,6 +88,8 @@ pub struct TerminalView {
     pub(crate) session: Session,
     pub(crate) style: Rc<TermStyle>,
     pub(crate) focus: FocusHandle,
+    /// Bottom-left and bottom-right radii, where this terminal sits in a rounded window corner.
+    pub(crate) corners: (f32, f32),
     pub(crate) geometry: Option<Geometry>,
     pub(crate) selection: Option<Selection>,
     /// IME preedit text, painted at the cursor.
@@ -200,6 +202,7 @@ impl TerminalView {
         ];
 
         Self {
+            corners: (0.0, 0.0),
             session,
             style,
             focus,
@@ -481,6 +484,8 @@ impl Render for TerminalView {
             .size_full()
             .p(px(snap_padding(PADDING_PX, window.scale_factor())))
             .bg(self.style.window_background())
+            .rounded_bl(px(self.corners.0))
+            .rounded_br(px(self.corners.1))
             .track_focus(&self.focus)
             .key_context("Terminal")
             .on_action(cx.listener(Self::copy_action))
