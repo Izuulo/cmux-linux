@@ -37,7 +37,7 @@
 - gpui `=0.2.2` for UI; libghostty-vt (vendored from cmux @ 21dcc2b, Ghostty fork @ ef4f157) for terminal state.
 - Dev setup: Zig 0.16.0 via `scripts/install-zig.sh`; `.tools/zig` on PATH. libc pinned to 0.2.189 in Cargo.lock; never bare `cargo update`. Toolchain pinned in `rust-toolchain.toml`.
 - Local app only: no cmux Cloud, Manaflow relays. In-app browser added as M13 (owner, 2026-11-11). v1 = M0–M6; M7–M13 add the extras.
-- `ui_scale` (config.toml, startup only): chrome files take `px` from `cmux-app::ui`; measured values use `gpui::px`.
+- `ui_scale` (config.toml, re-read every 1 s): chrome files take `px` from `cmux-app::ui`; measured values use `gpui::px`.
 - Target: KDE Plasma Wayland first, macOS second. ⌘ → Super by default, all keys remappable.
 - Terminal behaviour follows Ghostty source where cmux delegates to Ghostty (M1 journal lists the cases, e.g. Ctrl+[ sends CSI-u).
 - Config: reads Ghostty's own config (`~/.config/ghostty/config[.ghostty]`, includes, themes).
