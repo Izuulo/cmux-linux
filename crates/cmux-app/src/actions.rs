@@ -47,6 +47,7 @@ gpui::actions!(
         SwitchRightSidebarToDock,
         NewWorkspaceGroup,
         ToggleWorkspaceGroupCollapsed,
+        Quit,
     ]
 );
 
@@ -105,6 +106,7 @@ pub fn action_for(b: &Binding) -> Option<Box<dyn Action>> {
         "switchRightSidebarToDock" => Box::new(SwitchRightSidebarToDock),
         "newWorkspaceGroup" => Box::new(NewWorkspaceGroup),
         "toggleFocusedWorkspaceGroupCollapsed" => Box::new(ToggleWorkspaceGroupCollapsed),
+        "quit" => Box::new(Quit),
         "selectWorkspaceByNumber" => Box::new(SelectWorkspaceByNumber(b.number?)),
         "selectSurfaceByNumber" => Box::new(SelectSurfaceByNumber(b.number?)),
         _ => return None,

@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use cmux_core::Direction;
+use cmux_core::{Direction, WorkspaceId};
 use gpui::{
     AppContext, ClickEvent, Context, CursorStyle, DragMoveEvent, EmptyView, Focusable, FontWeight,
     InteractiveElement, IntoElement, ParentElement, Rgba, StatefulInteractiveElement, Styled,
@@ -239,6 +239,42 @@ impl WindowView {
     ) -> bool {
         let (style, shell) = (self.style.clone(), self.shell.clone());
         let view = cx.new(|cx| WorkspaceView::new_dock(shell, style, cwd, BAR_H, window, cx));
+        self.attach_dock(view, window, cx)
+    }
+
+    /// The Dock from `session.json` (M10 plan L3).
+    pub(super) fn restore_dock(
+        &mut self,
+        saved: &super::session::SavedLayout,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let (style, shell) = (self.style.clone(), self.shell.clone());
+        let (layout, terms) = (saved.layout(), saved.terms.clone());
+        let inputs = saved.inputs(&self.vault_agents);
+        let view = cx.new(|cx| {
+            WorkspaceView::restore(
+                WorkspaceId(0),
+                true,
+                shell,
+                style,
+                layout,
+                terms,
+                inputs,
+                BAR_H,
+                window,
+                cx,
+            )
+        });
+        self.attach_dock(view, window, cx)
+    }
+
+    fn attach_dock(
+        &mut self,
+        view: gpui::Entity<WorkspaceView>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
         if !view.read(cx).has_terminals() {
             return false;
         }

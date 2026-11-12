@@ -25,6 +25,8 @@ use crate::chrome;
 use crate::style::TermStyle;
 use crate::terminal_view::{TerminalEvent, TerminalView};
 use crate::window_view::control::ShellEnv;
+use crate::window_view::session::{Agent, SavedTerm, detect_agent};
+use cmux_config::vault::Registration;
 
 /// Hit band each side of a 1 px divider (cmux `dividerHitExpansion`).
 const DIVIDER_HIT: f32 = 8.0;
@@ -38,6 +40,8 @@ struct DividerDrag {
 
 struct Surface {
     view: Entity<TerminalView>,
+    /// The agent session running here, for resume after a restart (M10 Part 2).
+    agent: Option<Agent>,
     _subscriptions: [Subscription; 2],
 }
 
@@ -111,7 +115,94 @@ impl WorkspaceView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        Self::build(id, false, shell, style, cwd, window, cx)
+        Self::build(
+            id,
+            false,
+            shell,
+            style,
+            Layout::new(),
+            vec![cwd],
+            window,
+            cx,
+        )
+    }
+
+    /// A workspace (or, with `dock`, the Dock) rebuilt from `session.json` (M10 plan L5, L6,
+    /// V3): `terms` and `inputs` are per surface in `Layout::surfaces` order; each input line is
+    /// typed into its new shell. Surfaces whose shell fails are dropped; `has_terminals` is
+    /// false when none started.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn restore(
+        id: WorkspaceId,
+        dock: bool,
+        shell: Rc<ShellEnv>,
+        style: Rc<TermStyle>,
+        layout: Layout,
+        terms: Vec<SavedTerm>,
+        inputs: Vec<Option<String>>,
+        top_inset: f32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let ids = layout.surfaces();
+        let cwds = terms.iter().map(|t| t.cwd.clone()).collect();
+        let mut this = Self::build(id, dock, shell, style, layout, cwds, window, cx);
+        this.top_inset = top_inset;
+        for ((id, term), input) in ids.iter().zip(terms).zip(inputs) {
+            let Some(s) = this.surfaces.get_mut(id) else {
+                continue;
+            };
+            s.agent = term.agent;
+            if let Some(line) = input {
+                let bytes = format!("{line}\n").into_bytes();
+                s.view.update(cx, |v, cx| v.send_scripted(bytes, cx));
+            }
+        }
+        this
+    }
+
+    /// The tree's shape, the focused pane (tree order) and each surface's cwd and agent in
+    /// `Layout::surfaces` order (M10 plan L3, V1, V2). A surface without a hook-reported agent
+    /// is checked against `regs` by its foreground process.
+    pub(crate) fn saved(
+        &self,
+        regs: &[Registration],
+        cx: &App,
+    ) -> (cmux_core::Shape, usize, Vec<SavedTerm>) {
+        let (shape, focused) = self.layout.shape();
+        let terms = self
+            .layout
+            .surfaces()
+            .iter()
+            .filter_map(|s| self.surfaces.get(s))
+            .map(|s| {
+                let v = s.view.read(cx);
+                let agent = s
+                    .agent
+                    .clone()
+                    .or_else(|| detect_agent(regs, v.foreground_pid()?));
+                SavedTerm {
+                    cwd: v.cwd(),
+                    agent,
+                }
+            })
+            .collect();
+        (shape, focused, terms)
+    }
+
+    /// Sets (or with `None` clears) the agent session of `surface`. False if it is not here.
+    pub(crate) fn set_agent(&mut self, surface: SurfaceId, agent: Option<Agent>) -> bool {
+        match self.surfaces.get_mut(&surface) {
+            Some(s) => {
+                s.agent = agent;
+                true
+            }
+            None => false,
+        }
+    }
+
+    pub(crate) fn agent(&self, surface: SurfaceId) -> Option<&Agent> {
+        self.surfaces.get(&surface)?.agent.as_ref()
     }
 
     /// The window's Dock: the same panes, tabs and splits under the right sidebar's bar.
@@ -124,17 +215,28 @@ impl WorkspaceView {
         cx: &mut Context<Self>,
     ) -> Self {
         // No listed workspace has id 0.
-        let mut this = Self::build(WorkspaceId(0), true, shell, style, cwd, window, cx);
+        let mut this = Self::build(
+            WorkspaceId(0),
+            true,
+            shell,
+            style,
+            Layout::new(),
+            vec![cwd],
+            window,
+            cx,
+        );
         this.top_inset = top_inset;
         this
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build(
         id: WorkspaceId,
         dock: bool,
         shell: Rc<ShellEnv>,
         style: Rc<TermStyle>,
-        cwd: Option<String>,
+        layout: Layout,
+        cwds: Vec<Option<String>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -148,7 +250,7 @@ impl WorkspaceView {
         let mut this = Self {
             id,
             shell,
-            layout: Layout::new(),
+            layout,
             surfaces: HashMap::new(),
             style,
             focus: cx.focus_handle(),
@@ -166,12 +268,18 @@ impl WorkspaceView {
             flash_seq: 0,
             _subscriptions: vec![lost],
         };
-        let first = this.layout.active_surface();
-        if this.add_terminal(first, cwd, window, cx) {
-            this.focus_active(window, cx);
-        } else {
-            this.has_terminals = false;
+        let mut cwds = cwds.into_iter();
+        for surface in this.layout.surfaces() {
+            let cwd = cwds.next().flatten();
+            if !this.add_terminal(surface, cwd, window, cx)
+                && this.layout.close_surface(surface) == Closed::LastSurface
+            {
+                // The last one left failed: nothing started at all.
+                this.has_terminals = false;
+                return this;
+            }
         }
+        this.focus_active(window, cx);
         this
     }
 
@@ -353,6 +461,7 @@ impl WorkspaceView {
             surface,
             Surface {
                 view,
+                agent: None,
                 _subscriptions: [events, focused],
             },
         );

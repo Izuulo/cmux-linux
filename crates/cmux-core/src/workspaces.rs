@@ -29,7 +29,7 @@ pub enum WorkspaceClosed {
 pub struct Workspaces {
     pub(crate) list: Vec<Workspace>,
     pub(crate) selected: usize,
-    next_id: u64,
+    pub(crate) next_id: u64,
     pub(crate) groups: Vec<Group>,
     pub(crate) next_group: u64,
 }

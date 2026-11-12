@@ -65,6 +65,8 @@ pub const DEFAULTS: &[(&str, &[&str])] = &[
     ("moveWorkspaceUp", &["super+ctrl+opt+["]),
     ("moveWorkspaceDown", &["super+ctrl+opt+]"]),
     ("toggleSidebar", &["super+b"]),
+    // cmux ⌘Q; M10 saves the session on quit.
+    ("quit", &["super+q"]),
     // Notification actions: rn §10 (M4).
     ("showNotifications", &["super+i"]),
     ("jumpToUnread", &["super+shift+u"]),

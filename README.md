@@ -42,7 +42,9 @@ original. It is a **local app**: no cloud services, no browser, no account.
 
 Also here: an agent approval Feed, workspace groups, a Dock, agent-to-agent
 messages, workspace auto-naming, automations and Claude Code teams in splits
-(below). Later: session restore, a command palette and SSH workspaces.
+(below), and the layout and running agent sessions come back after a restart, with
+opt-in tmux-backed terminals whose processes survive it. Later: a command palette and SSH
+workspaces.
 
 ## How it's built
 
@@ -468,6 +470,59 @@ Not ported from cmux: the tidy teammate column (splits go where Claude asks, and
 there is no room), `capture-pane`, tmux windows and sessions, and restoring a team after a
 restart. A tmux command the script doesn't know fails with "Unsupported tmux compatibility
 command", so a new Claude Code version shows what it needs.
+
+## Session restore
+
+Quitting (Super+Q) and starting again brings back the window size, both sidebars, the
+workspaces with their names, groups, splits, tabs and focus, the Dock, and each terminal's
+directory. The app saves to `~/.local/state/cmux-linux/session.json` every 8 seconds when
+something changed and once more on quit, so a crash loses at most the last few seconds. Only
+the layout comes back: each terminal starts a new shell, and scrollback, notifications, the
+Feed and agent messages are not kept, except for agent sessions (below). Start with `CMUX_DISABLE_SESSION_RESTORE=1` (or any
+argument) to skip it; a file that can't be read is moved to `session.json.bad`.
+
+### Agent sessions
+
+A Claude Code session that was still running when the app quit comes back in its terminal:
+the new shell gets `claude --resume <session id>` typed into it. Claude reports its session
+through two hooks that `cmux hooks setup` installs (`SessionStart`, `SessionEnd`; run setup
+again if you installed the hooks before). Leaving Claude yourself (`/exit`, Ctrl+D, `/clear`,
+logout) forgets the session; Claude being killed with the app keeps it.
+
+Other agents can be added in `~/.config/cmux-linux/config.toml`. One is recognised when a
+terminal's running program has that name and carries its session id after an option:
+
+```toml
+[[vault.agents]]
+id = "pi"
+name = "Pi"
+process_name = "pi"
+argv_option = "--session"
+resume_command = "{{executable}} --session {{sessionId}}"
+```
+
+`resume_command` must contain `{{sessionId}}`; `{{executable}}` and `{{cwd}}` are filled in
+too. `cmux vault list` shows every session that would resume, `cmux vault resume <surface>`
+types its resume line again. Session ids with anything but letters, digits, `.`, `_` and `-`
+are ignored, since the line goes to a shell.
+
+### Keeping processes alive (local-tmux)
+
+Opt-in: a terminal attached to your own tmux server keeps its processes when the app quits.
+
+```sh
+cmux local-tmux start work --cwd ~/src/project --command 'npm run dev'
+cmux local-tmux list
+cmux local-tmux attach work     # from another terminal
+cmux local-tmux close work      # ends the session and what runs in it
+```
+
+`start` creates the session on `~/.local/state/cmux-linux/local-tmux/tmux.sock` (directory
+mode 0700, 10,000 lines of history) and attaches the terminal you ran it in (`--detached`
+doesn't). Quitting the app or closing the tab only detaches; when the app restores the
+terminal it attaches again. It needs `tmux` on `PATH` (or `CMUX_LOCAL_TMUX_BIN`). It does not
+survive a logout or reboot, which ends the tmux server. Sessions are found by name: if the
+server was restarted and a new session got the same name, that one is attached.
 
 ## Contributing
 

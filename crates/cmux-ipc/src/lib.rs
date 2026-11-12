@@ -7,6 +7,7 @@ pub mod feed;
 pub mod handles;
 pub mod json;
 pub mod keys;
+pub mod local_tmux;
 pub mod paths;
 pub mod server;
 pub mod snapshot;

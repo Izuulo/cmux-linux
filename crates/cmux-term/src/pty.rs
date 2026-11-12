@@ -246,6 +246,12 @@ impl Session {
         }
     }
 
+    /// The PTY's foreground process group leader, when it is not the shell (a job runs).
+    pub fn foreground_pid(&self) -> Option<u32> {
+        let fg = u32::try_from(self.master.process_group_leader()?).ok()?;
+        (Some(fg) != self.process_id()).then_some(fg)
+    }
+
     /// The child's current working directory as the OS reports it (see [`process_cwd`]).
     pub fn cwd(&self) -> Option<String> {
         process_cwd(self.process_id()?)
@@ -394,6 +400,48 @@ pub fn process_cwd(pid: u32) -> Option<String> {
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub fn process_cwd(_pid: u32) -> Option<String> {
+    None
+}
+
+/// A process's argv, executable path and name (`/proc/<pid>/cmdline`, `exe`, `comm`); M10
+/// custom-agent detection.
+#[cfg(target_os = "linux")]
+pub fn process_argv(pid: u32) -> Option<(Vec<String>, Option<String>, Option<String>)> {
+    let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
+    let argv: Vec<String> = raw
+        .split(|b| *b == 0)
+        .filter(|a| !a.is_empty())
+        .map(|a| String::from_utf8_lossy(a).into_owned())
+        .collect();
+    let exe = std::fs::read_link(format!("/proc/{pid}/exe"))
+        .ok()
+        .and_then(|p| p.into_os_string().into_string().ok());
+    let comm = std::fs::read_to_string(format!("/proc/{pid}/comm"))
+        .ok()
+        .map(|c| c.trim_end().to_string());
+    (!argv.is_empty()).then_some((argv, exe, comm))
+}
+
+/// A process's environment (`/proc/<pid>/environ`); M10 local-tmux detection.
+#[cfg(target_os = "linux")]
+pub fn process_environ(pid: u32) -> Option<Vec<String>> {
+    let raw = std::fs::read(format!("/proc/{pid}/environ")).ok()?;
+    Some(
+        raw.split(|b| *b == 0)
+            .filter(|a| !a.is_empty())
+            .map(|a| String::from_utf8_lossy(a).into_owned())
+            .collect(),
+    )
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn process_environ(_pid: u32) -> Option<Vec<String>> {
+    None
+}
+
+// shortcut: no custom-agent detection off Linux; macOS needs `KERN_PROCARGS2`.
+#[cfg(not(target_os = "linux"))]
+pub fn process_argv(_pid: u32) -> Option<(Vec<String>, Option<String>, Option<String>)> {
     None
 }
 
