@@ -15,9 +15,9 @@ The Swift app (`Sources/`) is the behavioural and visual reference.
 
 ## Non-goals
 
-This is the **local** app. In-app browser and anything web-based, cmux Cloud/VMs,
-Manaflow relays and phone sync, browser cookie import, iOS. The Swift CLI's
-cloud/browser/VM commands are out of scope. See "Not planned" for local
+This is the **local** app. Anything web-based beyond the M13 in-app browser,
+cmux Cloud/VMs, Manaflow relays and phone sync, browser cookie import, iOS. The
+Swift CLI's cloud/VM commands are out of scope. See "Not planned" for local
 alternatives.
 
 ## Constraints
@@ -88,8 +88,10 @@ criteria pass and STATUS.md says so.
 | M9 agent-coordination | Agents work together | `cmux agent message`, Claude Teams as native splits, workspace auto-naming, automations. |
 | M10 persistence | Nothing lost on restart | Layout restore, Vault agent-session resume, opt-in `local-tmux` persistence. |
 | M11 productivity | Faster everyday use | Command palette, `cmux.json` custom commands, SSH workspaces. |
+| M12 settings | Configure without editing files | Settings window for cmux-linux options and the Ghostty config (themes, blur, opacity, fonts), applied live. |
+| M13 browser | Web pages next to terminals | A browser surface in a pane or tab with URL bar and navigation; links and `cmux browser open` land there. |
 
-M0–M6 are v1. M7–M11 come after, in order, unless STATUS.md records a change.
+M0–M6 are v1. M7–M13 come after, in order, unless STATUS.md records a change.
 
 ## Not planned
 

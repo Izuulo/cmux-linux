@@ -4,7 +4,7 @@
      current version to docs/status-archive.md. -->
 
 **Updated:** 2026-11-11
-**Current milestone:** none open. M10 persistence merged to `master` (PR #14, 2026-11-11): layout restore (`session.json`, Super+Q quit), agent resume (Claude via `SessionStart`/`SessionEnd` hooks, `[[vault.agents]]`, `cmux vault list|resume`), `cmux local-tmux`. Exit 1 checked on KDE by script, exit 2 with a fake `claude`; exit 3 unchecked (no tmux installed).
+**Current milestone:** none open. Open PRs: #15 `ui_scale` (bigger chrome text/icons; screenshots at 1.0/1.5 on KDE, nothing clicked), docs PR adding M12 settings and M13 browser. M10 persistence merged to `master` (PR #14, 2026-11-11): layout restore (`session.json`, Super+Q quit), agent resume (Claude via `SessionStart`/`SessionEnd` hooks, `[[vault.agents]]`, `cmux vault list|resume`), `cmux local-tmux`. Exit 1 checked on KDE by script, exit 2 with a fake `claude`; exit 3 unchecked (no tmux installed).
 **Next action:** owner: install tmux (`sudo pacman -S tmux`), then agent runs exit 3 (start a counting process with `cmux local-tmux start`, quit, relaunch, see it still counting); owner: one real Claude Code run for exit 2 (run `cmux hooks setup` again first), then M11 productivity (write its plan first). Close the two stray dev `cmux-app` windows from 2026-11-11 if still open (M10 journal, Part 3). Older owner checks: (a) click-test PR #13's reopen button and window buttons; (b) done 2026-11-11 with Claude Code 2.1.322 (M9 journal): messages, default auto-naming, automations and a two-teammate `cmux claude-teams` run pass, the last only after adding `respawn-pane`; still open: M7 Task 9 Step 2 (a permission prompt in the Feed) and the `Stop` continue path; (c) the mouse and typing checks no script can do: M8's group header click, `+`, chevron, menus, rename field, Delete prompt, drags, sidebar edge drag, Dock "New Terminal"; older: divider/tab/row drag, Feed buttons, clicking a bubble, IME, `CMUX_TRACE_LATENCY=1` (M1 exit 3), blur by eye; (d) `makepkg -si` and a launcher start.
 
 ## Where things are
@@ -28,13 +28,16 @@
 | M9 agent-coordination | merged (PR #11); each exit criterion checked against the app on KDE with hand-run hooks, a fake naming command and a fake `claude`; real Claude run pending |
 | M10 persistence | merged (PR #14); exit 1 checked by script, exit 2 with a fake `claude`; real Claude run and exit 3 (needs tmux) pending |
 | M11 productivity | not started (post-v1) |
+| M12 settings | not started: Settings window, Ghostty config editor (themes, blur), live apply |
+| M13 browser | not started: browser tabs next to terminals; engine not chosen |
 
 ## Decisions so far
 - Port from source (cmux is GPL-3.0-or-later); REA not needed. Our license: GPL-3.0-or-later.
 - Never copy from cmux's BUSL-1.1 server directories.
 - gpui `=0.2.2` for UI; libghostty-vt (vendored from cmux @ 21dcc2b, Ghostty fork @ ef4f157) for terminal state.
 - Dev setup: Zig 0.16.0 via `scripts/install-zig.sh`; `.tools/zig` on PATH. libc pinned to 0.2.189 in Cargo.lock; never bare `cargo update`. Toolchain pinned in `rust-toolchain.toml`.
-- Local app only: no browser, cmux Cloud, Manaflow relays. v1 = M0–M6; M7–M11 add the buildable extras.
+- Local app only: no cmux Cloud, Manaflow relays. In-app browser added as M13 (owner, 2026-11-11). v1 = M0–M6; M7–M13 add the extras.
+- `ui_scale` (config.toml, startup only): chrome files take `px` from `cmux-app::ui`; measured values use `gpui::px`.
 - Target: KDE Plasma Wayland first, macOS second. ⌘ → Super by default, all keys remappable.
 - Terminal behaviour follows Ghostty source where cmux delegates to Ghostty (M1 journal lists the cases, e.g. Ctrl+[ sends CSI-u).
 - Config: reads Ghostty's own config (`~/.config/ghostty/config[.ghostty]`, includes, themes).
@@ -73,7 +76,6 @@
 - M7 parked (details in its journal): one notification per surface (two cards on a surface share it); stdin read has no timeout; `CMUX_LINUX` would leak into cmux.app launched from our terminal; settings key order relies on workspace `preserve_order` feature unification (check packaging); final-review follow-ups not done: bind `CMUX_LINUX` to our socket path; CLI tests for invalid JSON, uninstall refusal, `HOME` fallback, `--settings-file` precedence; fake-error test for the hook.
 - M6 parity: panel, 3-tab strip and ring flash were matched from Swift source only, never rendered; owner's cmux.app wasn't a clean reference (non-default config). Remaining gaps (default theme, full-width titlebar band, panel extras, pressed-icon opacity, scroll fades) are in the M6 journal.
 - M6 perf on macOS: loaded p95 10.7 ms, CPU 0.1 % after stop; footprint 971 MB at the old 50 MB scrollback, not re-measured at 10 MB. Linux (KDE, release): RSS 483 MB under 19 floods, CPU 0.8 % after stop.
-
 - Agent messages (M9): app-side store, delivered only through Claude Code hooks (`hooks message` on UserPromptSubmit, PostToolUse, Stop); a workspace's agent is the surface that last claimed.
 - M9 Parts 2–4: the app, not a hook, runs the naming command (`[auto_naming]`, off by default; user titles win); automations are cmux's `automations.json` with `notify` and `run` only, over six events from one `emit`; Claude Teams maps tmux pane `%N` to `surface:N` through a private `tmux` script.
 - Scripted UI checks: `debug.shortcut.simulate {combo}` (raw v2 request) presses a chord; needs `CMUX_SOCKET_MODE=allowAll` from outside the app.
@@ -93,7 +95,6 @@ Plasma ≤6.6 blur (`org_kde_kwin_blur`): only if Task 8 finds no `ext_backgroun
 - Config: quoted `?` path handling; theme files' own `theme`/`config-file` lines ignored.
 - CI: fmt `-p` list hand-maintained; clippy excludes vendored crates (`--no-deps`).
 - Packaging: crate licence texts (`cargo about`) not shipped yet, before AUR publish; `-git` PKGBUILD only, no release tag; makepkg's Ghostty source still clones from GitHub.
-- Shell exit test on Linux now uses perl (`setsid` via fifo marker).
 
 ## Blockers
 None.
