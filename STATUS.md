@@ -4,8 +4,8 @@
      current version to docs/status-archive.md. -->
 
 **Updated:** 2026-11-11
-**Current milestone:** none open. M6 desktop checks, M8, M9 and the client-side window buttons are merged to `master` (PRs #9–#12, 2026-11-11); their branches are deleted. PR #13 (2026-11-11): a button in the window's top-left corner that reopens a hidden sidebar; window buttons moved top-right; rounded window corners (window is now always Transparent on Linux); an app icon (`packaging/cmux-linux.png`). All seen drawn on KDE; nothing clicked.
-**Next action:** agent: M10 persistence (write its plan first), on a branch from `master`. Owner, when convenient: (a) click-test PR #13's reopen button and window buttons; (b) done 2026-11-11 with Claude Code 2.1.322 (M9 journal): messages, default auto-naming, automations and a two-teammate `cmux claude-teams` run pass, the last only after adding `respawn-pane`; still open: M7 Task 9 Step 2 (a permission prompt in the Feed) and the `Stop` continue path; (c) the mouse and typing checks no script can do: M8's group header click, `+`, chevron, menus, rename field, Delete prompt, drags, sidebar edge drag, Dock "New Terminal"; older: divider/tab/row drag, Feed buttons, clicking a bubble, IME, `CMUX_TRACE_LATENCY=1` (M1 exit 3), blur by eye; (d) `makepkg -si` and a launcher start.
+**Current milestone:** M10 persistence, branch `m10-persistence` (PR #14). Plan written 2026-11-11 (`docs/milestones/m10-persistence/plan.md`): Part 1 layout restore, Part 2 Claude/custom-agent resume, Part 3 local-tmux. No code yet. Earlier: M6–M9, the client-side window buttons and PR #13 (sidebar reopen button, rounded corners, app icon) are merged to `master`.
+**Next action:** agent: M10 Part 1 Task 1 (`cmux-core::session`: `Layout::shape()`/`from_shape()` with tests), after the owner OKs the plan's deviations (auto-resume of interrupted Claude, no scrollback persistence, local-tmux without a registry). Owner, when convenient: (a) click-test PR #13's reopen button and window buttons; (b) done 2026-11-11 with Claude Code 2.1.322 (M9 journal): messages, default auto-naming, automations and a two-teammate `cmux claude-teams` run pass, the last only after adding `respawn-pane`; still open: M7 Task 9 Step 2 (a permission prompt in the Feed) and the `Stop` continue path; (c) the mouse and typing checks no script can do: M8's group header click, `+`, chevron, menus, rename field, Delete prompt, drags, sidebar edge drag, Dock "New Terminal"; older: divider/tab/row drag, Feed buttons, clicking a bubble, IME, `CMUX_TRACE_LATENCY=1` (M1 exit 3), blur by eye; (d) `makepkg -si` and a launcher start.
 
 ## Where things are
 - Project design and milestone table: `docs/design.md`
@@ -26,7 +26,7 @@
 | M7 feed | merged (PR #8); Feed seen drawn on KDE (permission, question, empty state); buttons unclicked; real Claude Code run (Task 9 Step 2) pending |
 | M8 groups-dock | merged (PR #10); both exit criteria checked on KDE by script and screenshot; mouse paths unverified |
 | M9 agent-coordination | merged (PR #11); each exit criterion checked against the app on KDE with hand-run hooks, a fake naming command and a fake `claude`; real Claude run pending |
-| M10 persistence | not started (post-v1) |
+| M10 persistence | in progress: plan written, Part 1 next |
 | M11 productivity | not started (post-v1) |
 
 ## Decisions so far
