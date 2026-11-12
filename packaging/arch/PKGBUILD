@@ -15,7 +15,7 @@ depends=('fontconfig' 'freetype2' 'libxkbcommon' 'libxkbcommon-x11' 'wayland'
          'libxext' 'libxfixes' 'libxrandr' 'mesa' 'expat' 'cairo' 'pango' 'systemd-libs'
          'alsa-lib')
 options=('!debug')
-makedepends=('git' 'rustup' 'clang' 'binutils')
+makedepends=('git' 'rustup' 'clang' 'binutils' 'cmake' 'ninja')
 provides=('cmux-linux')
 conflicts=('cmux-linux')
 source=("cmux-linux::git+${_repo:-https://github.com/Izuulo/cmux-linux.git}"
@@ -57,7 +57,8 @@ package() {
   local cef=target/release lib="$pkgdir/usr/lib/cmux-linux"
   install -Dm755 "$cef/libcef.so" "$lib/libcef.so"
   strip --strip-unneeded "$lib/libcef.so"  # 1.5 GB → about 280 MB
-  install -m755 "$cef/libvk_swiftshader.so" "$cef/libvulkan.so.1" "$lib/"
+  # Not CEF's libvulkan.so.1: with the $ORIGIN rpath gpui would load it over the system loader.
+  install -m755 "$cef/libvk_swiftshader.so" "$lib/"
   install -m644 "$cef"/*.pak "$cef/icudtl.dat" "$cef/v8_context_snapshot.bin" \
     "$cef/vk_swiftshader_icd.json" "$lib/"
   cp -r "$cef/locales" "$lib/"

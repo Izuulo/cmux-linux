@@ -40,7 +40,7 @@ jobs:
         run: cargo fmt --check -p cmux-app -p cmux-config -p cmux-core -p cmux-ipc -p cmux-meta -p cmux-term
       - run: cargo build --workspace --locked
       - run: cargo test --workspace --locked
-      # Vendored ghostty-vt fails clippy::chunks_exact_to_as_chunks on 1.99 (kitty.rs); we don't edit vendored code.
+      # Vendored ghostty-vt fails clippy::chunks_exact_to_as_chunks on 1.99 (kitty.rs); we don't lint vendored code.
       - run: cargo clippy --workspace --all-targets --locked --no-deps --exclude ghostty-vt --exclude ghostty-vt-sys -- -D warnings
 
   macos:

@@ -106,7 +106,11 @@ impl BrowserView {
             page: engine
                 .as_ref()
                 .map(|e| e.page.lock().unwrap().clone())
-                .unwrap_or_default(),
+                // No engine (CEF failed to start): keep the URL so the session still saves it.
+                .unwrap_or_else(|| Page {
+                    url: url.into(),
+                    ..Default::default()
+                }),
             engine,
             frame: None,
             popup: None,

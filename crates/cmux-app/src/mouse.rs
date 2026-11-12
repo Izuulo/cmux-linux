@@ -127,10 +127,10 @@ impl TerminalView {
         if cx.has_active_drag() {
             return;
         }
+        // A link press whose release went to a browser tab that replaced us must not eat this one.
+        self.link_press = false;
         let was_focused = self.focus.is_focused(window);
         window.focus(&self.focus);
-        // The click that focuses another pane is not terminal input, unless the app tracks the
-        // mouse (cmux TerminalPointerFocusActivationPolicy).
         // Ghostty's link chord: Ctrl alone opens the link under the pointer, even when the app
         // tracks the mouse (`mouseLinkRefreshAllowedState`).
         let m = &ev.modifiers;
@@ -143,6 +143,8 @@ impl TerminalView {
             cx.emit(TerminalEvent::OpenLink(url));
             return;
         }
+        // The click that focuses another pane is not terminal input, unless the app tracks the
+        // mouse (cmux TerminalPointerFocusActivationPolicy).
         if !was_focused && !self.tracking() {
             return;
         }
