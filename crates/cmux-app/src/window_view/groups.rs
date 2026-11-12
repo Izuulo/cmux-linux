@@ -32,7 +32,7 @@ impl WindowView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if !self.make_view(id, cwd, window, cx) {
+        if !self.make_view(id, cwd, None, window, cx) {
             self.workspaces.close(id);
             self.select(old, window, cx);
             return false;

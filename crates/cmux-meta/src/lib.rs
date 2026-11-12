@@ -7,6 +7,7 @@ pub mod git;
 pub mod path;
 pub mod ports;
 pub mod pr;
+pub mod remote;
 
 use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};

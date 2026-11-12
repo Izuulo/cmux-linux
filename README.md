@@ -173,8 +173,8 @@ selectSurfaceByNumber = "alt+1"       # binds alt+1 … alt+9 (9 = last tab)
 
 **KDE Plasma.** KWin handles some Super shortcuts before any app sees them. In a default
 Plasma 6 setup these include Super+D (show desktop), Super+W (overview), Super+T (edit
-tiles) and Super+Alt+Arrows (switch window). That blocks `splitRight`, `closeTab`,
-`newSurface` and `focusLeft/Right/Up/Down`. Either free them in System Settings →
+tiles), Super+Alt+Arrows (switch window) and Super+P (switch display). That blocks
+`splitRight`, `closeTab`, `newSurface`, `focusLeft/Right/Up/Down` and `goToWorkspace`. Either free them in System Settings →
 Keyboard → Shortcuts, or remap them here, for example:
 
 ```toml
@@ -186,7 +186,41 @@ focusLeft = "ctrl+alt+shift+left"
 focusRight = "ctrl+alt+shift+right"
 focusUp = "ctrl+alt+shift+up"
 focusDown = "ctrl+alt+shift+down"
+goToWorkspace = "super+shift+o"
 ```
+
+## Command palette
+
+Super+Shift+P (`commandPalette`) lists every command with its shortcut; Super+P
+(`goToWorkspace`) searches workspaces and the current workspace's tabs. Typing `>` switches
+to commands, deleting it back to workspaces. Up/Down or Ctrl+N/Ctrl+P
+(`commandPaletteNext`/`commandPalettePrevious`, only inside the palette) move, Enter runs,
+Escape or a click outside closes. Pressing the same shortcut again closes it.
+
+### Custom commands (`cmux.json`)
+
+The palette also lists `Custom: <name>` rows from `cmux.json`: the project file, found by
+walking up from the selected workspace's directory (`.cmux/cmux.json` before `cmux.json` in
+each directory), and `~/.config/cmux-linux/cmux.json`. Project commands win by name. Only
+`commands` is read, in cmux's format:
+
+```json
+{"commands": [
+  {"name": "test", "keywords": ["check"], "command": "cargo test"},
+  {"name": "dev", "restart": "recreate", "workspace": {
+    "cwd": "web", "env": {"PORT": "3000"},
+    "layout": {"direction": "horizontal", "split": 0.5, "children": [
+      {"pane": {"surfaces": [{"type": "terminal", "command": "npm run dev"}]}},
+      {"pane": {"surfaces": [{"type": "terminal", "cwd": "~", "focus": true}]}}]}}}
+]}
+```
+
+`command` is typed into the focused terminal; `workspace` opens a workspace with that layout
+(`restart`: `new`, `ignore`, `recreate` or `confirm` when one with that title exists). A
+command from a project file asks before it runs (Run, Trust and Run, Cancel); trust is kept
+per file and exact command in `~/.local/state/cmux-linux/trusted-commands.json`, so a changed
+command asks again. `"confirm": true` always asks. A file that fails to parse shows a
+`cmux.json: <error>` row.
 
 ## Window buttons
 

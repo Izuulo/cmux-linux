@@ -4,7 +4,13 @@
 pub(crate) const GROUPS: &[(&str, &[&str])] = &[
     (
         "Start & Resume",
-        &["new-workspace", "claude-teams", "vault", "local-tmux"],
+        &[
+            "new-workspace",
+            "ssh",
+            "claude-teams",
+            "vault",
+            "local-tmux",
+        ],
     ),
     (
         "Navigate & Arrange",
@@ -79,6 +85,7 @@ pub(crate) fn usage_line(cmd: &str) -> Option<&'static str> {
         "automation" => "automation <list|reload>",
         "vault" => "vault <list|resume <surface>>",
         "local-tmux" => "local-tmux <start|list|attach|close> [options]",
+        "ssh" => "ssh <destination> [options]",
         "claude-teams" => "claude-teams [claude-args...]",
         "hooks" => {
             "hooks <setup|uninstall> [--settings-file <path>] | hooks <feed|message|session> --source claude"
@@ -153,6 +160,7 @@ pub(crate) fn command(cmd: &str) -> Option<String> {
         "automation" => AUTOMATION,
         "vault" => VAULT,
         "local-tmux" => LOCAL_TMUX,
+        "ssh" => SSH,
         "claude-teams" => CLAUDE_TEAMS,
         "ping" => PING,
         _ => return None,
@@ -439,6 +447,31 @@ its hooks (`cmux hooks setup`) and agents from [[vault.agents]] in
 
   list    Show each session: surface, workspace, agent, session id, directory
   resume  Type the session's resume command into its surface again
+";
+
+const SSH: &str = "Usage: cmux ssh <destination> [flags]
+
+Create a new workspace whose terminals (the first, and every split and tab) run ssh to
+<destination>. They share one connection, so a password or host-key prompt shows only
+in the first terminal. When ssh exits the terminal closes, as with a shell.
+
+Flags:
+  --name <title>          Workspace title (default: <destination>)
+  --port <n>              SSH port
+  --identity <path>       SSH identity file path
+  --ssh-option <opt>      Extra SSH -o option (repeatable)
+  --command <text>        Typed into the first remote terminal once it opens
+  --focus <true|false>    Switch to the new workspace (default: true)
+  --window <id|ref|index> Target window
+
+Image files dropped on a remote terminal are uploaded to ~/.cache/cmux/paste on the
+host and their remote paths typed. The sidebar shows the host, the remote git branch
+and the ports the remote user listens on.
+
+Example:
+  cmux ssh dev@my-host
+  cmux ssh dev@my-host --name gpu-box --port 2222 --identity ~/.ssh/id_ed25519
+  cmux ssh dev@my-host --ssh-option UserKnownHostsFile=/dev/null
 ";
 
 const LOCAL_TMUX: &str =

@@ -101,6 +101,8 @@ pub struct SavedWorkspace {
     /// Index into `Saved::groups`.
     pub group: Option<usize>,
     pub layout: SavedLayout,
+    /// A `cmux ssh` workspace's argv (M11 plan S2); missing in older files.
+    pub remote: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -274,6 +276,9 @@ pub fn to_json(s: &Saved) -> Value {
             v["title"] = json!(w.title);
             v["auto_title"] = json!(w.auto_title);
             v["group"] = json!(w.group);
+            if let Some(r) = &w.remote {
+                v["remote"] = json!(r);
+            }
             v
         }).collect::<Vec<_>>(),
         "dock": s.dock.as_ref().map(layout_json),
@@ -297,6 +302,8 @@ pub fn from_json(v: &Value) -> Option<Saved> {
                 auto_title: b(w, "auto_title"),
                 group: w.get("group").and_then(Value::as_u64).map(|g| g as usize),
                 layout: layout_from(w)?,
+                // A malformed one restores as a local workspace, never as another command.
+                remote: w.get("remote").and_then(cmux_meta::remote::argv_from_json),
             })
         })
         .collect::<Option<Vec<_>>>()?;
@@ -429,6 +436,7 @@ impl WindowView {
                         auto_title: w.auto_title,
                         group: w.group.and_then(|g| groups.iter().position(|x| x.id == g)),
                         layout: SavedLayout::of(self.views.get(&w.id)?, &self.vault_agents, cx),
+                        remote: self.views[&w.id].read(cx).remote().map(<[String]>::to_vec),
                     })
                 })
                 .collect(),
@@ -534,12 +542,14 @@ mod tests {
                     auto_title: true,
                     group: None,
                     layout: layout.clone(),
+                    remote: Some(vec!["ssh".into(), "-tt".into(), "h".into()]),
                 },
                 SavedWorkspace {
                     title: None,
                     auto_title: false,
                     group: Some(0),
                     layout: layout.clone(),
+                    remote: None,
                 },
             ],
             dock: Some(layout),
@@ -550,6 +560,13 @@ mod tests {
     fn json_round_trips() {
         let s = sample();
         assert_eq!(from_json(&to_json(&s)), Some(s));
+    }
+
+    #[test]
+    fn a_malformed_remote_restores_local() {
+        let mut v = to_json(&sample());
+        v["workspaces"][0]["remote"] = json!(["ssh", "-tt", 5, "h"]);
+        assert_eq!(from_json(&v).unwrap().workspaces[0].remote, None);
     }
 
     #[test]

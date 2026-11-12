@@ -343,13 +343,22 @@ impl WindowView {
         {
             return Err(RpcError::new("invalid_params", "cwd must be a string"));
         }
+        let remote = match params.get("remote") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(cmux_meta::remote::argv_from_json(v).ok_or_else(|| {
+                RpcError::new(
+                    "invalid_params",
+                    "remote must be an ssh argv (an array of strings starting with \"ssh\")",
+                )
+            })?),
+        };
         let focus = flag(params, "focus");
         let old = self.workspaces.selected();
         let cwd = text("cwd")
             .map(str::to_string)
             .or_else(|| self.views.get(&old).and_then(|v| v.read(cx).active_cwd(cx)));
         let id = self.workspaces.add_after_selected();
-        if !self.make_view(id, cwd, window, cx) {
+        if !self.make_view(id, cwd, remote, window, cx) {
             self.workspaces.close(id);
             self.workspaces.select(old);
             return Err(RpcError::new(
@@ -365,7 +374,11 @@ impl WindowView {
         if let Some(input) = text("initial_input")
             && let Some(term) = view.read(cx).terminal(surface).cloned()
         {
-            term.update(cx, |t, cx| t.send_scripted(input.as_bytes().to_vec(), cx));
+            let bytes = input.as_bytes().to_vec();
+            match view.read(cx).remote() {
+                Some(argv) => type_when_up(term.downgrade(), argv.to_vec(), bytes, cx),
+                None => term.update(cx, |t, cx| t.send_scripted(bytes, cx)),
+            }
         }
         if focus {
             self.select(id, window, cx);
@@ -695,4 +708,41 @@ fn keystroke(k: &KeySpec) -> Keystroke {
         key: k.key.clone(),
         key_char,
     }
+}
+
+/// `cmux ssh --command` (plan S1): typed once the workspace's ssh master is up, never into a
+/// password or host-key prompt; dropped with a notification after `UP_WAIT`.
+fn type_when_up(
+    term: gpui::WeakEntity<crate::terminal_view::TerminalView>,
+    argv: Vec<String>,
+    bytes: Vec<u8>,
+    cx: &mut App,
+) {
+    const UP_WAIT: std::time::Duration = std::time::Duration::from_secs(120);
+    const UP_EVERY: std::time::Duration = std::time::Duration::from_millis(250);
+    cx.spawn(async move |cx| {
+        let start = std::time::Instant::now();
+        loop {
+            if term.upgrade().is_none() {
+                return;
+            }
+            let argv = argv.clone();
+            let up = cx
+                .background_executor()
+                .spawn(async move { cmux_meta::remote::master_up(&argv) })
+                .await;
+            if up || start.elapsed() >= UP_WAIT {
+                let _ = term.update(cx, |t, cx| match up {
+                    true => t.send_scripted(bytes, cx),
+                    false => cx.emit(crate::terminal_view::TerminalEvent::Notify {
+                        title: "Command not run".into(),
+                        body: "The ssh connection did not come up within 2 minutes.".into(),
+                    }),
+                });
+                return;
+            }
+            cx.background_executor().timer(UP_EVERY).await;
+        }
+    })
+    .detach();
 }

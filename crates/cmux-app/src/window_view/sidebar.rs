@@ -117,7 +117,7 @@ pub(crate) fn row_model(title: &str, meta: &WorkspaceMeta, prs: &[(Pr, bool)]) -
         .map(|d| {
             (
                 d.branch.clone(),
-                Some(d.display.clone()).filter(|s| s != title),
+                Some(d.display.clone()).filter(|s| s != title && !s.is_empty()),
             )
         })
         .filter(|(b, d)| b.is_some() || d.is_some())
@@ -718,6 +718,13 @@ impl WindowView {
         let block = |lines: Vec<_>| {
             (!lines.is_empty()).then(|| div().flex().flex_col().gap(px(LINE_GAP)).children(lines))
         };
+        // A remote workspace's ports are on its host (not forwarded).
+        let port_host = self
+            .views
+            .get(&id)
+            .and_then(|v| Some(cmux_meta::remote::host(v.read(cx).remote()?.last()?).to_string()))
+            .map(|h| if h.contains(':') { format!("[{h}]") } else { h })
+            .unwrap_or_else(|| "localhost".into());
         let ports = (!m.ports.is_empty()).then(|| {
             detail()
                 .flex()
@@ -725,13 +732,14 @@ impl WindowView {
                 .flex_wrap()
                 .gap(px(ITEM_GAP))
                 .children(m.ports.into_iter().map(|port| {
+                    let url = format!("http://{port_host}:{port}");
                     div()
                         .id(SharedString::from(format!("ws-port-{}-{port}", id.0)))
                         .underline()
                         .child(format!(":{port}"))
                         .on_click(move |_, _, cx| {
                             cx.stop_propagation();
-                            cx.open_url(&format!("http://localhost:{port}"));
+                            cx.open_url(&url);
                         })
                 }))
         });

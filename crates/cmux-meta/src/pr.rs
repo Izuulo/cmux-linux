@@ -185,11 +185,11 @@ pub(crate) fn run_with_deadline(
     if status.success() {
         Ok(out)
     } else {
+        let program = cmd.get_program().to_string_lossy().into_owned();
         let line = String::from_utf8_lossy(&out.stderr)
             .lines()
             .next()
-            .unwrap_or("gh failed")
-            .to_string();
+            .map_or_else(|| format!("{program} failed"), str::to_string);
         Err(FetchError::Failed(line))
     }
 }

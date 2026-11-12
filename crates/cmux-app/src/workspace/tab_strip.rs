@@ -85,7 +85,7 @@ impl WorkspaceView {
         )
     }
 
-    fn tab_title(&self, surface: SurfaceId, cx: &Context<Self>) -> SharedString {
+    pub(crate) fn tab_title(&self, surface: SurfaceId, cx: &gpui::App) -> SharedString {
         self.surfaces
             .get(&surface)
             .and_then(|s| {
