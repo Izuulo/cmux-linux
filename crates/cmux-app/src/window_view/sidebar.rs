@@ -1,12 +1,13 @@
 //! The workspace sidebar (plan D2, D3): top band, one row per workspace, resize band.
 
+use crate::ui::{px, s};
 use cmux_core::{GroupId, Row, WorkspaceId};
 use cmux_meta::WorkspaceMeta;
 use cmux_meta::pr::{Pr, PrState};
 use gpui::{
     AppContext, ClickEvent, Context, CursorStyle, DragMoveEvent, EmptyView, FontWeight,
     InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Render,
-    Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*, px, svg,
+    Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*, svg,
 };
 
 use super::menu::{self, MenuAction};
@@ -152,9 +153,9 @@ pub(crate) fn clip_message(s: &str) -> &str {
 }
 
 pub(crate) fn clamp_width(w: f32, window_w: f32) -> f32 {
-    w.clamp(SIDEBAR_MIN, SIDEBAR_MAX)
-        .min(window_w - CONTENT_MIN)
-        .max(SIDEBAR_MIN)
+    w.clamp(s(SIDEBAR_MIN), s(SIDEBAR_MAX))
+        .min(window_w - s(CONTENT_MIN))
+        .max(s(SIDEBAR_MIN))
 }
 
 /// The gap (0..=len) a dragged row drops into: before the first row whose midpoint is below `y`.
@@ -334,7 +335,7 @@ impl WindowView {
             .id("sidebar-resize")
             .absolute()
             .top_0()
-            .left(px(width - RESIZE_IN))
+            .left(gpui::px(width - s(RESIZE_IN)))
             .w(px(RESIZE_IN + RESIZE_OUT))
             .h_full()
             .cursor(CursorStyle::ResizeLeftRight)
@@ -409,11 +410,11 @@ impl WindowView {
             .flex()
             .flex_col()
             .flex_none()
-            .w(px(width))
+            .w(gpui::px(width))
             .h_full()
             .bg(p.bg)
-            .rounded_tl(px(radius))
-            .rounded_bl(px(radius))
+            .rounded_tl(gpui::px(radius))
+            .rounded_bl(gpui::px(radius))
             .border_r_1()
             .border_color(p.border)
             .child(band)
@@ -468,7 +469,7 @@ impl WindowView {
                 d.child(
                     div()
                         .absolute()
-                        .top(px(y - 1.))
+                        .top(gpui::px(y - s(1.)))
                         .left(px(8.))
                         .right(px(8.))
                         .h(px(2.))
@@ -514,11 +515,11 @@ impl WindowView {
     /// Where the notification panel hangs: under the bell, or the top-left corner when the
     /// sidebar is hidden.
     pub(super) fn bell_anchor(&self, window: &Window) -> gpui::Point<Pixels> {
-        let x = self.sidebar_px(window).map_or(BAND_INSET, |w| {
+        let x = self.sidebar_px(window).map_or(s(BAND_INSET), |w| {
             // Band buttons from the right: new, then the bell.
-            w - BAND_INSET - 2. * BUTTON - BUTTON_GAP
+            w - s(BAND_INSET + 2. * BUTTON + BUTTON_GAP)
         });
-        gpui::point(px(x), px(BAND_H))
+        gpui::point(gpui::px(x), px(BAND_H))
     }
 
     fn render_row(

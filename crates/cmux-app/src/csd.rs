@@ -5,10 +5,10 @@
 
 use std::cell::Cell;
 
+use crate::ui::px;
 use gpui::{
     AnyElement, CursorStyle, Decorations, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, Pixels, Point, ResizeEdge, StatefulInteractiveElement, Styled, Window, div, px,
-    rgb,
+    ParentElement, Pixels, Point, ResizeEdge, StatefulInteractiveElement, Styled, Window, div, rgb,
 };
 
 const DOT: f32 = 12.0;
@@ -34,7 +34,7 @@ fn client_decorated(window: &Window) -> bool {
 /// Width the window buttons take from the top-right corner (0 when the compositor decorates).
 pub fn controls_width(window: &Window) -> f32 {
     match client_decorated(window) && !window.is_fullscreen() {
-        true => 2.0 * DOT_INSET + 3.0 * DOT + 2.0 * DOT_GAP,
+        true => crate::ui::s(2.0 * DOT_INSET + 3.0 * DOT + 2.0 * DOT_GAP),
         false => 0.0,
     }
 }

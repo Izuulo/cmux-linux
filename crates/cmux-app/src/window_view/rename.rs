@@ -1,10 +1,11 @@
 //! Inline workspace rename (plan D1): the key-to-text state machine and the input view.
 
+use crate::ui::px;
 use cmux_core::WorkspaceId;
 use gpui::{
     Context, EventEmitter, FocusHandle, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
     Keystroke, ParentElement, Render, Rgba, StatefulInteractiveElement, Styled, Subscription,
-    Window, div, prelude::*, px,
+    Window, div, prelude::*,
 };
 
 use crate::actions::*;

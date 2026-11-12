@@ -1,11 +1,12 @@
 //! A pane's tab strip, sized and coloured like Bonsplit's tab bar as cmux configures it
 //! (research-cmux.md §4 "Pane tab strip"; numbers from `TabBarMetrics.swift`, logical px).
 
+use crate::ui::{px, s};
 use cmux_core::{Orientation, Pane, PaneId, SurfaceId};
 use gpui::{
     ClickEvent, Context, DragMoveEvent, InteractiveElement, IntoElement, MouseButton,
     MouseDownEvent, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled,
-    Window, div, prelude::*, px, svg,
+    Window, div, prelude::*, svg,
 };
 
 use super::WorkspaceView;
@@ -111,7 +112,7 @@ impl WorkspaceView {
         let drop_bar = self.drop_bar_x(pane_id, strip_x).map(|x| {
             div()
                 .absolute()
-                .left(px(x - DROP_BAR_W / 2.0))
+                .left(gpui::px(x - s(DROP_BAR_W) / 2.0))
                 .top(px((TAB_BAR_HEIGHT - DROP_BAR_H) / 2.0))
                 .w(px(DROP_BAR_W))
                 .h(px(DROP_BAR_H))
@@ -154,10 +155,10 @@ impl WorkspaceView {
             .flex_none()
             .w_full()
             .h(px(TAB_BAR_HEIGHT))
-            .pl(px(chrome.lead))
-            .pr(px(chrome.trail))
-            .rounded_tl(px(chrome.tl))
-            .rounded_tr(px(chrome.tr))
+            .pl(gpui::px(chrome.lead))
+            .pr(gpui::px(chrome.trail))
+            .rounded_tl(gpui::px(chrome.tl))
+            .rounded_tr(gpui::px(chrome.tr))
             .bg(p.bar)
             .on_drag_move(
                 cx.listener(move |this, ev: &DragMoveEvent<DraggedTab>, _, cx| {

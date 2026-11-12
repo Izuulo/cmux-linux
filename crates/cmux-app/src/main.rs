@@ -23,6 +23,10 @@ fn main() {
             Some(env) => keybindings::load(&env.cmux_config_file()),
             None => keybindings::keybindings(None, "config.toml"),
         };
+        cmux_app::ui::set_scale(
+            env.as_ref()
+                .map_or(1.0, |e| cmux_config::ui::load(&e.cmux_config_file())),
+        );
         let bind_warnings = actions::bind(cx, &keys);
         // shortcut: warnings go to stderr; an in-window warning line is not planned before M6.
         for warning in loaded
