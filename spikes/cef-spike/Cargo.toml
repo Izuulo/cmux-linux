@@ -1,0 +1,16 @@
+[package]
+name = "cef-spike"
+version = "0.0.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+# Standalone: keeps the main workspace and its Cargo.lock untouched.
+[workspace]
+
+[dependencies]
+gpui = "=0.2.2"
+cef = { version = "=156.4.0", default-features = false }
+image = "0.25"
+smallvec = "1"
+futures = "0.3"

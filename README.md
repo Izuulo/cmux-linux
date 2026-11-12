@@ -133,6 +133,32 @@ cargo run -p cmux-app
 
 Don't `cargo update` libc: it is pinned to 0.2.189 in `Cargo.lock` because xattr 0.2.3 needs `libc::ENOATTR`.
 
+### In-app browser (optional)
+
+Browser tabs (Super+Shift+L) need the `browser` feature, which links CEF (Chromium Embedded
+Framework, ~1.5 GB unpacked). It is off by default; without it the shortcut says the app was
+built without browser support. To build with it (Linux):
+
+```sh
+scripts/install-cef.sh            # fetches CEF into .tools/cef (once) and builds
+cargo run -p cmux-app --features browser
+```
+
+The build copies `libcef.so` and CEF's resources next to the binary. Browser data (cookies,
+cache) lives in `~/.local/state/cmux-linux/browser`. The URL bar searches with DuckDuckGo
+unless `config.toml` sets another prefix:
+
+```toml
+[browser]
+search_url = "https://www.google.com/search?q="
+```
+
+Ctrl+click a URL in a terminal (an OSC 8 hyperlink or a printed `http(s)://` / `file://`
+URL) to open it in a browser tab in that pane. `open_links = "system"` under `[browser]`
+sends it to the desktop's default browser instead; builds without the feature always do.
+`cmux browser open <url> [--surface <id|ref>]` opens a browser tab from a script, and browser
+tabs come back at their URL after a restart.
+
 ## Configuration
 
 cmux-linux reads your Ghostty config (`~/.config/ghostty/config`) for fonts, colours,

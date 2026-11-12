@@ -11,6 +11,9 @@ use gpui::{
 };
 
 fn main() {
+    // Before anything else: Chromium's helper processes are this binary too, and exit here.
+    #[cfg(feature = "browser")]
+    cmux_app::browser::run_helper();
     Application::new().with_assets(Assets).run(|cx: &mut App| {
         let dark = matches!(
             cx.window_appearance(),
@@ -67,4 +70,6 @@ fn main() {
         .expect("open window");
         cx.activate(true);
     });
+    #[cfg(feature = "browser")]
+    cmux_app::browser::shutdown();
 }

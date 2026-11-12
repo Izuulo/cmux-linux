@@ -49,6 +49,20 @@ Zed terminal view (https://github.com/zed-industries/zed @ 69e2130295c2649963eb6
   terminal_view,mouse,ime}.rs adapt its cell batching, background merging, prepaint resize,
   paint order, PTY event batching, mouse routing and IME handler.
 
+cef-rs (crates.io cef / cef-dll-sys 156.4.0, download-cef 3.0.0, https://github.com/tauri-apps/cef-rs)
+  Copyright tauri-apps contributors. MIT OR Apache-2.0. Only with the optional `browser` feature.
+
+Chromium Embedded Framework 156.0.26 (https://bitbucket.org/chromiumembedded/cef), fetched by
+  scripts/install-cef.sh, not in this repository; builds with the `browser` feature link and
+  ship libcef.so and its resources. CEF: Copyright Marshall A. Greenblatt, BSD-3-Clause (the
+  notice heads every file in the distribution's include/). Chromium and its third-party
+  components: see CREDITS.html in the CEF distribution, which a package built with the
+  feature must ship next to libcef.so.
+
+image (crates.io 0.25, https://github.com/image-rs/image), smallvec (crates.io 1,
+  https://github.com/servo/rust-smallvec): MIT OR Apache-2.0. Already used by gpui; listed
+  because the `browser` feature uses them directly.
+
 futures (crates.io 0.3, https://github.com/rust-lang/futures-rs)
   MIT OR Apache-2.0.
 

@@ -143,10 +143,8 @@ impl WindowView {
                             .map(|s| SurfSnap {
                                 key: s.0,
                                 handle: h.handle(Kind::Surface, (ws, s.0)),
-                                title: view
-                                    .terminal(*s)
-                                    .and_then(|t| t.read(cx).title().map(str::to_string))
-                                    .unwrap_or_else(|| "Terminal".into()),
+                                title: view.tab_title(*s, cx).to_string(),
+                                browser: view.is_browser(*s),
                             })
                             .collect(),
                     })
@@ -272,6 +270,7 @@ impl WindowView {
                 self.group_from_socket(&snap, method, params, window, cx)
             }
             "surface.split" => self.split_from_socket(&snap, params, window, cx),
+            "browser.open" => self.browser_from_socket(&snap, params, window, cx),
             // cmux's name; the tmux shim's `kill-pane` (M9 plan T4). Same as closing the tab.
             "surface.close" => {
                 require(params, "surface_id")?;
@@ -393,7 +392,7 @@ impl WindowView {
         } else {
             // The new view focused its shell as it started: give focus back (plan D6).
             self.workspaces.select(old);
-            view.update(cx, |v, _| v.set_active(false));
+            view.update(cx, |v, cx| v.set_active(false, cx));
             if let Some(v) = self.views.get(&old) {
                 v.update(cx, |v, cx| v.focus_active(window, cx));
             }
@@ -478,6 +477,59 @@ impl WindowView {
         }))
     }
 
+    /// `browser.open {url, surface_id?}` (M13 plan L2): a browser tab in the target surface's
+    /// pane (default: the focused one), not focused across workspaces.
+    fn browser_from_socket(
+        &mut self,
+        snap: &Snapshot,
+        params: &Map<String, Value>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Reply {
+        let url = params
+            .get("url")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
+        if !cmux_config::browser::openable(url) {
+            return Err(RpcError::new(
+                "invalid_params",
+                "url must be an http(s) or file URL",
+            ));
+        }
+        if !cfg!(feature = "browser") {
+            return Err(RpcError::new(
+                "unavailable",
+                "Built without browser support",
+            ));
+        }
+        let t = snap.surface(params)?;
+        let id = WorkspaceId(t.ws.key);
+        let Some(view) = self.views.get(&id).cloned() else {
+            return Err(RpcError::new("not_found", "Workspace not found"));
+        };
+        let pane = PaneId(t.pane.key);
+        let Some(new) = view.update(cx, |v, cx| v.open_browser(Some(pane), url, window, cx)) else {
+            return Err(RpcError::new("internal_error", "Failed to open browser"));
+        };
+        let mut h = self.shell.handles.borrow_mut();
+        let (w, ws) = (
+            h.handle(Kind::Window, (0, 0)),
+            h.handle(Kind::Workspace, (id.0, 0)),
+        );
+        let (p, s) = (
+            h.handle(Kind::Pane, (id.0, pane.0)),
+            h.handle(Kind::Surface, (id.0, new.0)),
+        );
+        Ok(json!({
+            "window_id": w.id, "window_ref": w.r#ref,
+            "workspace_id": ws.id, "workspace_ref": ws.r#ref,
+            "pane_id": p.id, "pane_ref": p.r#ref,
+            "surface_id": s.id, "surface_ref": s.r#ref,
+            "type": "browser",
+        }))
+    }
+
     /// `surface.send_text`, `surface.send_key`, `terminal.paste` (rc §8).
     fn send_from_socket(
         &mut self,
@@ -498,6 +550,9 @@ impl WindowView {
             return Err(RpcError::new("invalid_params", missing));
         };
         let t = snap.surface(params)?;
+        if t.surface.browser {
+            return Err(RpcError::new("invalid_params", "Surface is not a terminal"));
+        }
         let Some(term) = self
             .views
             .get(&WorkspaceId(t.ws.key))

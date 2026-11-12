@@ -29,6 +29,12 @@ gpui = "=0.2.2"
 portable-pty = "0.9"
 libc = "0.2"
 futures = "0.3"
+# In-app browser (M13, feature `browser` on cmux-app): CEF off-screen rendering. `build-util`
+# (clap, cargo_metadata) is only for macOS app bundling.
+cef = { version = "=156.4.0", default-features = false }
+# Already in Cargo.lock via gpui: CEF frames become gpui `RenderImage`s.
+image = { version = "0.25", default-features = false }
+smallvec = "1"
 # Already in Cargo.lock (cbindgen); `parse` only, no serde derive.
 toml = { version = "0.8.23", default-features = false, features = ["parse"] }
 # Already in Cargo.lock via toml; comment-preserving config.toml writes (M12).

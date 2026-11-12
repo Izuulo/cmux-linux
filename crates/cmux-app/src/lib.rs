@@ -7,6 +7,8 @@ pub mod assets;
 pub mod attention;
 #[cfg(target_os = "linux")]
 pub mod blur;
+#[cfg(feature = "browser")]
+pub mod browser;
 pub mod chrome;
 pub mod colors;
 pub mod csd;

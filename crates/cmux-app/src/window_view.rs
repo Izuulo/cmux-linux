@@ -419,7 +419,7 @@ impl WindowView {
         let inset = self.sidebar_px(window).unwrap_or(0.);
         let right = self.right_sidebar_px(window);
         for (wid, view) in &self.views {
-            view.update(cx, |v, _| v.set_active(*wid == id));
+            view.update(cx, |v, cx| v.set_active(*wid == id, cx));
         }
         // Splits right after the switch need this workspace's width now, not next frame.
         if let Some(view) = self.views.get(&id) {
@@ -471,7 +471,9 @@ impl WindowView {
                 }
                 self.typed.remove(&id);
                 self.subs.remove(&id);
-                self.views.remove(&id);
+                if let Some(v) = self.views.remove(&id) {
+                    v.update(cx, |v, cx| v.release_all(window, cx));
+                }
                 self.titles.remove(&id);
                 self.feed_close_workspace(id, cx);
                 self.messages.forget(id, None);

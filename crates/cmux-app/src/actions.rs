@@ -55,6 +55,11 @@ gpui::actions!(
         CommandPaletteNext,
         CommandPalettePrevious,
         OpenSettings,
+        OpenBrowser,
+        FocusBrowserAddressBar,
+        BrowserBack,
+        BrowserForward,
+        BrowserReload,
     ]
 );
 
@@ -119,6 +124,11 @@ pub fn action_for(b: &Binding) -> Option<Box<dyn Action>> {
         "commandPaletteNext" => Box::new(CommandPaletteNext),
         "commandPalettePrevious" => Box::new(CommandPalettePrevious),
         "openSettings" => Box::new(OpenSettings),
+        "openBrowser" => Box::new(OpenBrowser),
+        "focusBrowserAddressBar" => Box::new(FocusBrowserAddressBar),
+        "browserBack" => Box::new(BrowserBack),
+        "browserForward" => Box::new(BrowserForward),
+        "browserReload" => Box::new(BrowserReload),
         "selectWorkspaceByNumber" => Box::new(SelectWorkspaceByNumber(b.number?)),
         "selectSurfaceByNumber" => Box::new(SelectSurfaceByNumber(b.number?)),
         _ => return None,
@@ -177,6 +187,11 @@ pub const PALETTE: &[(&str, &str)] = &[
     ("commandPalette", "Command Palette…"),
     ("goToWorkspace", "Go to Workspace…"),
     ("openSettings", "Settings…"),
+    ("openBrowser", "Open Browser"),
+    ("focusBrowserAddressBar", "Focus Address Bar"),
+    ("browserBack", "Back"),
+    ("browserForward", "Forward"),
+    ("browserReload", "Reload Page"),
 ];
 
 /// Each action's first chord gpui accepted, as configured (`Super+Shift+P`), for the palette.

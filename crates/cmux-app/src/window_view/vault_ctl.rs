@@ -42,6 +42,9 @@ impl WindowView {
                     return Err(invalid("Missing or invalid surface_id"));
                 }
                 let t = snap.surface(params)?;
+                if t.surface.browser {
+                    return Err(invalid("Surface is not a terminal"));
+                }
                 let (ws, surface) = (WorkspaceId(t.ws.key), SurfaceId(t.surface.key));
                 let reply = snap.target_payload(&t);
                 let Some(view) = self.views.get(&ws).cloned() else {
@@ -112,6 +115,7 @@ impl WindowView {
         Some(SavedTerm {
             cwd: term.cwd(),
             agent: Some(agent),
+            url: None,
         })
     }
 

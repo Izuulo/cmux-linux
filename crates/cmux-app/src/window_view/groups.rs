@@ -42,7 +42,7 @@ impl WindowView {
         } else {
             // The new view focused its shell as it started: give focus back.
             self.workspaces.select(old);
-            self.views[&id].update(cx, |v, _| v.set_active(false));
+            self.views[&id].update(cx, |v, cx| v.set_active(false, cx));
             if let Some(v) = self.views.get(&old) {
                 v.update(cx, |v, cx| v.focus_active(window, cx));
             }

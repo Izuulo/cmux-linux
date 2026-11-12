@@ -89,6 +89,12 @@ pub const DEFAULTS: &[(&str, &[&str])] = &[
     ("commandPalettePrevious", &["ctrl+p"]),
     // Settings window (M12 plan S1): cmux ⌘,.
     ("openSettings", &["super+,"]),
+    // Browser (M13 plan B4): cmux ⌘⇧L, ⌘L, ⌘[, ⌘], ⌘R.
+    ("openBrowser", &["super+shift+l"]),
+    ("focusBrowserAddressBar", &["super+l"]),
+    ("browserBack", &["super+["]),
+    ("browserForward", &["super+]"]),
+    ("browserReload", &["super+r"]),
 ];
 
 const NUMBERED: &[&str] = &["selectSurfaceByNumber", "selectWorkspaceByNumber"];

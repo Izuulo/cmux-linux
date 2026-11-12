@@ -19,6 +19,13 @@ serde_json.workspace = true
 gpui.workspace = true
 futures.workspace = true
 libc.workspace = true
+cef = { workspace = true, optional = true }
+image = { workspace = true, optional = true }
+smallvec = { workspace = true, optional = true }
+
+[features]
+# The in-app browser (M13): links libcef.so, which `scripts/install-cef.sh` fetches.
+browser = ["dep:cef", "dep:image", "dep:smallvec"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 wayland-client.workspace = true
