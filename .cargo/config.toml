@@ -2,3 +2,5 @@
 # Used by vendor/ghostty-vt-sys/build.rs. An exported ZIG / CMUX_GHOSTTY_SRC overrides these.
 ZIG = { value = ".tools/zig/zig", relative = true }
 CMUX_GHOSTTY_SRC = { value = "vendor/ghostty", relative = true }
+# cef-dll-sys (feature `browser`) reads and, if missing, downloads CEF here (scripts/install-cef.sh).
+CEF_PATH = { value = ".tools/cef", relative = true }

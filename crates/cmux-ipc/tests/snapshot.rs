@@ -79,7 +79,8 @@ fn pane_list_payload() {
 
 #[test]
 fn pane_surfaces_payload() {
-    let s = fixture();
+    let mut s = fixture();
+    s.workspaces[0].panes[0].surfaces[1].browser = true;
     let a = &s.workspaces[0];
     let p1 = &a.panes[0];
     let v = s
@@ -96,7 +97,7 @@ fn pane_surfaces_payload() {
                 {"id": p1.surfaces[0].handle.id, "ref": "surface:1", "index": 0,
                  "title": "zsh", "type": "terminal", "selected": true},
                 {"id": p1.surfaces[1].handle.id, "ref": "surface:2", "index": 1,
-                 "title": "vim", "type": "terminal", "selected": false},
+                 "title": "vim", "type": "browser", "selected": false},
             ]
         })
     );

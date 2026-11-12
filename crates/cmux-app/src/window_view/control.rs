@@ -143,10 +143,8 @@ impl WindowView {
                             .map(|s| SurfSnap {
                                 key: s.0,
                                 handle: h.handle(Kind::Surface, (ws, s.0)),
-                                title: view
-                                    .terminal(*s)
-                                    .and_then(|t| t.read(cx).title().map(str::to_string))
-                                    .unwrap_or_else(|| "Terminal".into()),
+                                title: view.tab_title(*s, cx).to_string(),
+                                browser: view.is_browser(*s),
                             })
                             .collect(),
                     })
@@ -498,6 +496,9 @@ impl WindowView {
             return Err(RpcError::new("invalid_params", missing));
         };
         let t = snap.surface(params)?;
+        if t.surface.browser {
+            return Err(RpcError::new("invalid_params", "Surface is not a terminal"));
+        }
         let Some(term) = self
             .views
             .get(&WorkspaceId(t.ws.key))

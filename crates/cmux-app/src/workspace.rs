@@ -13,9 +13,9 @@ use cmux_core::{
 };
 use cmux_meta::PanelInput;
 use gpui::{
-    App, AppContext, Bounds, ClickEvent, Context, CursorStyle, DragMoveEvent, EmptyView, Entity,
-    EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement, Pixels,
-    Render, Rgba, StatefulInteractiveElement, Styled, Subscription, Window, div, px,
+    AnyView, App, AppContext, Bounds, ClickEvent, Context, CursorStyle, DragMoveEvent, EmptyView,
+    Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement, IntoElement, ParentElement,
+    Pixels, Render, Rgba, StatefulInteractiveElement, Styled, Subscription, Window, div, px,
 };
 
 mod tab_strip;
@@ -41,11 +41,52 @@ struct DividerDrag {
     orientation: Orientation,
 }
 
+/// What a tab shows (M13 plan B1): the tree only knows ids, the kind lives here.
+enum SurfaceView {
+    Terminal(Entity<TerminalView>),
+    #[cfg(feature = "browser")]
+    Browser(Entity<crate::browser::BrowserView>),
+}
+
 struct Surface {
-    view: Entity<TerminalView>,
+    view: SurfaceView,
     /// The agent session running here, for resume after a restart (M10 Part 2).
     agent: Option<Agent>,
     _subscriptions: [Subscription; 2],
+}
+
+impl Surface {
+    fn terminal(&self) -> Option<&Entity<TerminalView>> {
+        match &self.view {
+            SurfaceView::Terminal(t) => Some(t),
+            #[cfg(feature = "browser")]
+            SurfaceView::Browser(_) => None,
+        }
+    }
+
+    fn title(&self, cx: &App) -> Option<String> {
+        match &self.view {
+            SurfaceView::Terminal(t) => t.read(cx).title().map(str::to_string),
+            #[cfg(feature = "browser")]
+            SurfaceView::Browser(b) => Some(b.read(cx).title()),
+        }
+    }
+
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
+        match &self.view {
+            SurfaceView::Terminal(t) => t.read(cx).focus_handle(cx),
+            #[cfg(feature = "browser")]
+            SurfaceView::Browser(b) => b.read(cx).focus_handle(cx),
+        }
+    }
+
+    fn any_view(&self) -> AnyView {
+        match &self.view {
+            SurfaceView::Terminal(t) => t.clone().into(),
+            #[cfg(feature = "browser")]
+            SurfaceView::Browser(b) => b.clone().into(),
+        }
+    }
 }
 
 pub struct WorkspaceView {
@@ -161,9 +202,9 @@ impl WorkspaceView {
                 continue;
             };
             s.agent = term.agent;
-            if let Some(line) = input {
+            if let (Some(line), Some(t)) = (input, s.terminal()) {
                 let bytes = format!("{line}\n").into_bytes();
-                s.view.update(cx, |v, cx| v.send_scripted(bytes, cx));
+                t.update(cx, |v, cx| v.send_scripted(bytes, cx));
             }
         }
         this
@@ -185,9 +226,9 @@ impl WorkspaceView {
         let ids = layout.surfaces();
         let this = Self::build(id, false, shell, style, layout, starts, None, window, cx);
         for (id, input) in ids.iter().zip(inputs) {
-            if let (Some(s), Some(line)) = (this.surfaces.get(id), input) {
+            if let (Some(t), Some(line)) = (this.terminal(*id), input) {
                 let bytes = format!("{line}\n").into_bytes();
-                s.view.update(cx, |v, cx| v.send_scripted(bytes, cx));
+                t.update(cx, |v, cx| v.send_scripted(bytes, cx));
             }
         }
         this
@@ -196,6 +237,7 @@ impl WorkspaceView {
     /// The tree's shape, the focused pane (tree order) and each surface's cwd and agent in
     /// `Layout::surfaces` order (M10 plan L3, V1, V2). A surface without a hook-reported agent
     /// is checked against `regs` by its foreground process.
+    // shortcut: a browser tab is saved as a plain terminal (M13 Part 3 saves its URL).
     pub(crate) fn saved(
         &self,
         regs: &[Registration],
@@ -208,7 +250,12 @@ impl WorkspaceView {
             .iter()
             .filter_map(|s| self.surfaces.get(s))
             .map(|s| {
-                let v = s.view.read(cx);
+                let Some(v) = s.terminal().map(|t| t.read(cx)) else {
+                    return SavedTerm {
+                        cwd: None,
+                        agent: None,
+                    };
+                };
                 let agent = s
                     .agent
                     .clone()
@@ -343,16 +390,11 @@ impl WorkspaceView {
 
     /// The focused surface's OSC title.
     pub fn title(&self, cx: &App) -> Option<String> {
-        let s = self.surfaces.get(&self.layout.active_surface())?;
-        s.view.read(cx).title().map(str::to_string)
+        self.surfaces.get(&self.layout.active_surface())?.title(cx)
     }
 
     pub fn active_cwd(&self, cx: &App) -> Option<String> {
-        self.surfaces
-            .get(&self.layout.active_surface())?
-            .view
-            .read(cx)
-            .cwd()
+        self.terminal(self.layout.active_surface())?.read(cx).cwd()
     }
 
     /// One entry per surface, in `layout.surfaces()` order.
@@ -360,9 +402,9 @@ impl WorkspaceView {
         self.layout
             .surfaces()
             .iter()
-            .filter_map(|id| self.surfaces.get(id))
-            .map(|s| {
-                let v = s.view.read(cx);
+            .filter_map(|id| self.terminal(*id))
+            .map(|t| {
+                let v = t.read(cx);
                 PanelInput {
                     cwd: v.osc_cwd(),
                     pid: v.pid(),
@@ -373,7 +415,10 @@ impl WorkspaceView {
 
     /// Whether any surface has a foreground job running.
     pub fn busy(&self, cx: &App) -> bool {
-        self.surfaces.values().any(|s| s.view.read(cx).busy())
+        self.surfaces
+            .values()
+            .filter_map(Surface::terminal)
+            .any(|t| t.read(cx).busy())
     }
 
     pub fn layout(&self) -> &Layout {
@@ -381,13 +426,20 @@ impl WorkspaceView {
     }
 
     pub fn terminal(&self, surface: SurfaceId) -> Option<&Entity<TerminalView>> {
-        self.surfaces.get(&surface).map(|s| &s.view)
+        self.surfaces.get(&surface)?.terminal()
+    }
+
+    /// Whether `surface` is a browser tab (the socket's surface `type`).
+    pub fn is_browser(&self, surface: SurfaceId) -> bool {
+        self.surfaces
+            .get(&surface)
+            .is_some_and(|s| s.terminal().is_none())
     }
 
     /// Hands a new Ghostty style to this workspace and every terminal in it (M12 plan A2).
     pub fn set_style(&mut self, style: Rc<TermStyle>, cx: &mut Context<Self>) {
-        for s in self.surfaces.values() {
-            s.view.update(cx, |v, cx| v.set_style(style.clone(), cx));
+        for t in self.surfaces.values().filter_map(Surface::terminal) {
+            t.update(cx, |v, cx| v.set_style(style.clone(), cx));
         }
         self.style = style;
         cx.notify();
@@ -504,22 +556,89 @@ impl WorkspaceView {
             TerminalEvent::Typed => cx.emit(WorkspaceEvent::Typed(surface)),
         });
         let handle = view.read(cx).focus_handle(cx);
-        // A click focuses the terminal itself; follow it in the model.
-        let focused = cx.on_focus_in(&handle, window, move |this, _, cx| {
-            if this.layout.active_surface() != surface && this.layout.select_surface(surface) {
-                cx.notify();
-            }
-            cx.emit(WorkspaceEvent::Focused(surface));
-        });
+        let focused = Self::follow_focus(&handle, surface, window, cx);
         self.surfaces.insert(
             surface,
             Surface {
-                view,
+                view: SurfaceView::Terminal(view),
                 agent: None,
                 _subscriptions: [events, focused],
             },
         );
         true
+    }
+
+    /// A click focuses the surface's view itself; follow it in the model.
+    fn follow_focus(
+        handle: &FocusHandle,
+        surface: SurfaceId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Subscription {
+        cx.on_focus_in(handle, window, move |this, _, cx| {
+            if this.layout.active_surface() != surface && this.layout.select_surface(surface) {
+                cx.notify();
+            }
+            cx.emit(WorkspaceEvent::Focused(surface));
+        })
+    }
+
+    /// A browser tab at `url` in `pane` (else the focused pane), selected and focused (M13
+    /// plan B4; link clicks and `cmux browser open` come through here too). `None` when built
+    /// without the `browser` feature or `pane` is gone.
+    pub(crate) fn open_browser(
+        &mut self,
+        pane: Option<PaneId>,
+        url: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<SurfaceId> {
+        if pane.is_some_and(|p| !self.layout.focus_pane(p)) {
+            return None;
+        }
+        #[cfg(feature = "browser")]
+        {
+            use crate::browser::{BrowserEvent, BrowserView};
+            let surface = self.layout.new_tab();
+            let view = cx.new(|cx| BrowserView::new(url, window, cx));
+            let events = cx.subscribe_in(&view, window, move |this, _, ev, window, cx| match ev {
+                BrowserEvent::Changed => {
+                    cx.notify();
+                    cx.emit(WorkspaceEvent::Changed);
+                }
+                BrowserEvent::OpenTab(url) => {
+                    let pane = this.layout.pane_of(surface);
+                    this.open_browser(pane, url, window, cx);
+                }
+            });
+            let root = view.read(cx).root_focus().clone();
+            let focused = Self::follow_focus(&root, surface, window, cx);
+            self.surfaces.insert(
+                surface,
+                Surface {
+                    view: SurfaceView::Browser(view),
+                    agent: None,
+                    _subscriptions: [events, focused],
+                },
+            );
+            self.focus_active(window, cx);
+            cx.emit(WorkspaceEvent::Changed);
+            Some(surface)
+        }
+        #[cfg(not(feature = "browser"))]
+        {
+            let _ = (url, window, cx);
+            None
+        }
+    }
+
+    /// The focused tab's browser, for the browser actions.
+    #[cfg(feature = "browser")]
+    fn active_browser(&self) -> Option<Entity<crate::browser::BrowserView>> {
+        match &self.surfaces.get(&self.layout.active_surface())?.view {
+            SurfaceView::Browser(b) => Some(b.clone()),
+            SurfaceView::Terminal(_) => None,
+        }
     }
 
     /// Starts a shell for a surface the layout just added; on failure removes the surface
@@ -545,7 +664,7 @@ impl WorkspaceView {
             .get(&self.layout.active_surface())
             .filter(|_| self.active)
         {
-            let handle = s.view.read(cx).focus_handle(cx);
+            let handle = s.focus_handle(cx);
             window.focus(&handle);
         }
         cx.notify();
@@ -553,8 +672,8 @@ impl WorkspaceView {
 
     /// The directory a new terminal starts in: the active terminal's OSC 7 cwd, if allowed.
     fn inherited_cwd(&self, inherit: bool, cx: &Context<Self>) -> Option<String> {
-        let s = self.surfaces.get(&self.layout.active_surface())?;
-        inherit.then(|| s.view.read(cx).cwd()).flatten()
+        let t = self.terminal(self.layout.active_surface())?;
+        inherit.then(|| t.read(cx).cwd()).flatten()
     }
 
     fn container(&self, window: &Window) -> (f32, f32, f32) {
@@ -606,10 +725,9 @@ impl WorkspaceView {
     ) -> Result<SurfaceId, SplitFailed> {
         let (w, h, scale) = self.container(window);
         let cwd = cwd.or_else(|| {
-            self.surfaces
-                .get(&surface)
+            self.terminal(surface)
                 .filter(|_| self.style.cfg.split_inherit_working_directory)
-                .and_then(|s| s.view.read(cx).cwd())
+                .and_then(|t| t.read(cx).cwd())
         });
         let new = self
             .layout
@@ -619,9 +737,8 @@ impl WorkspaceView {
             self.layout.close_surface(new);
             return Err(SplitFailed::Spawn);
         }
-        if let (Some(input), Some(s)) = (input, self.surfaces.get(&new)) {
-            s.view
-                .update(cx, |v, cx| v.send_scripted(input.as_bytes().to_vec(), cx));
+        if let (Some(input), Some(t)) = (input, self.terminal(new)) {
+            t.update(cx, |v, cx| v.send_scripted(input.as_bytes().to_vec(), cx));
         }
         if focus {
             self.focus_active(window, cx);
@@ -697,7 +814,7 @@ impl WorkspaceView {
         let title = self
             .surfaces
             .get(&self.layout.active_surface())
-            .and_then(|s| s.view.read(cx).title().map(str::to_string))
+            .and_then(|s| s.title(cx))
             .unwrap_or_else(|| "Terminal".into());
         if title != self.window_title {
             window.set_window_title(&title);
@@ -717,7 +834,7 @@ impl WorkspaceView {
         let terminal = self
             .surfaces
             .get(&pane.selected_surface())
-            .map(|s| s.view.clone());
+            .map(Surface::any_view);
         let focused = pane.id == self.layout.focused();
         let shown = pane.selected_surface();
         let accent = self.attention_color();
@@ -876,8 +993,18 @@ impl Render for WorkspaceView {
                 .layout
                 .pane(*p)
                 .and_then(|p| self.surfaces.get(&p.selected_surface()));
-            if let Some(s) = view {
-                s.view.update(cx, |v, _| v.corners = (c.bl, c.br));
+            match view.map(|s| &s.view) {
+                Some(SurfaceView::Terminal(t)) => t.update(cx, |v, _| v.corners = (c.bl, c.br)),
+                #[cfg(feature = "browser")]
+                Some(SurfaceView::Browser(b)) => {
+                    let cfg = &self.style.cfg;
+                    let colors = (
+                        self.palette(*p == focused),
+                        chrome::rgba(cfg.background, cfg.background_opacity),
+                    );
+                    b.update(cx, |v, _| v.colors = Some(colors));
+                }
+                None => {}
             }
         }
         let dim = chrome::dim_overlay(&self.style.cfg).filter(|_| self.layout.pane_count() > 1);
@@ -894,7 +1021,7 @@ impl Render for WorkspaceView {
             .iter()
             .map(|d| self.render_divider(*d, divider, cx))
             .collect();
-        div()
+        let root = div()
             .id("workspace")
             .relative()
             .size_full()
@@ -985,7 +1112,37 @@ impl Render for WorkspaceView {
                     cx.notify();
                 }
             }))
+            .on_action(cx.listener(|this, _: &OpenBrowser, w, cx| {
+                if this.open_browser(None, "about:blank", w, cx).is_none() {
+                    // Nothing waits for the answer.
+                    drop(w.prompt(
+                        gpui::PromptLevel::Info,
+                        "Built without browser support",
+                        None,
+                        &["OK"],
+                        cx,
+                    ));
+                }
+            }))
             .children(panes)
-            .children(dividers)
+            .children(dividers);
+        // Back, forward, reload and the URL field act on the focused browser tab.
+        #[cfg(feature = "browser")]
+        let root = root
+            .on_action(cx.listener(|this, _: &BrowserBack, _, cx| {
+                this.active_browser().inspect(|b| b.read(cx).back());
+            }))
+            .on_action(cx.listener(|this, _: &BrowserForward, _, cx| {
+                this.active_browser().inspect(|b| b.read(cx).forward());
+            }))
+            .on_action(cx.listener(|this, _: &BrowserReload, _, cx| {
+                this.active_browser().inspect(|b| b.read(cx).reload());
+            }))
+            .on_action(cx.listener(|this, _: &FocusBrowserAddressBar, w, cx| {
+                if let Some(b) = this.active_browser() {
+                    b.update(cx, |b, cx| b.focus_bar(w, cx));
+                }
+            }));
+        root
     }
 }

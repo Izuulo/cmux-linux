@@ -88,13 +88,9 @@ impl WorkspaceView {
     pub(crate) fn tab_title(&self, surface: SurfaceId, cx: &gpui::App) -> SharedString {
         self.surfaces
             .get(&surface)
-            .and_then(|s| {
-                s.view
-                    .read(cx)
-                    .title()
-                    .map(|t| SharedString::from(t.to_string()))
-            })
+            .and_then(|s| s.title(cx))
             .filter(|t| !t.is_empty())
+            .map(SharedString::from)
             .unwrap_or_else(|| "Terminal".into())
     }
 
@@ -356,7 +352,11 @@ impl WorkspaceView {
                     .size(px(ICON_SLOT))
                     .child(
                         svg()
-                            .path("icons/terminal.svg")
+                            .path(if self.is_browser(surface) {
+                                "icons/globe.svg"
+                            } else {
+                                "icons/terminal.svg"
+                            })
                             .size(px(ICON_GLYPH))
                             .text_color(text),
                     ),

@@ -55,6 +55,8 @@ pub struct SurfSnap {
     pub key: u64,
     pub handle: Handle,
     pub title: String,
+    /// A browser tab (M13), else a terminal.
+    pub browser: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -379,6 +381,7 @@ impl Snapshot {
 fn surface_row(i: usize, s: &SurfSnap, selected: bool) -> Value {
     json!({
         "id": s.handle.id, "ref": s.handle.r#ref, "index": i,
-        "title": s.title, "type": "terminal", "selected": selected,
+        "title": s.title, "type": if s.browser { "browser" } else { "terminal" },
+        "selected": selected,
     })
 }

@@ -25,6 +25,7 @@ pub fn fixture() -> Snapshot {
         key,
         handle: h.handle(Kind::Surface, (ws, key)),
         title: title.into(),
+        browser: false,
     };
     let (s1, s2, s3, s4) = (
         surf(1, 1, "zsh"),
