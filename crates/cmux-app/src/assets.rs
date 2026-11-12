@@ -76,6 +76,22 @@ const FILES: &[(&str, &[u8])] = &[
         include_bytes!("../assets/icons/panel-right.svg"),
     ),
     ("icons/rss.svg", include_bytes!("../assets/icons/rss.svg")),
+    (
+        "icons/settings.svg",
+        include_bytes!("../assets/icons/settings.svg"),
+    ),
+    (
+        "icons/paintbrush.svg",
+        include_bytes!("../assets/icons/paintbrush.svg"),
+    ),
+    (
+        "icons/wand-sparkles.svg",
+        include_bytes!("../assets/icons/wand-sparkles.svg"),
+    ),
+    (
+        "icons/keyboard.svg",
+        include_bytes!("../assets/icons/keyboard.svg"),
+    ),
 ];
 
 pub struct Assets;

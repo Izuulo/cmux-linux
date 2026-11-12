@@ -14,6 +14,7 @@ pub mod desktop_notify;
 pub mod ime;
 pub mod keys;
 pub mod mouse;
+pub mod settings;
 pub mod style;
 pub mod terminal_element;
 pub mod terminal_view;

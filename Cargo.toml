@@ -31,6 +31,8 @@ libc = "0.2"
 futures = "0.3"
 # Already in Cargo.lock (cbindgen); `parse` only, no serde derive.
 toml = { version = "0.8.23", default-features = false, features = ["parse"] }
+# Already in Cargo.lock via toml; comment-preserving config.toml writes (M12).
+toml_edit = { version = "0.22.27", default-features = false, features = ["parse", "display"] }
 # Blur shim (Linux). All already in Cargo.lock via gpui/ashpd; wayland-client/backend match gpui's.
 wayland-client = "0.31"
 wayland-backend = { version = "0.3", features = ["client_system"] }

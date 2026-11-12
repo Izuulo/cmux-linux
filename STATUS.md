@@ -3,9 +3,9 @@
 <!-- Max 100 lines (CI-enforced from M0). Before replacing this file, append the
      current version to docs/status-archive.md. -->
 
-**Updated:** 2026-11-11
-**Current milestone:** M12 settings next (plan drafted). M11 productivity done 2026-11-11 (branch `m11-impl`): command palette (Super+Shift+P commands, Super+P workspaces), `cmux.json` custom commands with a trust prompt, `cmux ssh` remote workspaces (ssh argv per terminal over a ControlMaster, sidebar probe, image drop upload). Exits checked on KDE by script; `cmux ssh` only against a fake `ssh`.
-**Next action:** agent: M12 then M13 (owner asked to run through both). Owner: M11 checks (journal "final review"): trust prompt buttons, a real ssh host, PNG drop, palette mouse; install tmux (`sudo pacman -S tmux`), then agent runs exit 3 (start a counting process with `cmux local-tmux start`, quit, relaunch, see it still counting); owner: one real Claude Code run for exit 2 (run `cmux hooks setup` again first), Close the two stray dev `cmux-app` windows from 2026-11-11 if still open (M10 journal, Part 3). Older owner checks: (a) click-test PR #13's reopen button and window buttons; (b) done 2026-11-11 with Claude Code 2.1.322 (M9 journal): messages, default auto-naming, automations and a two-teammate `cmux claude-teams` run pass, the last only after adding `respawn-pane`; still open: M7 Task 9 Step 2 (a permission prompt in the Feed) and the `Stop` continue path; (c) the mouse and typing checks no script can do: M8's group header click, `+`, chevron, menus, rename field, Delete prompt, drags, sidebar edge drag, Dock "New Terminal"; older: divider/tab/row drag, Feed buttons, clicking a bubble, IME, `CMUX_TRACE_LATENCY=1` (M1 exit 3), blur by eye; (d) `makepkg -si` and a launcher start.
+**Updated:** 2026-11-12
+**Current milestone:** M13 browser next (CEF spike: GO, branch `m13-spike`). M12 settings done 2026-11-12 (branch `m12-settings`, PR stacked on M11 PR #20): live config apply (1 s poll of Ghostty files and `config.toml`: colours, opacity, blur, fonts, keybindings, agents), comment-preserving writers (`ghostty::edit`, `cmux_config::write`), Settings window (Super+,: App, Themes, Terminal, Automation, Keyboard Shortcuts). M11 done 2026-11-11 (PR #20, CI green, merge was blocked for the agent: owner merges).
+**Next action:** agent: M13. Owner: merge PR #20 then the M12 PR; click through every Settings control once and `diff` both config files (nothing was clicked: no pointer tool); M11 checks (journal "final review"): trust prompt buttons, a real ssh host, PNG drop, palette mouse; install tmux (`sudo pacman -S tmux`), then agent runs exit 3 (start a counting process with `cmux local-tmux start`, quit, relaunch, see it still counting); owner: one real Claude Code run for exit 2 (run `cmux hooks setup` again first), Close the two stray dev `cmux-app` windows from 2026-11-11 if still open (M10 journal, Part 3). Older owner checks: (a) click-test PR #13's reopen button and window buttons; (b) done 2026-11-11 with Claude Code 2.1.322 (M9 journal): messages, default auto-naming, automations and a two-teammate `cmux claude-teams` run pass, the last only after adding `respawn-pane`; still open: M7 Task 9 Step 2 (a permission prompt in the Feed) and the `Stop` continue path; (c) the mouse and typing checks no script can do: M8's group header click, `+`, chevron, menus, rename field, Delete prompt, drags, sidebar edge drag, Dock "New Terminal"; older: divider/tab/row drag, Feed buttons, clicking a bubble, IME, `CMUX_TRACE_LATENCY=1` (M1 exit 3), blur by eye; (d) `makepkg -si` and a launcher start.
 
 ## Where things are
 - Project design and milestone table: `docs/design.md`
@@ -28,7 +28,7 @@
 | M9 agent-coordination | merged (PR #11); each exit criterion checked against the app on KDE with hand-run hooks, a fake naming command and a fake `claude`; real Claude run pending |
 | M10 persistence | merged (PR #14); exit 1 checked by script, exit 2 with a fake `claude`; real Claude run and exit 3 (needs tmux) pending |
 | M11 productivity | done; exits by script on KDE, ssh vs a fake `ssh`; prompt buttons, real host, drop unclicked |
-| M12 settings | not started: Settings window, Ghostty config editor (themes, blur), live apply |
+| M12 settings | done; exits by script on KDE (writer calls + armed recorder); no control clicked |
 | M13 browser | not started: browser tabs next to terminals; engine not chosen |
 
 ## Decisions so far
@@ -64,6 +64,7 @@
 - `cmux-app`: gpui `TerminalView` + `TerminalElement`, keys, colours, style, mouse, IME; M2 adds `actions`, `chrome`, `workspace`, `workspace/tab_strip`, `assets`; M3 adds `window_view` (root, pollers), `window_view/sidebar`, `window_view/rename`, `blur` (Linux); M4 adds `attention` (ring, flash), `window_view/notify` (rules wiring, jump), `window_view/panel`, `desktop_notify` (zbus, Linux), `activation` + `wayland` (Linux).
 
 ## Open risks
+- M12: Settings UI never clicked. Agent edits write every field (`argv_option = ""`); removing the first of two same-id agents keeps the first entry's extras; `.cmux-bak` is overwritten each run; quitting from the main window loses a half-typed Settings field; 819 theme cards rebuild per keystroke (frame time unmeasured); one recorded chord replaces all of an action's chords.
 - M11: palette, `cmux.json` and `cmux ssh` (details in its journal). Trust prompt buttons never clicked (gpui Linux prompt takes no keys). ssh: no reconnect loop; multi-pane restore with password auth asks per pane; cwd/branch need OSC 7 from the remote shell; probes run one workspace after another.
 - M10: SIGTERM (logout) skips the quit save, so up to 8 s of layout changes are lost. Restored workspaces fire `workspace.created`. Claude resume is a bare `claude --resume <id>` (no permission mode or launch flags). local-tmux matches sessions by name only. Scripted checks must clear inherited `CMUX_*` and set `CMUX_SOCKET_PATH` to the dev app, or they hit the owner's app.
 - M9: nothing ran under a real Claude Code. Messages: hook output shapes match the hooks reference; no idle wake, no off switch, not persisted. Claude Teams: the tmux commands a team sends were taken from cmux's shim, not observed; an unhandled one fails loudly; splits can fail for lack of room (no column layout). Auto-naming's default `claude -p` line is untested. Automations: a `run` that calls `cmux` can loop at its rate limit.
@@ -72,7 +73,6 @@
 - Blur shim runs on Plasma 6.8.2 without errors (KWin offers `ext_background_effect_manager_v1`); that the backdrop is really blurred is not yet confirmed by eye.
 - M2–M7 UI has been seen drawn on KDE only through socket-driven screenshots; nothing was clicked, dragged or typed into by hand yet. On macOS a **debug** build hangs in gpui's `Application::new` (ActionRegistry insert loop); a **release** build (`cargo build --release --features gpui/runtime_shaders`) runs.
 - M5 hooks fail silently if a login shell's startup files hide our `cmux` on `PATH`, or if the agent runs outside the app's process tree (tmux) in cmuxOnly mode (README documents both; cmux's shell integration and capability tokens are not ported).
-- Real IME (fcitx/ibus) unverified.
 - M7 Feed: cards draw; button clicks, feedback field and question picks unverified. The "sidebar wipes the terminal" report is not a bug (readline redraw when the pane is exactly prompt-wide; no OSC 133 shell integration). Real Claude Code run not done.
 - M7 parked (details in its journal): one notification per surface (two cards on a surface share it); stdin read has no timeout; `CMUX_LINUX` would leak into cmux.app launched from our terminal; settings key order relies on workspace `preserve_order` feature unification (check packaging); final-review follow-ups not done: bind `CMUX_LINUX` to our socket path; CLI tests for invalid JSON, uninstall refusal, `HOME` fallback, `--settings-file` precedence; fake-error test for the hook.
 - M6 parity: panel, 3-tab strip and ring flash were matched from Swift source only, never rendered; owner's cmux.app wasn't a clean reference (non-default config). Remaining gaps (default theme, full-width titlebar band, panel extras, pressed-icon opacity, scroll fades) are in the M6 journal.
@@ -89,7 +89,7 @@ Plasma ≤6.6 blur (`org_kde_kwin_blur`): only if Task 8 finds no `ext_backgroun
 - **M1 exit criteria 2–3:** take the screenshot pair and run `CMUX_TRACE_LATENCY=1` next time the user is at the desktop.
 - Mouse: touchpad may scroll ~3× Ghostty's rate; no drag threshold, shift-click extend, autoscroll, horizontal wheel; mouse glue untested.
 - Render: underline styles simplified; per-cell Font clone in prepaint; blink task always wakes.
-- IME: preedit has no background and isn't clamped; `bounds_for_range` approximate.
+- IME: preedit has no background and isn't clamped; `bounds_for_range` approximate.; real IME (fcitx/ibus) unverified.
 - PTY: `resize` locks on GUI thread.
 - Term: epoch over-invalidates on any ESC[3J; title/bell coalesced per feed.
 - Config: quoted `?` path handling; theme files' own `theme`/`config-file` lines ignored.

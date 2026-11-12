@@ -30,6 +30,7 @@ pub(super) enum MenuAction {
     PinGroup(GroupId, bool),
     Ungroup(GroupId),
     DeleteGroup(GroupId),
+    OpenSettings,
 }
 
 /// `None` is a separator.
@@ -209,6 +210,7 @@ impl WindowView {
                 }
             }
             MenuAction::DeleteGroup(g) => self.request_delete_group(g, window, cx),
+            MenuAction::OpenSettings => self.open_settings(cx),
         }
     }
 }

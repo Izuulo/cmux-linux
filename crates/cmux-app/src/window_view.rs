@@ -26,6 +26,7 @@ use crate::workspace::{WorkspaceEvent, WorkspaceView};
 mod automation_ctl;
 mod autoname_ctl;
 mod commands_ctl;
+mod config_ctl;
 pub(crate) mod control;
 mod dock;
 mod feed;
@@ -38,7 +39,7 @@ mod message_ctl;
 mod notify;
 mod palette;
 mod panel;
-mod rename;
+pub(crate) mod rename;
 pub mod session;
 mod sidebar;
 mod vault_ctl;
@@ -134,22 +135,29 @@ pub struct WindowView {
     /// The last text written to `session.json`.
     last_saved: Option<String>,
     _session_subs: Vec<Subscription>,
-    /// `[[vault.agents]]` from `config.toml`, read at start (M10 plan V2).
+    /// `[[vault.agents]]` from `config.toml`, read at start and on change (M10 plan V2).
     vault_agents: Vec<cmux_config::vault::Registration>,
+    /// The config files polled for live apply (M12 plan A1).
+    config: config_ctl::ConfigWatch,
+    _appearance: Option<Subscription>,
+    /// The Settings window, once opened (M12 plan S1); closed with this window.
+    settings: Option<gpui::WindowHandle<crate::settings::SettingsView>>,
 }
 
 /// Metadata rescan period (plan D2) and PR loop tick (D5).
 const META_EVERY: Duration = Duration::from_millis(1500);
 const PR_EVERY: Duration = Duration::from_millis(2000);
-const SCALE_EVERY: Duration = Duration::from_millis(1000);
 const REMOTE_EVERY: Duration = Duration::from_secs(5);
 const PR_FETCHES_PER_TICK: usize = 3;
 const GH_DEADLINE: Duration = Duration::from_secs(15);
 
 impl WindowView {
-    /// Quits if the first shell fails to start. `saved`: the session to restore (M10).
+    /// Quits if the first shell fails to start. `env` and `ghostty_files`: where the style came
+    /// from, watched for changes. `saved`: the session to restore (M10).
     pub fn new(
         style: Rc<TermStyle>,
+        env: Option<cmux_config::ghostty::Env>,
+        ghostty_files: Vec<PathBuf>,
         saved: Option<session::Saved>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -224,11 +232,14 @@ impl WindowView {
             last_saved: None,
             _session_subs: Vec::new(),
             vault_agents: vault_ctl::load(),
+            config: config_ctl::ConfigWatch::new(env, ghostty_files),
+            _appearance: None,
+            settings: None,
         };
         this._tasks = vec![
             Self::meta_loop(cx),
             Self::pr_loop(cx),
-            Self::scale_loop(cx),
+            Self::config_loop(window, cx),
             Self::remote_loop(cx),
         ];
         if let Some(mut requests) = requests {
@@ -256,6 +267,7 @@ impl WindowView {
         #[cfg(target_os = "linux")]
         this._tasks.push(Self::desktop_loop(window, cx));
         // Coming back to the window reads what is in front of the user (rn §3).
+        this._appearance = Some(cx.observe_window_appearance(window, Self::appearance_changed));
         this._activation = Some(cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active() {
                 this.read_selected(window, cx);
@@ -597,38 +609,6 @@ impl WindowView {
         })
     }
 
-    /// Re-reads `ui_scale` from config.toml, so a change shows without a restart.
-    fn scale_loop(cx: &mut Context<Self>) -> Task<()> {
-        cx.spawn(async move |this, cx| {
-            let Some((dock, _)) = dock::dock_config_path() else {
-                return;
-            };
-            let config = dock.with_file_name("config.toml");
-            loop {
-                cx.background_executor().timer(SCALE_EVERY).await;
-                let path = config.clone();
-                let new = cx
-                    .background_executor()
-                    .spawn(async move { cmux_config::ui::load(&path) })
-                    .await;
-                let old = crate::ui::scale();
-                if new == old {
-                    continue;
-                }
-                crate::ui::set_scale(new);
-                // Dragged widths keep their look relative to the chrome around them.
-                let applied = this.update(cx, |s, cx| {
-                    s.sidebar_width *= new / old;
-                    s.right_width *= new / old;
-                    cx.refresh_windows();
-                });
-                if applied.is_err() {
-                    break;
-                }
-            }
-        })
-    }
-
     fn pr_loop(cx: &mut Context<Self>) -> Task<()> {
         cx.spawn(async move |this, cx| {
             loop {
@@ -804,6 +784,7 @@ impl Render for WindowView {
             .on_action(
                 cx.listener(|this, _: &GoToWorkspace, w, cx| this.toggle_palette(false, w, cx)),
             )
+            .on_action(cx.listener(|this, _: &OpenSettings, _, cx| this.open_settings(cx)))
             .capture_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, w, cx| {
                 if ev.keystroke.key != "escape" {
                     return;
@@ -845,6 +826,13 @@ impl Render for WindowView {
 }
 
 impl WindowView {
+    fn open_settings(&mut self, cx: &mut Context<Self>) {
+        let Some(env) = self.config.env().cloned() else {
+            return eprintln!("cmux-linux: no config directory, so no Settings");
+        };
+        self.settings = crate::settings::open(self.settings.take(), env, self.style.clone(), cx);
+    }
+
     fn cycle(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.workspaces.cycle(forward) {
             let id = self.workspaces.selected();

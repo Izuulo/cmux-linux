@@ -20,7 +20,7 @@ pub fn ui_scale(text: &str) -> f32 {
     }
 }
 
-/// Read once at startup.
+/// Read at startup and whenever the file changes.
 pub fn load(path: &Path) -> f32 {
     ui_scale(&std::fs::read_to_string(path).unwrap_or_default())
 }

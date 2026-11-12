@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use super::{Config, entries};
+use super::{Config, DynColor, Rgb, entries};
 
 /// Where to look. `from_system` reads the real environment; tests build their own.
 #[derive(Debug, Clone)]
@@ -71,6 +71,11 @@ pub struct Loaded {
     pub config: Config,
     /// One line each, `path:line: key: problem`. Never fatal.
     pub warnings: Vec<String>,
+    /// What a change to should reload: both main-file names (read or not), every include read,
+    /// and the theme file.
+    // shortcut: a missing optional include or a newly shadowing user theme is not watched; add
+    // their candidate paths if someone relies on creating one live.
+    pub files: Vec<PathBuf>,
 }
 
 struct Entry {
@@ -83,14 +88,11 @@ struct Entry {
 /// order (later wins).
 pub fn load(env: &Env) -> Loaded {
     let mut warnings = Vec::new();
-    let main = ["config.ghostty", "config"]
+    let mut files: Vec<PathBuf> = ["config.ghostty", "config"]
         .iter()
         .map(|name| env.config_dir.join(name))
-        .find(|p| p.is_file());
-    let mut user = Vec::new();
-    if let Some(main) = main {
-        read_with_includes(env, &main, &mut user, &mut warnings);
-    }
+        .collect();
+    let user = user_entries(env, &mut warnings, &mut files);
 
     let mut config = Config::default();
     if let Some(theme) = user.iter().rev().find(|e| e.key == "theme") {
@@ -99,12 +101,36 @@ pub fn load(env: &Env) -> Loaded {
                 let mut entries = Vec::new();
                 read_file(&path, &mut entries, &mut Vec::new(), &mut warnings);
                 apply_all(&mut config, &entries, &mut warnings);
+                files.push(path);
             }
             Err(e) => warnings.push(format!("{}: theme: {e}", theme.origin)),
         }
     }
     apply_all(&mut config, &user, &mut warnings);
-    Loaded { config, warnings }
+    Loaded {
+        config,
+        warnings,
+        files,
+    }
+}
+
+/// The user's file and its includes, in load order.
+fn user_entries(env: &Env, warnings: &mut Vec<String>, files: &mut Vec<PathBuf>) -> Vec<Entry> {
+    let mut user = Vec::new();
+    let main = super::edit::main_file(env);
+    if main.is_file() {
+        read_with_includes(env, &main, &mut user, warnings, files);
+    }
+    user
+}
+
+/// The file and line whose `key` wins among the user's files (the theme aside), for the
+/// Settings window's "Set in <file>" note (M12 plan W2). `None` when no user file sets it.
+pub fn origin(env: &Env, key: &str) -> Option<(PathBuf, usize)> {
+    let user = user_entries(env, &mut Vec::new(), &mut Vec::new());
+    let e = user.iter().rev().find(|e| e.key == key)?;
+    let (path, line) = e.origin.rsplit_once(':')?;
+    Some((PathBuf::from(path), line.parse().ok()?))
 }
 
 fn apply_all(config: &mut Config, entries: &[Entry], warnings: &mut Vec<String>) {
@@ -142,7 +168,13 @@ fn read_file(
 
 /// Ghostty's `loadRecursiveFiles`: a FIFO queue, so the main file's includes load before
 /// the includes they add. Each file is read once; a repeat is reported as a cycle.
-fn read_with_includes(env: &Env, main: &Path, out: &mut Vec<Entry>, warnings: &mut Vec<String>) {
+fn read_with_includes(
+    env: &Env,
+    main: &Path,
+    out: &mut Vec<Entry>,
+    warnings: &mut Vec<String>,
+    files: &mut Vec<PathBuf>,
+) {
     let mut queue = VecDeque::from([main.to_path_buf()]);
     // Canonical paths read so far. Never popped, so cycle detection covers the whole load.
     let mut visited: Vec<PathBuf> = Vec::new();
@@ -179,6 +211,7 @@ fn read_with_includes(env: &Env, main: &Path, out: &mut Vec<Entry>, warnings: &m
                 None => dir.join(name),
             };
             if target.is_file() {
+                files.push(target.clone());
                 queue.push_back(target);
             } else if !optional {
                 warnings.push(format!("{}: config-file not found: {name}", path.display()));
@@ -204,11 +237,89 @@ fn resolve_theme(env: &Env, value: &str) -> Result<PathBuf, String> {
             "theme names cannot contain path separators: {name}"
         ));
     }
-    std::iter::once(env.config_dir.join("themes"))
-        .chain(env.resources_dirs.iter().map(|d| d.join("themes")))
+    theme_dirs(env)
+        .into_iter()
         .map(|dir| dir.join(name))
         .find(|p| p.is_file())
         .ok_or_else(|| format!("not found: {name}"))
+}
+
+/// Where theme names are looked up, first match wins: the user's `themes/`, then each
+/// resources dir's.
+pub fn theme_dirs(env: &Env) -> Vec<PathBuf> {
+    std::iter::once(env.config_dir.join("themes"))
+        .chain(env.resources_dirs.iter().map(|d| d.join("themes")))
+        .collect()
+}
+
+/// The `theme` value in effect among the user's files, as written.
+pub fn theme_setting(env: &Env) -> Option<String> {
+    let user = user_entries(env, &mut Vec::new(), &mut Vec::new());
+    user.into_iter()
+        .rev()
+        .find(|e| e.key == "theme")
+        .map(|e| e.value)
+}
+
+/// The light and dark theme names of a `theme` value; a plain name is both.
+pub fn theme_pair(value: &str) -> (Option<String>, Option<String>) {
+    let side = |dark| {
+        pick_theme(value, dark)
+            .ok()
+            .filter(|n| !n.is_empty())
+            .map(str::to_string)
+    };
+    (side(false), side(true))
+}
+
+/// What a theme card shows (M12 plan S4).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThemePreview {
+    pub name: String,
+    pub background: Rgb,
+    pub foreground: Rgb,
+    pub palette: [Option<Rgb>; 16],
+    pub cursor: Option<Rgb>,
+}
+
+/// Every theme in `theme_dirs`, sorted by name ignoring case; a name in an earlier dir hides
+/// the same name in later ones, as in lookup.
+pub fn themes(env: &Env) -> Vec<ThemePreview> {
+    let mut out: Vec<ThemePreview> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for dir in theme_dirs(env) {
+        let Ok(list) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in list.flatten() {
+            let path = entry.path();
+            let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+                continue;
+            };
+            if name.starts_with('.') || !path.is_file() || !seen.insert(name.clone()) {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let mut c = Config::default();
+            for (_, key, value) in entries(&text) {
+                let _ = c.apply(key, value);
+            }
+            out.push(ThemePreview {
+                name,
+                background: c.background,
+                foreground: c.foreground,
+                palette: std::array::from_fn(|k| c.palette[k]),
+                cursor: match c.cursor_color {
+                    Some(DynColor::Rgb(rgb)) => Some(rgb),
+                    _ => None,
+                },
+            });
+        }
+    }
+    out.sort_by_key(|t| t.name.to_lowercase());
+    out
 }
 
 fn pick_theme(value: &str, dark: bool) -> Result<&str, String> {
@@ -348,10 +459,64 @@ mod tests {
             "ghostty/config.ghostty",
             "background = #000000\ntheme = Night\n",
         );
-        let cfg = load(&env).config;
+        let loaded = load(&env);
+        let cfg = loaded.config;
         assert_eq!(cfg.palette[1], Some(RED));
         assert_eq!(cfg.foreground, BLACK, "from theme");
         assert_eq!(cfg.background, BLACK, "user overrides theme");
+        assert!(loaded.files.contains(&root.join("res/themes/Night")));
+    }
+
+    #[test]
+    fn files_lists_both_main_names_and_includes_read() {
+        let (root, env) = fixture("files");
+        write(
+            &root,
+            "ghostty/config",
+            "config-file = extra\nconfig-file = ?missing\n",
+        );
+        write(&root, "ghostty/extra", "");
+        let files = load(&env).files;
+        let want = ["ghostty/config.ghostty", "ghostty/config", "ghostty/extra"];
+        assert_eq!(files, want.map(|f| root.join(f)));
+    }
+
+    #[test]
+    fn themes_lists_each_name_once_with_its_colors() {
+        let (root, env) = fixture("theme-list");
+        write(
+            &root,
+            "res/themes/night",
+            "background = #000000\ncursor-color = #ff0000\n",
+        );
+        write(
+            &root,
+            "res/themes/Day",
+            "palette = 1=#ff0000\nforeground = #000000\n",
+        );
+        write(&root, "ghostty/themes/night", "background = #ff0000\n");
+        let t = themes(&env);
+        let names: Vec<&str> = t.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["Day", "night"]);
+        assert_eq!(t[0].palette[1], Some(RED));
+        assert_eq!(t[0].foreground, BLACK);
+        assert_eq!(t[1].background, RED, "the user's themes/ wins");
+        assert_eq!(t[1].cursor, None);
+    }
+
+    #[test]
+    fn theme_setting_and_pair() {
+        let (root, env) = fixture("theme-setting");
+        assert_eq!(theme_setting(&env), None);
+        write(
+            &root,
+            "ghostty/config.ghostty",
+            "theme = A\ntheme = light:Day,dark:Night\n",
+        );
+        let v = theme_setting(&env).unwrap();
+        assert_eq!(theme_pair(&v), (Some("Day".into()), Some("Night".into())));
+        assert_eq!(theme_pair("X"), (Some("X".into()), Some("X".into())));
+        assert_eq!(theme_pair("dark:Night"), (None, Some("Night".into())));
     }
 
     #[test]
@@ -421,6 +586,26 @@ mod tests {
             warnings.iter().any(|w| w.contains("cannot expand ~/")),
             "{warnings:?}"
         );
+    }
+
+    #[test]
+    fn origin_names_the_winning_file_and_line() {
+        let (root, env) = fixture("origin");
+        write(
+            &root,
+            "ghostty/config.ghostty",
+            "font-size = 10\nconfig-file = extra\nfont-size = 11\ntheme = X\n",
+        );
+        write(&root, "ghostty/extra", "\nfont-size = 12\n");
+        assert_eq!(
+            origin(&env, "font-size"),
+            Some((root.join("ghostty/extra"), 2))
+        );
+        assert_eq!(
+            origin(&env, "theme"),
+            Some((root.join("ghostty/config.ghostty"), 4))
+        );
+        assert_eq!(origin(&env, "background"), None);
     }
 
     #[test]

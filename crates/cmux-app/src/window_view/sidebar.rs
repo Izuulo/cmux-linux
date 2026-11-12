@@ -455,10 +455,14 @@ impl WindowView {
                             .on_mouse_down(
                                 MouseButton::Right,
                                 cx.listener(|this, ev: &MouseDownEvent, _, cx| {
-                                    let items = vec![Some((
-                                        "New Empty Workspace Group".to_string(),
-                                        MenuAction::NewEmptyGroup,
-                                    ))];
+                                    let items = vec![
+                                        Some((
+                                            "New Empty Workspace Group".to_string(),
+                                            MenuAction::NewEmptyGroup,
+                                        )),
+                                        None,
+                                        Some(("Settings…".to_string(), MenuAction::OpenSettings)),
+                                    ];
                                     this.open_menu(ev.position, items, cx);
                                 }),
                             ),

@@ -54,6 +54,7 @@ gpui::actions!(
         GoToWorkspace,
         CommandPaletteNext,
         CommandPalettePrevious,
+        OpenSettings,
     ]
 );
 
@@ -117,6 +118,7 @@ pub fn action_for(b: &Binding) -> Option<Box<dyn Action>> {
         "goToWorkspace" => Box::new(GoToWorkspace),
         "commandPaletteNext" => Box::new(CommandPaletteNext),
         "commandPalettePrevious" => Box::new(CommandPalettePrevious),
+        "openSettings" => Box::new(OpenSettings),
         "selectWorkspaceByNumber" => Box::new(SelectWorkspaceByNumber(b.number?)),
         "selectSurfaceByNumber" => Box::new(SelectSurfaceByNumber(b.number?)),
         _ => return None,
@@ -174,6 +176,7 @@ pub const PALETTE: &[(&str, &str)] = &[
     ("switchRightSidebarToDock", "Show Sidebar Dock"),
     ("commandPalette", "Command Palette…"),
     ("goToWorkspace", "Go to Workspace…"),
+    ("openSettings", "Settings…"),
 ];
 
 /// Each action's first chord gpui accepted, as configured (`Super+Shift+P`), for the palette.
@@ -299,6 +302,30 @@ mod tests {
                 .unwrap()
                 .predicate()
                 .is_none()
+        );
+    }
+
+    /// What a live reload of config.toml binds (M12 plan A4): the new chord, not the default.
+    #[test]
+    fn a_rebound_table_resolves_the_new_chord() {
+        let k = keybindings(Some("[keybindings]\nsplitDown = \"ctrl+alt+j\"\n"), "test");
+        let b = k.bindings.iter().find(|b| b.action == "splitDown").unwrap();
+        let rebound = key_binding(b, &DummyKeyboardMapper).unwrap();
+        assert_eq!(
+            rebound.match_keystrokes(&[Keystroke {
+                modifiers: Modifiers {
+                    control: true,
+                    alt: true,
+                    ..Default::default()
+                },
+                key: "j".into(),
+                key_char: None,
+            }]),
+            Some(false)
+        );
+        assert_eq!(
+            rebound.match_keystrokes(&[typed(true, false, true, "d", Some("D"))]),
+            None
         );
     }
 

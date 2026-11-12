@@ -4,9 +4,12 @@
 //! `src/config/Config.zig` (keys); see docs/milestones/m1-terminal/research.md §7.
 //! Unknown keys are ignored: Ghostty has hundreds and most are not ours.
 
+pub mod edit;
 mod load;
 
-pub use load::{Env, Loaded, load};
+pub use load::{
+    Env, Loaded, ThemePreview, load, origin, theme_dirs, theme_pair, theme_setting, themes,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Rgb {
