@@ -38,3 +38,8 @@ Append-only, newest last. One entry per session: date, what was tried, what was 
   - `--window` is in the usage line.
   - The paste dir is `chmod 700`'d after mkdir.
   - The drop text is built by the pure `remote::drop_text` (tested).
+
+## 2026-11-11 — final review
+- Whole-branch review: ready to merge. Fixed two of its minors: a remote workspace's palette no longer looks up a local project `cmux.json` (its cwd is on the other host); the trust prompt's command text is cut at 40 lines with a "N more lines" note (gpui's Linux prompt neither scrolls nor takes keys, so long text pushed the buttons off-screen).
+- Left open (not blocking): restoring a multi-pane remote workspace with password auth asks once per pane; a new remote row waits up to 5 s for its host line; already-bracketed IPv6 hosts get bracketed again in port links; palette click-outside reaches what's below; Tab can enter the field as text; a corrupt `trusted-commands.json` is overwritten silently.
+- Owner checks: click Run / Trust and Run / the restart-confirm dialog; a real ssh host with password login (`--command` appears only after login), split, sidebar ports, PNG drop; palette hover/click.

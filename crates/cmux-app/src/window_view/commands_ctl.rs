@@ -73,11 +73,19 @@ fn plan(layout: Option<&Node>) -> (Shape, usize, Vec<Surface>) {
     (shape, focus.unwrap_or(0), out)
 }
 
+/// gpui's Linux prompt neither scrolls nor takes keys: past this the buttons leave the screen.
+const PROMPT_LINES: usize = 40;
+
 impl WindowView {
     /// Both `cmux.json` files, the project one found from the selected workspace's cwd.
     pub(super) fn load_commands(&self, cx: &Context<Self>) -> Loaded {
         let sel = self.workspaces.selected();
-        let cwd = self.views.get(&sel).and_then(|v| v.read(cx).active_cwd(cx));
+        // A remote workspace's cwd is on another host: no local project file applies there.
+        let cwd = self
+            .views
+            .get(&sel)
+            .filter(|v| v.read(cx).remote().is_none())
+            .and_then(|v| v.read(cx).active_cwd(cx));
         let global = commands::global_path(&env);
         let l = commands::load(global.as_deref(), cwd.as_deref().map(Path::new));
         for w in &l.warnings {
@@ -102,7 +110,7 @@ impl WindowView {
                 "action"
             },
             commands::sanitize(&c.source.display().to_string()),
-            commands::disclosure(&c),
+            commands::cap_lines(&commands::disclosure(&c), PROMPT_LINES),
         );
         let answer = window.prompt(
             PromptLevel::Warning,

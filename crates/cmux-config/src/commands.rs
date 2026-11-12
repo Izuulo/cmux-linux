@@ -413,6 +413,18 @@ pub fn disclosure(c: &Command) -> String {
     sanitize(&lines.join("\n"))
 }
 
+/// The first `max` lines of `s`, then a line saying how many were left out.
+pub fn cap_lines(s: &str, max: usize) -> String {
+    let n = s.lines().count();
+    if n <= max {
+        return s.to_string();
+    }
+    let mut out: Vec<&str> = s.lines().take(max).collect();
+    let more = format!("… {} more lines (read the file before trusting)", n - max);
+    out.push(&more);
+    out.join("\n")
+}
+
 /// Trusted (file, fingerprint) pairs, kept in `trusted-commands.json` in the state directory.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Trust {
@@ -693,5 +705,14 @@ mod tests {
         global.project = false;
         global.fingerprint = "anything".into();
         assert!(!t.needs_prompt(&global));
+    }
+
+    #[test]
+    fn cap_lines_cuts_long_text_and_says_so() {
+        assert_eq!(cap_lines("a\nb", 2), "a\nb");
+        assert_eq!(
+            cap_lines("a\nb\nc", 2),
+            "a\nb\n… 1 more lines (read the file before trusting)"
+        );
     }
 }
