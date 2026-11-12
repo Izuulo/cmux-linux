@@ -22,11 +22,11 @@ const SEARCH_W: f32 = 200.0;
 /// The detail column's and the card's horizontal padding, for the grid's width.
 const INSET: f32 = 2.0 * 20.0 + 2.0 * 14.0 + 2.0;
 
-/// Columns and card width for `avail` px, as SwiftUI's `.adaptive(minimum:maximum:)`.
-fn grid(avail: f32, min: f32, max: f32, gap: f32) -> (usize, f32) {
-    let cols = (((avail + gap) / (min + gap)).floor() as usize).max(1);
-    let w = (avail - gap * (cols - 1) as f32) / cols as f32;
-    (cols, w.min(max))
+/// Card width for `avail` px, as SwiftUI's `.adaptive(minimum:maximum:)`: as many columns as
+/// fit `min`, sharing the width, at most `max` each.
+fn card_width(avail: f32, min: f32, max: f32, gap: f32) -> f32 {
+    let cols = (((avail + gap) / (min + gap)).floor()).max(1.0);
+    ((avail - gap * (cols - 1.0)) / cols).min(max)
 }
 
 /// The cards for `query`, split by appearance: those suiting the `dark` slot first.
@@ -232,10 +232,12 @@ impl SettingsView {
             None => gallery.push(controls::note("Loading themes…", c.secondary)),
             Some(themes) => {
                 let avail = f32::from(window.viewport_size().width) - s(super::SIDEBAR_W + INSET);
-                let (_, w) = grid(avail, s(CARD_MIN), s(CARD_MAX), s(GAP));
+                let w = card_width(avail, s(CARD_MIN), s(CARD_MAX), s(GAP));
                 let in_use = if self.theme_dark { &dark } else { &light };
                 let (mine, other) = results(&themes, &query, self.theme_dark);
-                if mine.is_empty() && other.is_empty() {
+                if themes.is_empty() {
+                    gallery.push(controls::note("No themes found.", c.secondary));
+                } else if mine.is_empty() && other.is_empty() {
                     gallery.push(controls::note("No themes match your search.", c.secondary));
                 }
                 for (list, is_dark) in [(mine, self.theme_dark), (other, !self.theme_dark)] {
@@ -287,10 +289,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn grid_fits_columns_between_min_and_max() {
-        assert_eq!(grid(100.0, 128.0, 220.0, 10.0), (1, 100.0));
-        assert_eq!(grid(276.0, 128.0, 220.0, 10.0), (2, 133.0));
-        assert_eq!(grid(700.0, 128.0, 220.0, 10.0).0, 5);
+    fn cards_share_the_width_between_min_and_max() {
+        assert_eq!(card_width(100.0, 128.0, 220.0, 10.0), 100.0);
+        assert_eq!(card_width(276.0, 128.0, 220.0, 10.0), 133.0);
+        assert_eq!(card_width(700.0, 128.0, 220.0, 10.0), 132.0);
+        assert_eq!(card_width(200.0, 50.0, 60.0, 0.0), 50.0);
     }
 
     #[test]

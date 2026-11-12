@@ -96,9 +96,23 @@ impl SettingsView {
                     ),
                 ))
             }
+            // The action's only chord already: nothing to write.
+            Ok(None)
+                if keybindings::chord_to_gpui(&chord)
+                    .is_ok_and(|k| self.keystrokes(action) == [k]) => {}
             Ok(None) => self.write_toml(|p| write::set_keybinding(p, action, &[&chord]), cx),
         }
         cx.notify();
+    }
+
+    /// The action's gpui keystrokes (a numbered action's for 1).
+    fn keystrokes(&self, action: &str) -> Vec<String> {
+        self.keys
+            .bindings
+            .iter()
+            .filter(|b| b.action == action && b.number.is_none_or(|n| n == 1))
+            .map(|b| b.keystroke.clone())
+            .collect()
     }
 
     /// The action's chords as configured; a numbered action shows its 1 as `1…9`.
@@ -142,6 +156,8 @@ impl SettingsView {
             .whitespace_nowrap()
             .text_ellipsis()
             .child(label)
+            // The root's mouse-down cancels a recording; a press here toggles it instead.
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 if this.recording == Some(action) {
                     this.stop_recording();
@@ -233,18 +249,12 @@ impl SettingsView {
     }
 
     pub(super) fn render_shortcuts(&self, c: Colors, cx: &Context<Self>) -> Vec<AnyElement> {
-        let reset = div()
-            .id("reset-shortcuts")
-            .flex()
-            .items_center()
-            .h(px(22.))
-            .px(px(10.))
-            .rounded(px(5.))
-            .bg(c.control)
-            .text_size(px(12.))
-            .hover(move |s| s.bg(c.hover))
-            .child("↺ Reset Defaults")
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+        let reset = self.button(
+            "reset-shortcuts",
+            "↺ Reset Defaults",
+            c,
+            cx,
+            |this, cx| {
                 this.stop_recording();
                 this.shortcut_note = None;
                 this.write_toml(
@@ -255,8 +265,8 @@ impl SettingsView {
                     },
                     cx,
                 );
-            }))
-            .into_any_element();
+            },
+        );
         let mut rows = vec![controls::row(
             "Reset Default Shortcuts",
             Some("Restore every shortcut set here or in config.toml to its default."),

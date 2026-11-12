@@ -88,12 +88,17 @@ impl SettingsView {
 
     pub(super) fn commit_agent(&mut self, n: usize, key: &str, text: &str, cx: &mut Context<Self>) {
         match with_field(&self.agents, n, key, text) {
+            // An id change renames in place; set_agents would replace the table.
+            Ok(_) if key == "id" => {
+                let old = self.agents[n].id.clone();
+                self.write_toml(|p| write::rename_agent(p, &old, text), cx)
+            }
             Ok(agents) => self.write_toml(|p| write::set_agents(p, &agents), cx),
             Err(e) => self.error = Some(e),
         }
     }
 
-    fn button(
+    pub(super) fn button(
         &self,
         id: impl Into<gpui::ElementId>,
         label: &'static str,
@@ -191,11 +196,11 @@ impl SettingsView {
                     controls::row(title, Some(key), field, None, c)
                 })
                 .collect();
+            let id = a.id.clone();
             let remove = self.button(("remove-agent", n), "Remove", c, cx, move |this, cx| {
-                let mut agents = this.agents.clone();
-                if n < agents.len() {
-                    agents.remove(n);
-                }
+                // By id: the file may have changed since this frame.
+                let agents: Vec<Registration> =
+                    this.agents.iter().filter(|a| a.id != id).cloned().collect();
                 this.write_toml(|p| write::set_agents(p, &agents), cx);
             });
             rows.push(

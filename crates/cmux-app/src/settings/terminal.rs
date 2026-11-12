@@ -138,9 +138,16 @@ impl SettingsView {
             })
             .ok();
         });
+        let button = self.font_button.clone();
         let control = gpui::div()
+            .relative()
             .flex()
             .flex_col()
+            .child(
+                gpui::canvas(move |b, _, _| button.set(b), |_, _, _, _| {})
+                    .absolute()
+                    .size_full(),
+            )
             .child(controls::dropdown_button(
                 "font-family",
                 current.unwrap_or_else(|| "Default".into()),
@@ -154,9 +161,12 @@ impl SettingsView {
                     selected,
                     c,
                     pick,
-                    self.handler(cx, |this, _, cx| {
-                        this.dropdown = None;
-                        cx.notify();
+                    self.handler(cx, |this, window, cx| {
+                        // The button toggles the list itself.
+                        if !this.font_button.get().contains(&window.mouse_position()) {
+                            this.dropdown = None;
+                            cx.notify();
+                        }
                     }),
                 ))
             })

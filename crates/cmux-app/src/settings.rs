@@ -113,10 +113,14 @@ pub struct SettingsView {
     error: Option<String>,
     /// Keys whose winning line is in a file other than the main one (plan W2).
     origins: HashMap<&'static str, PathBuf>,
-    field: Option<(FieldId, RenameState)>,
+    /// The field being edited, its state and the value it started from.
+    field: Option<(FieldId, RenameState, String)>,
     field_focus: FocusHandle,
     /// The open dropdown's id.
     dropdown: Option<&'static str>,
+    /// The font dropdown's button, from its last paint: a press on it must not close and
+    /// then reopen the list.
+    font_button: Rc<Cell<Bounds<Pixels>>>,
     /// Installed monospace families, found on the first open of the font list.
     fonts: Option<Vec<String>>,
     font_scan: Option<Task<()>>,
@@ -222,7 +226,20 @@ impl SettingsView {
             }),
             // Closing within the debounce must not lose the last change.
             cx.on_release(|this, _| this.write_pending()),
+            // cmux's recorder stops when its window resigns key.
+            cx.observe_window_activation(window, |this, window, cx| {
+                if !window.is_window_active() && this.recording.is_some() {
+                    this.stop_recording();
+                    cx.notify();
+                }
+            }),
         ];
+        // The title bar's close button: keep a half-typed value.
+        let view = cx.entity().downgrade();
+        window.on_window_should_close(cx, move |window, cx| {
+            view.update(cx, |this, cx| this.close_out(window, cx)).ok();
+            true
+        });
         let theme_dark = env.dark;
         let mut this = Self {
             cfg: style.cfg.clone(),
@@ -237,6 +254,7 @@ impl SettingsView {
             field: None,
             field_focus,
             dropdown: None,
+            font_button: Rc::default(),
             fonts: None,
             font_scan: None,
             drag: None,
@@ -305,17 +323,23 @@ impl SettingsView {
         ))
     }
 
-    /// Records a Ghostty change and writes it after `WRITE_DELAY` with any that follow.
+    /// Records a Ghostty change and writes it after `WRITE_DELAY` with any that follow. A value
+    /// that changes nothing is not written (an unchanged `0.7` must not become `0.70`).
     fn set_ghostty(&mut self, key: &'static str, value: String, cx: &mut Context<Self>) {
+        let mut next = self.cfg.clone();
         if key == "font-family" {
             // The write leaves one font-family line, so the list is just this one.
-            self.cfg.font_family.clear();
+            next.font_family.clear();
         }
-        if let Err(e) = self.cfg.apply(key, &value) {
+        if let Err(e) = next.apply(key, &value) {
             self.error = Some(format!("{key}: {e}"));
             cx.notify();
             return;
         }
+        if next == self.cfg && !self.pending.iter().any(|(k, _)| *k == key) {
+            return;
+        }
+        self.cfg = next;
         self.pending.retain(|(k, _)| *k != key);
         self.pending.push((key, value));
         self.write_task = Some(cx.spawn(async move |this, cx| {
@@ -339,7 +363,17 @@ impl SettingsView {
         self.error = edit::set_all(&path, &changes)
             .err()
             .map(|e| format!("Couldn't save {}: {e}", path.display()));
+        if self.error.is_some() {
+            // Show what the file still says, not the value that didn't save.
+            self.cfg = self.style.cfg.clone();
+        }
         self.pending.clear();
+    }
+
+    /// Before the window goes: the field being typed in and the debounced writes are saved.
+    fn close_out(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.commit_field(window, cx);
+        self.write_pending();
     }
 
     fn set_ui_scale(&mut self, v: f32, cx: &mut Context<Self>) {
@@ -424,14 +458,16 @@ impl SettingsView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.field = Some((id, RenameState::new(current, true)));
+        // Starting field B while A is open keeps A's text.
+        self.commit_field(window, cx);
+        self.field = Some((id, RenameState::new(current, true), current.to_string()));
         window.focus(&self.field_focus);
         cx.notify();
     }
 
     fn on_field_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         cx.stop_propagation();
-        let Some((_, state)) = self.field.as_mut() else {
+        let Some((_, state, _)) = self.field.as_mut() else {
             return;
         };
         match state.apply(RenameKey::from(&ev.keystroke)) {
@@ -449,10 +485,14 @@ impl SettingsView {
     }
 
     fn commit_field(&mut self, _: &mut Window, cx: &mut Context<Self>) {
-        let Some((id, state)) = self.field.take() else {
+        let Some((id, state, start)) = self.field.take() else {
             return;
         };
         let text = state.text.trim();
+        // Clicking in and out writes nothing (an empty colour would write a reset).
+        if text == start.trim() && id != FieldId::ThemeSearch {
+            return cx.notify();
+        }
         match id {
             FieldId::Ghostty(key) => self.commit_color(key, text, cx),
             FieldId::ThemeSearch => self.theme_query = text.to_string(),
@@ -466,8 +506,8 @@ impl SettingsView {
     fn editing(&self, id: FieldId) -> Option<&str> {
         self.field
             .as_ref()
-            .filter(|(f, _)| *f == id)
-            .map(|(_, s)| s.text.as_str())
+            .filter(|(f, _, _)| *f == id)
+            .map(|(_, s, _)| s.text.as_str())
     }
 
     /// A text field for `id`: draws the typed text while it is being edited.
@@ -700,9 +740,15 @@ impl Render for SettingsView {
             .id("settings")
             .key_context("Settings")
             .track_focus(&self.focus)
-            .on_action(cx.listener(|_, _: &Quit, _, cx| cx.quit()))
+            .on_action(cx.listener(|this, _: &Quit, window, cx| {
+                this.close_out(window, cx);
+                cx.quit()
+            }))
             .on_action(|_: &OpenSettings, _, _| {})
-            .on_action(|_: &CloseTab, window, _| window.remove_window())
+            .on_action(cx.listener(|this, _: &CloseTab, window, cx| {
+                this.close_out(window, cx);
+                window.remove_window()
+            }))
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| this.on_key(ev, cx)))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .on_mouse_up(
@@ -716,10 +762,14 @@ impl Render for SettingsView {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, window, cx| {
-                    // A click anywhere else ends a text edit.
+                    // A click anywhere else ends a text edit or a recording.
                     if this.field.is_some() {
                         this.commit_field(window, cx);
                         window.focus(&this.focus);
+                    }
+                    if this.recording.is_some() {
+                        this.stop_recording();
+                        cx.notify();
                     }
                 }),
             )

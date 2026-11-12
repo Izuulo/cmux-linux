@@ -180,6 +180,29 @@ pub fn set_agents(path: &Path, agents: &[Registration]) -> io::Result<()> {
     })
 }
 
+/// Renames agent `old` to `new` in place, keeping its other keys and comments (`set_agents`
+/// would replace the table). Fails when `old` is missing or `new` is taken.
+pub fn rename_agent(path: &Path, old: &str, new: &str) -> io::Result<()> {
+    edit_toml(path, |doc| {
+        let list = doc
+            .get_mut("vault")
+            .and_then(|v| v.get_mut("agents"))
+            .and_then(Item::as_array_of_tables_mut)
+            .ok_or_else(|| invalid("config.toml: no [[vault.agents]]".into()))?;
+        let id_is =
+            |t: &Table, id: &str| t.get("id").and_then(Item::as_str).map(str::trim) == Some(id);
+        if list.iter().any(|t| id_is(t, new)) {
+            return Err(invalid(format!("config.toml: agent `{new}` exists")));
+        }
+        let t = list
+            .iter_mut()
+            .find(|t| id_is(t, old))
+            .ok_or_else(|| invalid(format!("config.toml: no agent `{old}`")))?;
+        put(t, "id", value(new));
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -208,6 +231,18 @@ mod tests {
         let out = std::fs::read_to_string(&path).unwrap_or_default();
         let _ = std::fs::remove_dir_all(&dir);
         out
+    }
+
+    #[test]
+    fn rename_agent_keeps_the_table() {
+        let text =
+            "[[vault.agents]]\n# mine\nid = \"pi\" # the id\nextra = 1\nprocess_name = \"pi\"\n";
+        let out = run("rename-agent", text, |p| {
+            rename_agent(p, "pi", "pi2").unwrap();
+            assert!(rename_agent(p, "gone", "x").is_err());
+            assert!(rename_agent(p, "pi2", "pi2").is_err());
+        });
+        assert_eq!(out, text.replace("\"pi\" #", "\"pi2\" #"));
     }
 
     #[test]
