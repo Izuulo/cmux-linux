@@ -11,4 +11,5 @@ pub mod local_tmux;
 pub mod paths;
 pub mod server;
 pub mod snapshot;
+pub mod ssh;
 pub mod wire;
