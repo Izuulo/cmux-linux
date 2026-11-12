@@ -16,6 +16,7 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
         "Navigate & Arrange",
         &[
             "new-split",
+            "browser",
             "focus-pane",
             "focus-panel",
             "select-workspace",
@@ -84,6 +85,9 @@ pub(crate) fn usage_line(cmd: &str) -> Option<&'static str> {
         }
         "automation" => "automation <list|reload>",
         "vault" => "vault <list|resume <surface>>",
+        "browser" => {
+            "browser open <url> [--surface <id|ref|index>] [--workspace <id|ref|index>] [--window <id|ref|index>]"
+        }
         "local-tmux" => "local-tmux <start|list|attach|close> [options]",
         "ssh" => "ssh <destination> [options]",
         "claude-teams" => "claude-teams [claude-args...]",
@@ -159,6 +163,7 @@ pub(crate) fn command(cmd: &str) -> Option<String> {
         "agent" => AGENT,
         "automation" => AUTOMATION,
         "vault" => VAULT,
+        "browser" => BROWSER,
         "local-tmux" => LOCAL_TMUX,
         "ssh" => SSH,
         "claude-teams" => CLAUDE_TEAMS,
@@ -436,6 +441,18 @@ Rules in ~/.config/cmux-linux/automations.json run actions when the app emits an
 
   list    Show the loaded rules, how often each fired, and why any rule was left out
   reload  Read automations.json again
+";
+
+const BROWSER: &str = "Usage: cmux browser open <url> [flags]
+
+Open <url> (http, https or file) in a new browser tab in the pane of the target surface
+(default: the caller's surface, else the focused one). Needs an app built with the
+`browser` feature.
+
+Flags:
+  --surface <id|ref|index>     Surface whose pane gets the tab
+  --workspace <id|ref|index>   Workspace (default: its focused surface)
+  --window <id|ref|index>      Window
 ";
 
 const VAULT: &str = "Usage: cmux vault list

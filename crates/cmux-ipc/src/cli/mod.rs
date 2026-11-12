@@ -13,6 +13,7 @@ use crate::wire::RpcError;
 mod agent;
 mod args;
 mod automation;
+mod browser;
 mod client;
 mod commands;
 mod groups;
@@ -160,6 +161,7 @@ fn run_inner(args: &[String], ctx: &Ctx) -> Result<String, CliError> {
         "vault" => vault::vault(&mut cmd),
         "local-tmux" => local_tmux::local_tmux(&mut cmd),
         "ssh" => ssh::ssh(&mut cmd),
+        "browser" => browser::browser(&mut cmd),
         other => fail(format!("{other} is not available yet")),
     }
 }

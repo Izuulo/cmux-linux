@@ -191,6 +191,7 @@ impl WorkspaceView {
             style,
             Layout::new(),
             vec![(cwd, Vec::new())],
+            Vec::new(),
             remote,
             window,
             cx,
@@ -217,7 +218,10 @@ impl WorkspaceView {
     ) -> Self {
         let ids = layout.surfaces();
         let starts = terms.iter().map(|t| (t.cwd.clone(), Vec::new())).collect();
-        let mut this = Self::build(id, dock, shell, style, layout, starts, remote, window, cx);
+        let urls = terms.iter().map(|t| t.url.clone()).collect();
+        let mut this = Self::build(
+            id, dock, shell, style, layout, starts, urls, remote, window, cx,
+        );
         this.top_inset = top_inset;
         for ((id, term), input) in ids.iter().zip(terms).zip(inputs) {
             let Some(s) = this.surfaces.get_mut(id) else {
@@ -246,7 +250,18 @@ impl WorkspaceView {
         cx: &mut Context<Self>,
     ) -> Self {
         let ids = layout.surfaces();
-        let this = Self::build(id, false, shell, style, layout, starts, None, window, cx);
+        let this = Self::build(
+            id,
+            false,
+            shell,
+            style,
+            layout,
+            starts,
+            Vec::new(),
+            None,
+            window,
+            cx,
+        );
         for (id, input) in ids.iter().zip(inputs) {
             if let (Some(t), Some(line)) = (this.terminal(*id), input) {
                 let bytes = format!("{line}\n").into_bytes();
@@ -259,7 +274,6 @@ impl WorkspaceView {
     /// The tree's shape, the focused pane (tree order) and each surface's cwd and agent in
     /// `Layout::surfaces` order (M10 plan L3, V1, V2). A surface without a hook-reported agent
     /// is checked against `regs` by its foreground process.
-    // shortcut: a browser tab is saved as a plain terminal (M13 Part 3 saves its URL).
     pub(crate) fn saved(
         &self,
         regs: &[Registration],
@@ -272,11 +286,16 @@ impl WorkspaceView {
             .iter()
             .filter_map(|s| self.surfaces.get(s))
             .map(|s| {
-                let Some(v) = s.terminal().map(|t| t.read(cx)) else {
-                    return SavedTerm {
-                        cwd: None,
-                        agent: None,
-                    };
+                let v = match &s.view {
+                    SurfaceView::Terminal(t) => t.read(cx),
+                    #[cfg(feature = "browser")]
+                    SurfaceView::Browser(b) => {
+                        return SavedTerm {
+                            cwd: None,
+                            agent: None,
+                            url: Some(b.read(cx).url().to_string()),
+                        };
+                    }
                 };
                 let agent = s
                     .agent
@@ -285,6 +304,7 @@ impl WorkspaceView {
                 SavedTerm {
                     cwd: v.cwd(),
                     agent,
+                    url: None,
                 }
             })
             .collect();
@@ -323,6 +343,7 @@ impl WorkspaceView {
             style,
             Layout::new(),
             vec![(cwd, Vec::new())],
+            Vec::new(),
             None,
             window,
             cx,
@@ -339,6 +360,7 @@ impl WorkspaceView {
         style: Rc<TermStyle>,
         layout: Layout,
         starts: Vec<Start>,
+        urls: Vec<Option<String>>,
         remote: Option<Vec<String>>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -372,9 +394,15 @@ impl WorkspaceView {
             remote,
             _subscriptions: vec![lost],
         };
-        let mut starts = starts.into_iter();
+        let (mut starts, mut urls) = (starts.into_iter(), urls.into_iter());
         for surface in this.layout.surfaces() {
             let (cwd, env) = starts.next().unwrap_or_default();
+            // Without the browser feature a saved browser tab comes back as a terminal.
+            if let Some(url) = urls.next().flatten()
+                && this.add_browser(surface, &url, window, cx)
+            {
+                continue;
+            }
             if !this.add_terminal(surface, cwd, &env, window, cx)
                 && this.layout.close_surface(surface) == Closed::LastSurface
             {
@@ -601,6 +629,7 @@ impl WorkspaceView {
                 body: body.clone(),
             }),
             TerminalEvent::Typed => cx.emit(WorkspaceEvent::Typed(surface)),
+            TerminalEvent::OpenLink(url) => this.open_link(surface, url, window, cx),
         });
         let handle = view.read(cx).focus_handle(cx);
         let focused = Self::follow_focus(&handle, surface, window, cx);
@@ -640,13 +669,28 @@ impl WorkspaceView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<SurfaceId> {
-        if pane.is_some_and(|p| !self.layout.focus_pane(p)) {
+        if !cfg!(feature = "browser") || pane.is_some_and(|p| !self.layout.focus_pane(p)) {
             return None;
         }
+        let surface = self.layout.new_tab();
+        self.add_browser(surface, url, window, cx);
+        self.focus_active(window, cx);
+        cx.emit(WorkspaceEvent::Changed);
+        Some(surface)
+    }
+
+    /// A browser view for a surface the layout already has. False in a build without the
+    /// browser.
+    fn add_browser(
+        &mut self,
+        surface: SurfaceId,
+        url: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
         #[cfg(feature = "browser")]
         {
             use crate::browser::{BrowserEvent, BrowserView};
-            let surface = self.layout.new_tab();
             let view = cx.new(|cx| BrowserView::new(url, window, cx));
             let events = cx.subscribe_in(&view, window, move |this, _, ev, window, cx| match ev {
                 BrowserEvent::Changed => {
@@ -668,14 +712,36 @@ impl WorkspaceView {
                     _subscriptions: [events, focused],
                 },
             );
-            self.focus_active(window, cx);
-            cx.emit(WorkspaceEvent::Changed);
-            Some(surface)
+            true
         }
         #[cfg(not(feature = "browser"))]
         {
-            let _ = (url, window, cx);
-            None
+            let _ = (surface, url, window, cx);
+            false
+        }
+    }
+
+    /// A Ctrl+clicked link (M13 plan L1): a browser tab in the clicked pane, else (setting
+    /// `open_links = "system"`, a build without the browser, another scheme) the desktop's
+    /// handler.
+    fn open_link(
+        &mut self,
+        surface: SurfaceId,
+        url: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        use cmux_config::browser::{load_links_in_app, openable};
+        let in_app = cfg!(feature = "browser")
+            && openable(url)
+            && cmux_config::ghostty::Env::from_system(true)
+                .is_none_or(|e| load_links_in_app(&e.cmux_config_file()));
+        if !in_app
+            || self
+                .open_browser(self.layout.pane_of(surface), url, window, cx)
+                .is_none()
+        {
+            cx.open_url(url);
         }
     }
 

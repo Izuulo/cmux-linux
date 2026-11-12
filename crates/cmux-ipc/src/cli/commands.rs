@@ -433,7 +433,7 @@ impl Cmd<'_> {
     /// `new-split`): `--surface`/`--panel`, else `CMUX_SURFACE_ID` when neither a workspace nor
     /// a window was given; `--workspace`, else `CMUX_WORKSPACE_ID` when no window was given and
     /// the surface isn't a handle that names its own workspace.
-    fn surface_scope(&mut self, f: &Flags) -> Result<Map<String, Value>, CliError> {
+    pub(crate) fn surface_scope(&mut self, f: &Flags) -> Result<Map<String, Value>, CliError> {
         let mut scope = self.window_scope(f)?;
         let windowed = scope.contains_key("window_id");
         let surface = f.get("--surface").or(f.get("--panel")).map(str::to_string);

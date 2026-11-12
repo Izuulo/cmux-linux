@@ -3079,6 +3079,36 @@ impl Terminal {
         Ok(rows)
     }
 
+    /// One viewport row's cells (cmux-linux: link detection under the pointer).
+    pub fn viewport_row(&self, y: u16) -> Result<Vec<Cell>> {
+        let palette = terminal_palette(self.raw, sys::GHOSTTY_TERMINAL_DATA_COLOR_PALETTE)?;
+        let mut grapheme_buf = Vec::new();
+        (0..self.cols())
+            .map(|x| {
+                let grid_ref = self
+                    .grid_ref(sys::GHOSTTY_POINT_TAG_VIEWPORT, x, u64::from(y))
+                    .ok_or(Error::InvalidValue)?;
+                read_grid_ref_cell(&grid_ref, &palette, &mut grapheme_buf)
+            })
+            .collect()
+    }
+
+    /// The OSC 8 hyperlink URI of a viewport cell, if it has one (cmux-linux).
+    pub fn hyperlink_at(&self, x: u16, y: u16) -> Option<String> {
+        let grid_ref = self.grid_ref(sys::GHOSTTY_POINT_TAG_VIEWPORT, x, u64::from(y))?;
+        let mut len = 0usize;
+        let first =
+            unsafe { sys::ghostty_grid_ref_hyperlink_uri(&grid_ref, ptr::null_mut(), 0, &mut len) };
+        if len == 0 || (first != sys::GHOSTTY_OUT_OF_SPACE && first != sys::GHOSTTY_SUCCESS) {
+            return None;
+        }
+        let mut buf = vec![0u8; len];
+        let r = unsafe {
+            sys::ghostty_grid_ref_hyperlink_uri(&grid_ref, buf.as_mut_ptr(), buf.len(), &mut len)
+        };
+        (r == sys::GHOSTTY_SUCCESS).then(|| String::from_utf8_lossy(&buf[..len]).into_owned())
+    }
+
     /// Terminal title as set by OSC 0/2, if any.
     pub fn title(&self) -> Option<String> {
         let s: sys::GhosttyString = self.get(sys::GHOSTTY_TERMINAL_DATA_TITLE).ok()?;

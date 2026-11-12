@@ -115,6 +115,7 @@ impl WindowView {
         Some(SavedTerm {
             cwd: term.cwd(),
             agent: Some(agent),
+            url: None,
         })
     }
 

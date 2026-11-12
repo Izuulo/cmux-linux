@@ -83,6 +83,8 @@ pub enum TerminalEvent {
     Notify { title: String, body: String },
     /// The user typed or pasted into the terminal (anything sent by `send_input`).
     Typed,
+    /// Ctrl+click on a link (M13 plan L1).
+    OpenLink(String),
 }
 
 pub struct TerminalView {
@@ -103,6 +105,8 @@ pub struct TerminalView {
     pub(crate) mouse: MouseEncoders,
     /// A local selection drag is in progress.
     pub(crate) dragging: bool,
+    /// The press opened a link: its release goes nowhere.
+    pub(crate) link_press: bool,
     /// Wheel pixels not yet turned into whole lines.
     pub(crate) scroll_px: f32,
     /// `Keystroke.key` of presses that went to the PTY, so their release goes there too even
@@ -220,6 +224,7 @@ impl TerminalView {
             key_encoder: KeyEncoder::new().expect("libghostty-vt key encoder"),
             mouse: MouseEncoders::new().expect("libghostty-vt mouse encoders"),
             dragging: false,
+            link_press: false,
             scroll_px: 0.0,
             forwarded_keys: HashSet::new(),
             title: None,

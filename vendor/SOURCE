@@ -3,6 +3,7 @@ ghostty-vt, ghostty-vt-sys
   licence: MIT (cmux-tui Cargo metadata)
   local edit: Cargo.toml `license.workspace = true` -> `license = "MIT"`
   local addition: vendor/LICENSE-MIT (cmux-tui ships no LICENSE file; text added from its Cargo metadata)
+  local addition (M13): `Terminal::viewport_row` and `Terminal::hyperlink_at` in src/terminal.rs
 
 ghostty (git submodule)
   https://github.com/manaflow-ai/ghostty @ ef4f1570d62117ebc51e3b0f07ad4f34032267b6

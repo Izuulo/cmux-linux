@@ -34,6 +34,8 @@ pub struct Agent {
 pub struct SavedTerm {
     pub cwd: Option<String>,
     pub agent: Option<Agent>,
+    /// A browser tab's URL (M13 plan R1); `None` for a terminal.
+    pub url: Option<String>,
 }
 
 /// One workspace's (or the Dock's) panes: the tree, the focused pane and each surface.
@@ -217,12 +219,15 @@ fn layout_json(l: &SavedLayout) -> Value {
     json!({
         "layout": shape_json(&l.shape),
         "focused": l.focused,
-        "terminals": l.terms.iter().map(|t| json!({
-            "cwd": t.cwd,
-            "agent": t.agent.as_ref().map(|a| json!({
-                "kind": a.kind, "session_id": a.session_id, "executable": a.executable,
-            })),
-        })).collect::<Vec<_>>(),
+        "terminals": l.terms.iter().map(|t| match &t.url {
+            Some(url) => json!({"kind": "browser", "url": url}),
+            None => json!({
+                "cwd": t.cwd,
+                "agent": t.agent.as_ref().map(|a| json!({
+                    "kind": a.kind, "session_id": a.session_id, "executable": a.executable,
+                })),
+            }),
+        }).collect::<Vec<_>>(),
     })
 }
 
@@ -247,6 +252,8 @@ fn layout_from(v: &Value) -> Option<SavedLayout> {
                             executable: s(a, "executable"),
                         })
                     }),
+                    // Older files have no kind: terminals.
+                    url: s(t, "url").filter(|_| s(t, "kind").as_deref() == Some("browser")),
                 }
             })
             .collect(),
@@ -514,14 +521,17 @@ mod tests {
                         session_id: "abc-123".into(),
                         executable: None,
                     }),
+                    url: None,
                 },
                 SavedTerm {
                     cwd: None,
                     agent: None,
+                    url: Some("https://example.org/".into()),
                 },
                 SavedTerm {
                     cwd: Some("/".into()),
                     agent: None,
+                    url: None,
                 },
             ],
         };
@@ -566,6 +576,21 @@ mod tests {
     fn json_round_trips() {
         let s = sample();
         assert_eq!(from_json(&to_json(&s)), Some(s));
+    }
+
+    #[test]
+    fn browser_tabs_save_kind_and_url_and_old_entries_are_terminals() {
+        let v = to_json(&sample());
+        assert_eq!(
+            v["workspaces"][0]["terminals"][1],
+            json!({"kind": "browser", "url": "https://example.org/"})
+        );
+        let mut v = v;
+        v["workspaces"][0]["terminals"][1] = json!({"cwd": null});
+        v["workspaces"][0]["terminals"][2] = json!({"kind": "browser"});
+        let s = from_json(&v).unwrap();
+        let terms = &s.workspaces[0].layout.terms;
+        assert_eq!((terms[1].url.as_ref(), terms[2].url.as_ref()), (None, None));
     }
 
     #[test]

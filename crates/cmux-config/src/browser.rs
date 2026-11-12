@@ -19,6 +19,30 @@ pub fn search_url(text: &str) -> String {
         .unwrap_or_else(|| DEFAULT_SEARCH_URL.into())
 }
 
+/// `[browser] open_links`: `"system"` sends Ctrl+clicked terminal links to the desktop's
+/// browser; anything else (default `"cmux"`) opens them in a browser tab.
+pub fn links_in_app(text: &str) -> bool {
+    text.parse::<toml::Table>().ok().is_none_or(|t| {
+        t.get("browser")
+            .and_then(|b| b.get("open_links"))
+            .and_then(|v| v.as_str())
+            != Some("system")
+    })
+}
+
+pub fn load_links_in_app(path: &Path) -> bool {
+    links_in_app(&std::fs::read_to_string(path).unwrap_or_default())
+}
+
+/// What a browser tab may be opened at from a link or the socket (M13 plan L2): http(s) and
+/// file URLs.
+pub fn openable(url: &str) -> bool {
+    let lower = url.trim_start().to_ascii_lowercase();
+    ["http://", "https://", "file://"]
+        .iter()
+        .any(|s| lower.starts_with(s) && lower.len() > s.len())
+}
+
 pub fn load(path: &Path) -> String {
     search_url(&std::fs::read_to_string(path).unwrap_or_default())
 }
@@ -69,6 +93,30 @@ mod tests {
     use super::*;
 
     const S: &str = DEFAULT_SEARCH_URL;
+
+    #[test]
+    fn openable_schemes() {
+        for ok in ["https://a.b", "HTTP://a", "file:///tmp/x.html"] {
+            assert!(openable(ok), "{ok}");
+        }
+        for no in [
+            "https://",
+            "javascript:alert(1)",
+            "about:blank",
+            "ftp://a",
+            "a.b",
+            "",
+        ] {
+            assert!(!openable(no), "{no}");
+        }
+    }
+
+    #[test]
+    fn open_links_setting() {
+        assert!(links_in_app(""));
+        assert!(links_in_app("[browser]\nopen_links = \"cmux\""));
+        assert!(!links_in_app("[browser]\nopen_links = \"system\""));
+    }
 
     #[test]
     fn urls_hosts_and_searches() {

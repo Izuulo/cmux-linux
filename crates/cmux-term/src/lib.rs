@@ -1,6 +1,7 @@
 //! cmux-term: PTY + libghostty-vt wrapper.
 
 pub mod input;
+pub mod links;
 pub mod osc;
 pub mod pty;
 pub mod selection;
@@ -11,7 +12,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::Sender;
 
-use ghostty_vt::{Callbacks, Cell, CursorInfo, Error, RenderState, Rgb, Scrollbar, Terminal};
+use ghostty_vt::{
+    Callbacks, Cell, CellWidth, CursorInfo, Error, RenderState, Rgb, Scrollbar, Terminal,
+};
 use osc::{OscEvent, OscScanner};
 
 /// Scrollback bytes per terminal (upstream Ghostty's default `scrollback-limit`). Not cmux's
@@ -191,6 +194,24 @@ impl Term {
         self.render.walk_rows(|row, _dirty, cells| f(row, cells))
     }
 
+    /// The link under a viewport cell: its OSC 8 hyperlink, else a URL in the row's text
+    /// (Ghostty's order, `linkAtScreenPinWithOsc8`).
+    pub fn link_at(&self, col: u16, row: u16) -> Option<String> {
+        if let Some(uri) = self.vt.hyperlink_at(col, row) {
+            return Some(uri);
+        }
+        let cells = self.vt.viewport_row(row).ok()?;
+        let texts: Vec<&str> = cells
+            .iter()
+            .map(|c| match (c.text.as_str(), c.width) {
+                (_, CellWidth::SpacerTail | CellWidth::SpacerHead) => "",
+                ("", _) => " ",
+                (t, _) => t,
+            })
+            .collect();
+        links::url_at(&texts, usize::from(col))
+    }
+
     /// The viewport as text lines. For tests and debugging, not the render path.
     pub fn text_lines(&mut self) -> Result<Vec<String>, Error> {
         self.render.update(&mut self.vt)?;
@@ -213,6 +234,16 @@ mod tests {
         let (mut t, rx) = term(20, 3);
         t.feed(b"\x1b[6n");
         assert_eq!(rx.try_recv().unwrap(), b"\x1b[1;1R");
+    }
+
+    #[test]
+    fn links_from_osc8_and_text() {
+        let (mut t, _rx) = term(40, 3);
+        t.feed(b"\x1b]8;;https://osc8.example/x\x1b\\click\x1b]8;;\x1b\\ see https://a.b/c.\r\n");
+        assert_eq!(t.link_at(2, 0).as_deref(), Some("https://osc8.example/x"));
+        assert_eq!(t.link_at(5, 0), None);
+        assert_eq!(t.link_at(12, 0).as_deref(), Some("https://a.b/c"));
+        assert_eq!(t.link_at(0, 1), None);
     }
 
     #[test]

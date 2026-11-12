@@ -153,6 +153,12 @@ unless `config.toml` sets another prefix:
 search_url = "https://www.google.com/search?q="
 ```
 
+Ctrl+click a URL in a terminal (an OSC 8 hyperlink or a printed `http(s)://` / `file://`
+URL) to open it in a browser tab in that pane. `open_links = "system"` under `[browser]`
+sends it to the desktop's default browser instead; builds without the feature always do.
+`cmux browser open <url> [--surface <id|ref>]` opens a browser tab from a script, and browser
+tabs come back at their URL after a restart.
+
 ## Configuration
 
 cmux-linux reads your Ghostty config (`~/.config/ghostty/config`) for fonts, colours,

@@ -14,7 +14,7 @@ use gpui::{
 };
 
 use crate::keys;
-use crate::terminal_view::TerminalView;
+use crate::terminal_view::{TerminalEvent, TerminalView};
 
 fn vt_button(b: MouseButton) -> Option<VtButton> {
     match b {
@@ -76,6 +76,11 @@ impl TerminalView {
         })
     }
 
+    fn link_at(&self, pos: Point<Pixels>) -> Option<String> {
+        let (column, row) = self.geometry?.cell_at(pos);
+        self.session.term.lock().unwrap().link_at(column, row)
+    }
+
     fn report(
         &mut self,
         action: MouseAction,
@@ -126,6 +131,18 @@ impl TerminalView {
         window.focus(&self.focus);
         // The click that focuses another pane is not terminal input, unless the app tracks the
         // mouse (cmux TerminalPointerFocusActivationPolicy).
+        // Ghostty's link chord: Ctrl alone opens the link under the pointer, even when the app
+        // tracks the mouse (`mouseLinkRefreshAllowedState`).
+        let m = &ev.modifiers;
+        if ev.button == MouseButton::Left
+            && m.control
+            && !(m.shift || m.alt || m.platform || m.function)
+            && let Some(url) = self.link_at(ev.position)
+        {
+            self.link_press = true;
+            cx.emit(TerminalEvent::OpenLink(url));
+            return;
+        }
         if !was_focused && !self.tracking() {
             return;
         }
@@ -188,6 +205,9 @@ impl TerminalView {
 
     pub(crate) fn mouse_up(&mut self, ev: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
         if cx.has_active_drag() {
+            return;
+        }
+        if ev.button == MouseButton::Left && std::mem::take(&mut self.link_press) {
             return;
         }
         if self.reporting(&ev.modifiers) {
