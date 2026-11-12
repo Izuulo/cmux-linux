@@ -9,9 +9,13 @@ license=('GPL-3.0-or-later')
 # fontconfig, freetype2, wayland, vulkan-icd-loader and libx11 are dlopen()ed by gpui, so
 # namcap reports them as unneeded; the app does not start without them.
 depends=('fontconfig' 'freetype2' 'libxkbcommon' 'libxkbcommon-x11' 'wayland'
-         'vulkan-icd-loader' 'libx11' 'libxcb' 'glibc')
+         'vulkan-icd-loader' 'libx11' 'libxcb' 'glibc'
+         # libcef.so (in-app browser, feature `browser`).
+         'glib2' 'nspr' 'nss' 'at-spi2-core' 'dbus' 'libcups' 'libxcomposite' 'libxdamage'
+         'libxext' 'libxfixes' 'libxrandr' 'mesa' 'expat' 'cairo' 'pango' 'systemd-libs'
+         'alsa-lib')
 options=('!debug')
-makedepends=('git' 'rustup' 'clang')
+makedepends=('git' 'rustup' 'clang' 'binutils')
 provides=('cmux-linux')
 conflicts=('cmux-linux')
 source=("cmux-linux::git+${_repo:-https://github.com/Izuulo/cmux-linux.git}"
@@ -41,13 +45,23 @@ build() {
   cd cmux-linux
   export ZIG="$srcdir/zig-x86_64-linux-0.16.0/zig" # overrides .cargo/config.toml
   export PATH="${ZIG%/zig}:$PATH"
-  cargo build --release --locked -p cmux-app -p cmux-ipc
+  # The browser feature fetches CEF into .tools/cef (.cargo/config.toml) on its first build.
+  cargo build --release --locked -p cmux-app -p cmux-ipc --features cmux-app/browser
 }
 
 package() {
   cd cmux-linux
   install -Dm755 target/release/cmux-app "$pkgdir/usr/lib/cmux-linux/cmux-linux"
   install -Dm755 target/release/cmux "$pkgdir/usr/lib/cmux-linux/cmux"
+  # CEF next to the binary (its rpath is $ORIGIN); chrome-sandbox isn't needed (user namespaces).
+  local cef=target/release lib="$pkgdir/usr/lib/cmux-linux"
+  install -Dm755 "$cef/libcef.so" "$lib/libcef.so"
+  strip --strip-unneeded "$lib/libcef.so"  # 1.5 GB → about 280 MB
+  install -m755 "$cef/libvk_swiftshader.so" "$cef/libvulkan.so.1" "$lib/"
+  install -m644 "$cef"/*.pak "$cef/icudtl.dat" "$cef/v8_context_snapshot.bin" \
+    "$cef/vk_swiftshader_icd.json" "$lib/"
+  cp -r "$cef/locales" "$lib/"
+  install -m644 .tools/cef/*/cef_linux_x86_64/CREDITS.html "$lib/CREDITS.html"
   install -d "$pkgdir/usr/bin"
   ln -s /usr/lib/cmux-linux/cmux-linux "$pkgdir/usr/bin/cmux-linux"
   ln -s /usr/lib/cmux-linux/cmux "$pkgdir/usr/bin/cmux"
@@ -59,4 +73,5 @@ package() {
   install -Dm644 vendor/LICENSE-MIT "$l/LICENSE-MIT"
   install -Dm644 crates/cmux-app/assets/icons/LICENSE-lucide.txt "$l/LICENSE-lucide.txt"
   install -Dm644 crates/cmux-app/assets/fonts/OFL.txt "$l/OFL.txt"
+  ln -s /usr/lib/cmux-linux/CREDITS.html "$l/CEF-CREDITS.html"
 }

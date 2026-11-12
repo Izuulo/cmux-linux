@@ -144,7 +144,7 @@ impl WindowView {
     fn sync_dock_active(&self, cx: &mut Context<Self>) {
         let shown = self.right_sidebar_open && self.right_mode == RightMode::Dock;
         if let Some(d) = &self.dock {
-            d.update(cx, |d, _| d.set_active(shown));
+            d.update(cx, |d, cx| d.set_active(shown, cx));
         }
     }
 

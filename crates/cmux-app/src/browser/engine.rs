@@ -15,9 +15,9 @@ use gpui::{CursorStyle, RenderImage};
 
 /// What the CEF thread tells the view.
 pub enum Msg {
-    Frame(Arc<RenderImage>),
-    /// A `<select>` dropdown's pixels (shown at `Page::popup`).
-    PopupFrame(Arc<RenderImage>),
+    /// New pixels wait in `Engine::frames` (sent only when the slot was empty, so at most one
+    /// page frame and one popup frame are ever queued).
+    Frame,
     /// Title, URL, loading, history, cursor or popup changed.
     Changed,
     /// The page asked for a new window (`target=_blank`, `window.open`).
@@ -38,6 +38,9 @@ pub struct Page {
     pub ime: Option<(i32, i32, i32, i32)>,
 }
 
+/// The newest (page, `<select>` popup) frames.
+pub type Frames = (Option<Arc<RenderImage>>, Option<Arc<RenderImage>>);
+
 /// `Browser` is a thread-safe ref-counted CEF handle, but cef-rs doesn't mark it `Send`.
 struct Handle(Browser);
 // SAFETY: CEF browser objects are ref-counted thread-safely; host methods post to CEF's UI thread.
@@ -49,6 +52,9 @@ pub struct Engine {
     browser: Mutex<Option<Handle>>,
     tx: UnboundedSender<Msg>,
     pub page: Mutex<Page>,
+    /// The newest page frame and `<select>` popup frame not yet taken by the view.
+    frames: Mutex<Frames>,
+    hidden: AtomicBool,
     close_requested: AtomicBool,
     closed: AtomicBool,
 }
@@ -85,6 +91,20 @@ impl Engine {
         if let Some(h) = self.host() {
             h.set_zoom_level((self.scale() as f64).ln() / 1.2f64.ln());
             h.was_resized();
+        }
+    }
+
+    /// Taken by the view on `Msg::Frame`: (page, popup).
+    pub fn take_frames(&self) -> Frames {
+        std::mem::take(&mut *self.frames.lock().unwrap())
+    }
+
+    /// A tab not on screen stops painting (and animating) until shown again.
+    pub fn set_hidden(&self, hidden: bool) {
+        if self.hidden.swap(hidden, Ordering::SeqCst) != hidden
+            && let Some(h) = self.host()
+        {
+            h.was_hidden(hidden as i32);
         }
     }
 
@@ -262,12 +282,17 @@ wrap_render_handler! {
             height: ::std::os::raw::c_int
         ) {
             let Some(img) = frame(buffer, width, height) else { return };
-            let msg = if type_.get_raw() == PaintElementType::POPUP.get_raw() {
-                Msg::PopupFrame(img)
-            } else {
-                Msg::Frame(img)
-            };
-            let _ = self.e.tx.unbounded_send(msg);
+            let popup = type_.get_raw() == PaintElementType::POPUP.get_raw();
+            let mut slots = self.e.frames.lock().unwrap();
+            let wake = slots.0.is_none() && slots.1.is_none();
+            match popup {
+                true => slots.1 = Some(img),
+                false => slots.0 = Some(img),
+            }
+            drop(slots);
+            if wake {
+                let _ = self.e.tx.unbounded_send(Msg::Frame);
+            }
         }
 
         fn on_ime_composition_range_changed(
@@ -354,7 +379,7 @@ wrap_life_span_handler! {
             target_url: Option<&CefString>,
             _target_frame_name: Option<&CefString>,
             _target_disposition: WindowOpenDisposition,
-            _user_gesture: ::std::os::raw::c_int,
+            user_gesture: ::std::os::raw::c_int,
             _popup_features: Option<&PopupFeatures>,
             _window_info: Option<&mut WindowInfo>,
             _client: Option<&mut Option<Client>>,
@@ -362,8 +387,10 @@ wrap_life_span_handler! {
             _extra_info: Option<&mut Option<DictionaryValue>>,
             _no_javascript_access: Option<&mut ::std::os::raw::c_int>,
         ) -> ::std::os::raw::c_int {
-            // Plan B3: a new browser tab in the same pane instead of a window.
-            if let Some(u) = target_url.map(|u| u.to_string()).filter(|u| !u.is_empty()) {
+            // Plan B3: a new browser tab in the same pane instead of a window; only for a click
+            // or key, so a page can't open tabs on its own.
+            let url = target_url.map(|u| u.to_string()).filter(|u| !u.is_empty());
+            if let Some(u) = url.filter(|_| user_gesture != 0) {
                 let _ = self.e.tx.unbounded_send(Msg::OpenTab(u));
             }
             1
@@ -373,6 +400,12 @@ wrap_life_span_handler! {
             let Some(b) = browser else { return };
             *self.e.browser.lock().unwrap() = Some(Handle(b.clone()));
             self.e.resized();
+            // Hidden before CEF made it (a background tab).
+            if self.e.hidden.load(Ordering::SeqCst)
+                && let Some(h) = b.host()
+            {
+                h.was_hidden(1);
+            }
             if self.e.close_requested.load(Ordering::SeqCst) {
                 self.e.close();
             }
@@ -492,6 +525,8 @@ pub fn create(url: &str, view: (i32, i32, f32), tx: UnboundedSender<Msg>) -> Opt
             loading: true,
             ..Default::default()
         }),
+        frames: Mutex::default(),
+        hidden: AtomicBool::new(false),
         close_requested: AtomicBool::new(false),
         closed: AtomicBool::new(false),
     });

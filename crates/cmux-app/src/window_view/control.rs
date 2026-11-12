@@ -391,7 +391,7 @@ impl WindowView {
         } else {
             // The new view focused its shell as it started: give focus back (plan D6).
             self.workspaces.select(old);
-            view.update(cx, |v, _| v.set_active(false));
+            view.update(cx, |v, cx| v.set_active(false, cx));
             if let Some(v) = self.views.get(&old) {
                 v.update(cx, |v, cx| v.focus_active(window, cx));
             }

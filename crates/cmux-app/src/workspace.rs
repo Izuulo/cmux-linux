@@ -80,6 +80,28 @@ impl Surface {
         }
     }
 
+    /// A browser not on screen stops painting.
+    fn set_hidden(&self, hidden: bool, cx: &mut App) {
+        match &self.view {
+            SurfaceView::Terminal(_) => {}
+            #[cfg(feature = "browser")]
+            SurfaceView::Browser(b) => b.read(cx).set_hidden(hidden),
+        }
+        #[cfg(not(feature = "browser"))]
+        let _ = (hidden, cx);
+    }
+
+    /// Before the surface goes: a browser frees its frames' atlas tiles.
+    fn release(&self, window: &mut Window, cx: &mut App) {
+        match &self.view {
+            SurfaceView::Terminal(_) => {}
+            #[cfg(feature = "browser")]
+            SurfaceView::Browser(b) => b.update(cx, |b, _| b.release(window)),
+        }
+        #[cfg(not(feature = "browser"))]
+        let _ = (window, cx);
+    }
+
     fn any_view(&self) -> AnyView {
         match &self.view {
             SurfaceView::Terminal(t) => t.clone().into(),
@@ -380,11 +402,36 @@ impl WorkspaceView {
         self.right_inset = right;
     }
 
-    pub fn set_active(&mut self, active: bool) {
+    pub fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
         self.active = active;
+        if !active {
+            self.sync_hidden(&HashSet::new(), cx);
+        }
         if active {
             // Another workspace may have set the window title meanwhile; force a resend.
             self.window_title.clear();
+        }
+    }
+
+    /// Browsers in `shown` paint, the rest are hidden (plan E3).
+    fn sync_hidden(&self, shown: &HashSet<SurfaceId>, cx: &mut App) {
+        for (id, s) in &self.surfaces {
+            s.set_hidden(!shown.contains(id), cx);
+        }
+    }
+
+    /// Removes `surface`'s view, releasing what it holds in the window.
+    fn remove_surface(&mut self, surface: SurfaceId, window: &mut Window, cx: &mut App) {
+        if let Some(s) = self.surfaces.remove(&surface) {
+            s.release(window, cx);
+        }
+        self.flashes.remove(&surface);
+    }
+
+    /// Before this workspace's view is dropped (workspace closed).
+    pub fn release_all(&mut self, window: &mut Window, cx: &mut App) {
+        for s in self.surfaces.values() {
+            s.release(window, cx);
         }
     }
 
@@ -693,14 +740,13 @@ impl WorkspaceView {
     ) {
         match self.layout.close_surface(surface) {
             Closed::LastSurface => {
-                self.surfaces.remove(&surface);
+                self.remove_surface(surface, window, cx);
                 cx.emit(WorkspaceEvent::Closed(surface));
                 cx.emit(WorkspaceEvent::Empty);
             }
             Closed::NotFound => {}
             Closed::Tab | Closed::Pane => {
-                self.surfaces.remove(&surface);
-                self.flashes.remove(&surface);
+                self.remove_surface(surface, window, cx);
                 cx.emit(WorkspaceEvent::Closed(surface));
                 self.focus_active(window, cx);
                 // The active surface, and so the sidebar title, may have changed.
@@ -778,8 +824,7 @@ impl WorkspaceView {
 
     fn close_other_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         for s in self.layout.close_other_tabs() {
-            self.surfaces.remove(&s);
-            self.flashes.remove(&s);
+            self.remove_surface(s, window, cx);
             cx.emit(WorkspaceEvent::Closed(s));
         }
         self.focus_active(window, cx);
@@ -1007,6 +1052,13 @@ impl Render for WorkspaceView {
                 None => {}
             }
         }
+        let shown: HashSet<SurfaceId> = rects
+            .panes
+            .iter()
+            .filter(|_| self.active)
+            .filter_map(|(p, _)| Some(self.layout.pane(*p)?.selected_surface()))
+            .collect();
+        self.sync_hidden(&shown, cx);
         let dim = chrome::dim_overlay(&self.style.cfg).filter(|_| self.layout.pane_count() > 1);
         let divider = chrome::divider(&self.style.cfg);
         let panes: Vec<_> = rects
@@ -1114,35 +1166,57 @@ impl Render for WorkspaceView {
             }))
             .on_action(cx.listener(|this, _: &OpenBrowser, w, cx| {
                 if this.open_browser(None, "about:blank", w, cx).is_none() {
-                    // Nothing waits for the answer.
-                    drop(w.prompt(
-                        gpui::PromptLevel::Info,
-                        "Built without browser support",
-                        None,
-                        &["OK"],
-                        cx,
-                    ));
+                    no_browser(w, cx);
                 }
             }))
             .children(panes)
             .children(dividers);
-        // Back, forward, reload and the URL field act on the focused browser tab.
+        // Back, forward, reload and the URL field act on the focused browser tab; elsewhere
+        // the key goes on (a terminal may use it).
         #[cfg(feature = "browser")]
         let root = root
-            .on_action(cx.listener(|this, _: &BrowserBack, _, cx| {
-                this.active_browser().inspect(|b| b.read(cx).back());
-            }))
-            .on_action(cx.listener(|this, _: &BrowserForward, _, cx| {
-                this.active_browser().inspect(|b| b.read(cx).forward());
-            }))
-            .on_action(cx.listener(|this, _: &BrowserReload, _, cx| {
-                this.active_browser().inspect(|b| b.read(cx).reload());
-            }))
+            .on_action(
+                cx.listener(|this, _: &BrowserBack, _, cx| match this.active_browser() {
+                    Some(b) => b.read(cx).back(),
+                    None => cx.propagate(),
+                }),
+            )
+            .on_action(cx.listener(
+                |this, _: &BrowserForward, _, cx| match this.active_browser() {
+                    Some(b) => b.read(cx).forward(),
+                    None => cx.propagate(),
+                },
+            ))
+            .on_action(cx.listener(
+                |this, _: &BrowserReload, _, cx| match this.active_browser() {
+                    Some(b) => b.read(cx).reload(),
+                    None => cx.propagate(),
+                },
+            ))
             .on_action(cx.listener(|this, _: &FocusBrowserAddressBar, w, cx| {
-                if let Some(b) = this.active_browser() {
-                    b.update(cx, |b, cx| b.focus_bar(w, cx));
+                match this.active_browser() {
+                    Some(b) => b.update(cx, |b, cx| b.focus_bar(w, cx)),
+                    None => cx.propagate(),
                 }
             }));
+        #[cfg(not(feature = "browser"))]
+        let root = root
+            .on_action(|_: &BrowserBack, w, cx| no_browser(w, cx))
+            .on_action(|_: &BrowserForward, w, cx| no_browser(w, cx))
+            .on_action(|_: &BrowserReload, w, cx| no_browser(w, cx))
+            .on_action(|_: &FocusBrowserAddressBar, w, cx| no_browser(w, cx));
         root
     }
+}
+
+/// Plan E2: what every browser action does in a build without the `browser` feature.
+fn no_browser(window: &mut Window, cx: &mut App) {
+    // Nothing waits for the answer.
+    drop(window.prompt(
+        gpui::PromptLevel::Info,
+        "Built without browser support",
+        None,
+        &["OK"],
+        cx,
+    ));
 }

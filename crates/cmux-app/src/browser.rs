@@ -37,7 +37,7 @@ const FIELD_PX: f32 = 12.0;
 const WHEEL_LINE: f32 = 53.0;
 
 pub enum BrowserEvent {
-    /// Title or URL changed (the tab title follows).
+    /// Title or URL changed (the tab title follows); not sent for cursor or loading changes.
     Changed,
     /// The page asked for a new window: a browser tab in the same pane (plan B3).
     OpenTab(String),
@@ -168,36 +168,61 @@ impl BrowserView {
     }
 
     fn apply(&mut self, batch: Vec<Msg>, cx: &mut Context<Self>) {
+        let Some(e) = self.engine.clone() else { return };
         let mut changed = false;
         for m in batch {
             match m {
-                Msg::Frame(f) => {
-                    let old = self.frame.replace(f);
-                    if std::mem::take(&mut self.drawn.0) {
-                        self.stale.extend(old);
+                Msg::Frame => {
+                    let (page, popup) = e.take_frames();
+                    if let Some(f) = page {
+                        let old = self.frame.replace(f);
+                        if std::mem::take(&mut self.drawn.0) {
+                            self.stale.extend(old);
+                        }
                     }
-                }
-                Msg::PopupFrame(f) => {
-                    let old = self.popup.replace(f);
-                    if std::mem::take(&mut self.drawn.1) {
-                        self.stale.extend(old);
+                    if let Some(f) = popup {
+                        let old = self.popup.replace(f);
+                        if std::mem::take(&mut self.drawn.1) {
+                            self.stale.extend(old);
+                        }
                     }
                 }
                 Msg::Changed => changed = true,
                 Msg::OpenTab(url) => cx.emit(BrowserEvent::OpenTab(url)),
             }
         }
-        if changed && let Some(e) = &self.engine {
-            self.page = e.page.lock().unwrap().clone();
+        if changed {
+            let page = e.page.lock().unwrap().clone();
+            let titled = page.title != self.page.title || page.url != self.page.url;
+            self.page = page;
             if self.page.popup.is_none() {
                 let old = self.popup.take();
                 if std::mem::take(&mut self.drawn.1) {
                     self.stale.extend(old);
                 }
             }
-            cx.emit(BrowserEvent::Changed);
+            if titled {
+                cx.emit(BrowserEvent::Changed);
+            }
         }
         cx.notify();
+    }
+
+    /// Tells CEF whether this tab is on screen (plan E3: hidden tabs don't paint).
+    pub fn set_hidden(&self, hidden: bool) {
+        self.engine.iter().for_each(|e| e.set_hidden(hidden));
+    }
+
+    /// Frees the frames' atlas tiles: call before the view goes (a closed tab or workspace).
+    pub fn release(&mut self, window: &mut Window) {
+        let images = self
+            .stale
+            .drain(..)
+            .chain(self.frame.take())
+            .chain(self.popup.take());
+        for img in images {
+            let _ = window.drop_image(img);
+        }
     }
 
     fn navigate(&mut self, text: &str) -> bool {
