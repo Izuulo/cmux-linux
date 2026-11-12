@@ -83,14 +83,7 @@ struct Entry {
 /// order (later wins).
 pub fn load(env: &Env) -> Loaded {
     let mut warnings = Vec::new();
-    let main = ["config.ghostty", "config"]
-        .iter()
-        .map(|name| env.config_dir.join(name))
-        .find(|p| p.is_file());
-    let mut user = Vec::new();
-    if let Some(main) = main {
-        read_with_includes(env, &main, &mut user, &mut warnings);
-    }
+    let user = user_entries(env, &mut warnings);
 
     let mut config = Config::default();
     if let Some(theme) = user.iter().rev().find(|e| e.key == "theme") {
@@ -105,6 +98,25 @@ pub fn load(env: &Env) -> Loaded {
     }
     apply_all(&mut config, &user, &mut warnings);
     Loaded { config, warnings }
+}
+
+/// The user's file and its includes, in load order.
+fn user_entries(env: &Env, warnings: &mut Vec<String>) -> Vec<Entry> {
+    let mut user = Vec::new();
+    let main = super::edit::main_file(env);
+    if main.is_file() {
+        read_with_includes(env, &main, &mut user, warnings);
+    }
+    user
+}
+
+/// The file and line whose `key` wins among the user's files (the theme aside), for the
+/// Settings window's "Set in <file>" note (M12 plan W2). `None` when no user file sets it.
+pub fn origin(env: &Env, key: &str) -> Option<(PathBuf, usize)> {
+    let user = user_entries(env, &mut Vec::new());
+    let e = user.iter().rev().find(|e| e.key == key)?;
+    let (path, line) = e.origin.rsplit_once(':')?;
+    Some((PathBuf::from(path), line.parse().ok()?))
 }
 
 fn apply_all(config: &mut Config, entries: &[Entry], warnings: &mut Vec<String>) {
@@ -421,6 +433,26 @@ mod tests {
             warnings.iter().any(|w| w.contains("cannot expand ~/")),
             "{warnings:?}"
         );
+    }
+
+    #[test]
+    fn origin_names_the_winning_file_and_line() {
+        let (root, env) = fixture("origin");
+        write(
+            &root,
+            "ghostty/config.ghostty",
+            "font-size = 10\nconfig-file = extra\nfont-size = 11\ntheme = X\n",
+        );
+        write(&root, "ghostty/extra", "\nfont-size = 12\n");
+        assert_eq!(
+            origin(&env, "font-size"),
+            Some((root.join("ghostty/extra"), 2))
+        );
+        assert_eq!(
+            origin(&env, "theme"),
+            Some((root.join("ghostty/config.ghostty"), 4))
+        );
+        assert_eq!(origin(&env, "background"), None);
     }
 
     #[test]
