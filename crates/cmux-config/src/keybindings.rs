@@ -11,11 +11,13 @@ use std::path::Path;
 
 /// One gpui binding: `keystroke` runs `action`; `number` is the digit for
 /// `selectSurfaceByNumber`, whose chord binds the same modifiers with each of 1-9. `context`
-/// is the gpui key context the binding is limited to (None: everywhere).
+/// is the gpui key context the binding is limited to (None: everywhere). `hint` is the chord as
+/// configured, for display (`Super+Shift+]`, where `keystroke` says `super-}`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Binding {
     pub action: &'static str,
     pub keystroke: String,
+    pub hint: String,
     pub number: Option<u8>,
     pub context: Option<&'static str>,
 }
@@ -201,6 +203,16 @@ fn key_name(token: &str) -> Option<String> {
 
 /// One cmux chord (`super+shift+]`) as a gpui keystroke (`super-}`).
 pub fn chord_to_gpui(chord: &str) -> Result<String, String> {
+    keystroke(chord, true)
+}
+
+/// The chord as a hint (`Super+Shift+]`): its own key and Shift, not what gpui matches.
+fn hint(chord: &str) -> Result<String, String> {
+    keystroke(chord, false).map(|k| display(&k))
+}
+
+/// `unshift`: a Shift+symbol chord becomes the shifted symbol, as gpui on Linux reports it.
+fn keystroke(chord: &str, unshift: bool) -> Result<String, String> {
     let parts: Vec<&str> = chord.split('+').collect();
     let (key, mods) = parts.split_last().expect("split yields one part");
     let (mut ctrl, mut alt, mut shift, mut sup) = (false, false, false, false);
@@ -214,10 +226,17 @@ pub fn chord_to_gpui(chord: &str) -> Result<String, String> {
         }
     }
     let mut key = key_name(key).ok_or_else(|| format!("unknown key in `{chord}`"))?;
-    if shift && let Some(s) = shifted(&key) {
+    if unshift
+        && shift
+        && let Some(s) = shifted(&key)
+    {
         key = s.to_string();
         shift = false;
-    } else if shift && key.chars().count() == 1 && "!@#$%^&*()_+{}|:\"<>?~".contains(key.as_str()) {
+    } else if unshift
+        && shift
+        && key.chars().count() == 1
+        && "!@#$%^&*()_+{}|:\"<>?~".contains(key.as_str())
+    {
         shift = false; // already the shifted symbol, which gpui reports without Shift
     }
     let mut out = String::new();
@@ -248,9 +267,11 @@ fn expand(action: &'static str, chords: &[String]) -> Result<Vec<Binding>, Strin
             }
             let mods = &chord[..chord.len() - last.len()];
             for n in 1..=9u8 {
+                let chord = format!("{mods}{n}");
                 out.push(Binding {
                     action,
-                    keystroke: chord_to_gpui(&format!("{mods}{n}"))?,
+                    keystroke: chord_to_gpui(&chord)?,
+                    hint: hint(&chord)?,
                     number: Some(n),
                     context: context(action),
                 });
@@ -259,6 +280,7 @@ fn expand(action: &'static str, chords: &[String]) -> Result<Vec<Binding>, Strin
             out.push(Binding {
                 action,
                 keystroke: chord_to_gpui(chord)?,
+                hint: hint(chord)?,
                 number: None,
                 context: context(action),
             });
@@ -518,6 +540,23 @@ mod tests {
             next.map(|b| (b.keystroke.as_str(), b.context)),
             Some(("ctrl-n", Some("CommandPalette")))
         );
+    }
+
+    #[test]
+    fn hints_show_the_configured_chord() {
+        let k = keybindings(None, "test");
+        let hint = |a: &str| {
+            k.bindings
+                .iter()
+                .find(|b| b.action == a)
+                .unwrap()
+                .hint
+                .clone()
+        };
+        assert_eq!(hint("nextSurface"), "Super+Shift+]");
+        assert_eq!(hint("equalizeSplits"), "Super+Ctrl+Shift+=");
+        assert_eq!(hint("commandPalette"), "Super+Shift+P");
+        assert_eq!(hint("selectWorkspaceByNumber"), "Super+1");
     }
 
     #[test]

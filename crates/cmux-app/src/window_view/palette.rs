@@ -53,7 +53,7 @@ pub(super) struct Palette {
     selected: usize,
     focus: FocusHandle,
     /// Focus before opening, given back on close.
-    restore: Option<FocusHandle>,
+    restore: FocusHandle,
     scroll: ScrollHandle,
     _blur: Subscription,
 }
@@ -99,7 +99,8 @@ impl WindowView {
             return;
         }
         let focus = cx.focus_handle();
-        let restore = window.focused(cx);
+        // Nothing focused: the root view, so actions dispatched after closing still reach it.
+        let restore = window.focused(cx).unwrap_or_else(|| self.focus.clone());
         window.focus(&focus);
         // Focus moved elsewhere (a click, a shortcut that focuses a terminal): close.
         let _blur = cx.on_blur(&focus, window, |this, window, cx| {
@@ -123,9 +124,7 @@ impl WindowView {
         let Some(p) = self.palette.take() else {
             return false;
         };
-        if let Some(f) = &p.restore {
-            window.focus(f);
-        }
+        window.focus(&p.restore);
         cx.notify();
         true
     }
@@ -228,7 +227,9 @@ impl WindowView {
 
     /// Closes, gives focus back, then runs the `ix`th shown row (plan P4).
     fn palette_run(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let row = self.palette_matches(cx).into_iter().nth(ix);
+        let mut rows = self.palette_matches(cx);
+        // As drawn: the highlight is clamped to the last row.
+        let row = (!rows.is_empty()).then(|| rows.swap_remove(ix.min(rows.len() - 1)));
         self.close_palette(window, cx);
         let Some(row) = row else { return };
         match row.run {
@@ -236,6 +237,7 @@ impl WindowView {
                 let b = Binding {
                     action,
                     keystroke: String::new(),
+                    hint: String::new(),
                     number: None,
                     context: None,
                 };

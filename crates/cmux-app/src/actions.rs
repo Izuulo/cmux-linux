@@ -176,7 +176,7 @@ pub const PALETTE: &[(&str, &str)] = &[
     ("goToWorkspace", "Go to Workspace…"),
 ];
 
-/// Each action's first bound chord as a hint (`Super+Shift+P`), for the palette.
+/// Each action's first chord gpui accepted, as configured (`Super+Shift+P`), for the palette.
 pub struct Hints(pub HashMap<&'static str, String>);
 
 impl gpui::Global for Hints {}
@@ -198,20 +198,19 @@ pub fn key_binding(b: &Binding, mapper: &dyn PlatformKeyboardMapper) -> Result<K
 /// Binds every entry; returns a warning per binding gpui rejected (the rest still bind).
 pub fn bind(cx: &mut App, keybindings: &Keybindings) -> Vec<String> {
     let mapper = cx.keyboard_mapper().clone();
-    let (ok, bad): (Vec<_>, Vec<_>) = keybindings
-        .bindings
-        .iter()
-        .map(|b| key_binding(b, mapper.as_ref()))
-        .partition(Result::is_ok);
-    cx.bind_keys(ok.into_iter().map(Result::unwrap));
-    let mut hints = HashMap::new();
+    let (mut ok, mut bad, mut hints) = (Vec::new(), Vec::new(), HashMap::new());
     for b in &keybindings.bindings {
-        hints
-            .entry(b.action)
-            .or_insert_with(|| cmux_config::keybindings::display(&b.keystroke));
+        match key_binding(b, mapper.as_ref()) {
+            Ok(k) => {
+                ok.push(k);
+                hints.entry(b.action).or_insert_with(|| b.hint.clone());
+            }
+            Err(e) => bad.push(e),
+        }
     }
+    cx.bind_keys(ok);
     cx.set_global(Hints(hints));
-    bad.into_iter().map(|e| e.unwrap_err()).collect()
+    bad
 }
 
 #[cfg(test)]
@@ -226,6 +225,7 @@ mod tests {
             let b = Binding {
                 action: name,
                 keystroke: String::new(),
+                hint: String::new(),
                 number: Some(1),
                 context: None,
             };
