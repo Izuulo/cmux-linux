@@ -8,6 +8,8 @@ use cmux_core::{Group, GroupId, Layout, Orientation, Shape, Workspace, Workspace
 use gpui::{App, Context, Entity, Task, Window, WindowBounds};
 use serde_json::{Value, json};
 
+use cmux_config::vault::{self, Registration};
+
 use super::WindowView;
 use super::dock::RightMode;
 use crate::workspace::WorkspaceView;
@@ -16,12 +18,57 @@ const VERSION: u64 = 1;
 /// cmux `SessionPersistencePolicy.autosaveInterval`.
 const SAVE_EVERY: Duration = Duration::from_secs(8);
 
-/// One workspace's (or the Dock's) panes: the tree, the focused pane and a cwd per surface.
+/// An agent session running in a terminal (M10 plan V1, V2): Claude by its hooks, a
+/// `[[vault.agents]]` registration by its process.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Agent {
+    /// `claude` or a registration's id.
+    pub kind: String,
+    pub session_id: String,
+    /// The detected process's executable (`{{executable}}`).
+    pub executable: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SavedTerm {
+    pub cwd: Option<String>,
+    pub agent: Option<Agent>,
+}
+
+/// One workspace's (or the Dock's) panes: the tree, the focused pane and each surface.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SavedLayout {
     pub shape: Shape,
     pub focused: usize,
-    pub cwds: Vec<Option<String>>,
+    pub terms: Vec<SavedTerm>,
+}
+
+/// The registered agent a foreground process `pid` is, if any.
+pub fn detect_agent(regs: &[Registration], pid: u32) -> Option<Agent> {
+    if regs.is_empty() {
+        return None;
+    }
+    let (argv, exe, comm) = cmux_term::pty::process_argv(pid)?;
+    let names: Vec<&str> = [&comm, &exe]
+        .into_iter()
+        .flatten()
+        .map(String::as_str)
+        .collect();
+    let (r, session_id) = vault::detect(regs, &names, &argv)?;
+    Some(Agent {
+        kind: r.id.clone(),
+        session_id,
+        executable: exe,
+    })
+}
+
+impl SavedTerm {
+    /// The line that resumes this terminal's agent, if it has a valid one.
+    pub fn resume_line(&self, regs: &[Registration]) -> Option<String> {
+        let a = self.agent.as_ref()?;
+        let (exe, cwd) = (a.executable.as_deref(), self.cwd.as_deref());
+        vault::resume_line(regs, &a.kind, &a.session_id, exe, cwd)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -145,7 +192,12 @@ fn layout_json(l: &SavedLayout) -> Value {
     json!({
         "layout": shape_json(&l.shape),
         "focused": l.focused,
-        "terminals": l.cwds.iter().map(|c| json!({"cwd": c})).collect::<Vec<_>>(),
+        "terminals": l.terms.iter().map(|t| json!({
+            "cwd": t.cwd,
+            "agent": t.agent.as_ref().map(|a| json!({
+                "kind": a.kind, "session_id": a.session_id, "executable": a.executable,
+            })),
+        })).collect::<Vec<_>>(),
     })
 }
 
@@ -153,11 +205,25 @@ fn layout_from(v: &Value) -> Option<SavedLayout> {
     Some(SavedLayout {
         shape: shape_from(v.get("layout")?, 0)?,
         focused: v.get("focused")?.as_u64()? as usize,
-        cwds: v
+        terms: v
             .get("terminals")?
             .as_array()?
             .iter()
-            .map(|t| t.get("cwd").and_then(Value::as_str).map(str::to_string))
+            .map(|t| {
+                let s = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).map(str::to_string);
+                SavedTerm {
+                    cwd: s(t, "cwd"),
+                    // An agent entry that doesn't parse is dropped, not the file.
+                    agent: t.get("agent").and_then(|a| {
+                        Some(Agent {
+                            kind: s(a, "kind")?,
+                            session_id: s(a, "session_id")
+                                .filter(|id| vault::valid_session_id(id))?,
+                            executable: s(a, "executable"),
+                        })
+                    }),
+                }
+            })
             .collect(),
     })
 }
@@ -277,13 +343,18 @@ pub fn workspaces_from(s: &Saved) -> Workspaces {
 }
 
 impl SavedLayout {
-    fn of(view: &Entity<WorkspaceView>, cx: &App) -> SavedLayout {
-        let (shape, focused, cwds) = view.read(cx).saved(cx);
+    fn of(view: &Entity<WorkspaceView>, regs: &[Registration], cx: &App) -> SavedLayout {
+        let (shape, focused, terms) = view.read(cx).saved(regs, cx);
         SavedLayout {
             shape,
             focused,
-            cwds,
+            terms,
         }
+    }
+
+    /// The resume line per surface (plan V3).
+    pub(super) fn inputs(&self, regs: &[Registration]) -> Vec<Option<String>> {
+        self.terms.iter().map(|t| t.resume_line(regs)).collect()
     }
 
     pub(super) fn layout(&self) -> Layout {
@@ -334,11 +405,14 @@ impl WindowView {
                         title: w.custom_title.clone(),
                         auto_title: w.auto_title,
                         group: w.group.and_then(|g| groups.iter().position(|x| x.id == g)),
-                        layout: SavedLayout::of(self.views.get(&w.id)?, cx),
+                        layout: SavedLayout::of(self.views.get(&w.id)?, &self.vault_agents, cx),
                     })
                 })
                 .collect(),
-            dock: self.dock.as_ref().map(|d| SavedLayout::of(d, cx)),
+            dock: self
+                .dock
+                .as_ref()
+                .map(|d| SavedLayout::of(d, &self.vault_agents, cx)),
         }
     }
 
@@ -395,7 +469,24 @@ mod tests {
                 }),
             },
             focused: 1,
-            cwds: vec![Some("/tmp".into()), None, Some("/".into())],
+            terms: vec![
+                SavedTerm {
+                    cwd: Some("/tmp".into()),
+                    agent: Some(Agent {
+                        kind: "claude".into(),
+                        session_id: "abc-123".into(),
+                        executable: None,
+                    }),
+                },
+                SavedTerm {
+                    cwd: None,
+                    agent: None,
+                },
+                SavedTerm {
+                    cwd: Some("/".into()),
+                    agent: None,
+                },
+            ],
         };
         Saved {
             width: 1200.,
@@ -446,6 +537,19 @@ mod tests {
         let mut v = to_json(&sample());
         v["workspaces"][0]["layout"] = json!({"split": {"orientation": "diagonal"}});
         assert_eq!(from_json(&v), None);
+    }
+
+    #[test]
+    fn a_bad_agent_is_dropped_and_resume_lines_follow_agents() {
+        let mut v = to_json(&sample());
+        v["workspaces"][0]["terminals"][0]["agent"]["session_id"] = json!("x; rm -rf ~");
+        let s = from_json(&v).unwrap();
+        assert_eq!(s.workspaces[0].layout.terms[0].agent, None);
+        let inputs = sample().workspaces[0].layout.inputs(&[]);
+        assert_eq!(
+            inputs,
+            vec![Some("claude --resume abc-123".to_string()), None, None]
+        );
     }
 
     #[test]

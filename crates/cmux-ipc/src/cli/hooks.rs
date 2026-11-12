@@ -21,9 +21,10 @@ pub(crate) fn hooks(cmd: &mut Cmd) -> Result<String, CliError> {
     match cmd.args.first().map(String::as_str) {
         Some("feed") => feed_hook(cmd),
         Some("message") => message_hook(cmd),
+        Some("session") => session_hook(cmd),
         Some("setup") => settings(cmd, true),
         Some("uninstall") => settings(cmd, false),
-        _ => fail("Usage: cmux hooks <setup|uninstall|feed|message> ..."),
+        _ => fail("Usage: cmux hooks <setup|uninstall|feed|message|session> ..."),
     }
 }
 
@@ -34,6 +35,13 @@ const MARKER: &str = "hooks feed --source claude";
 const MESSAGE_MARKER: &str = "hooks message --source claude";
 /// Where messages reach Claude: with a prompt, after a tool call, and when it would stop.
 const MESSAGE_EVENTS: [&str; 3] = ["UserPromptSubmit", "PostToolUse", "Stop"];
+
+/// The session hook (M10 plan V1): Claude's session id per terminal, for resume.
+const SESSION_MARKER: &str = "hooks session --source claude";
+const SESSION_EVENTS: [&str; 2] = ["SessionStart", "SessionEnd"];
+/// `SessionEnd` reasons where the user ended Claude on purpose; any other end (the app quit,
+/// a crash) leaves the session to resume.
+const ENDED_ON_PURPOSE: [&str; 3] = ["clear", "logout", "prompt_input_exit"];
 
 /// D2's hook command; the absolute, single-quoted path keeps another `cmux` from answering, and
 /// `test -x ... || :` makes a removed binary a silent no-op.
@@ -55,9 +63,11 @@ fn remove(settings: &mut Value) -> Result<(), String> {
         return Err("hooks in <path> is not an object".into());
     };
     let ours = |h: &Value| {
-        h.get("command")
-            .and_then(Value::as_str)
-            .is_some_and(|c| c.contains(MARKER) || c.contains(MESSAGE_MARKER))
+        h.get("command").and_then(Value::as_str).is_some_and(|c| {
+            [MARKER, MESSAGE_MARKER, SESSION_MARKER]
+                .iter()
+                .any(|m| c.contains(m))
+        })
     };
     events.retain(|_, groups| {
         let Some(groups) = groups.as_array_mut() else {
@@ -93,9 +103,11 @@ pub(crate) fn install(settings: &mut Value, command: &str) -> Result<(), String>
         .as_object_mut()
         .ok_or("hooks in <path> is not an object")?;
     let message = command.replace(MARKER, MESSAGE_MARKER);
+    let session = command.replace(MARKER, SESSION_MARKER);
     let entries = [("PermissionRequest", command, 125)]
         .into_iter()
-        .chain(MESSAGE_EVENTS.map(|e| (e, message.as_str(), 10)));
+        .chain(MESSAGE_EVENTS.map(|e| (e, message.as_str(), 10)))
+        .chain(SESSION_EVENTS.map(|e| (e, session.as_str(), 10)));
     for (event, command, timeout) in entries {
         let group = json!({"matcher": "", "hooks": [
             {"type": "command", "command": command, "timeout": timeout},
@@ -287,15 +299,7 @@ fn message_hook(cmd: &mut Cmd) -> Result<String, CliError> {
     let Some(surf) = cmd.env("CMUX_SURFACE_ID").filter(|s| linux && is_uuid(s)) else {
         return empty();
     };
-    let raw = match &cmd.ctx.stdin {
-        Some(s) => s.clone(),
-        None => {
-            let mut s = String::new();
-            let _ = std::io::stdin().read_to_string(&mut s);
-            s
-        }
-    };
-    let stdin: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
+    let stdin = stdin_json(cmd);
     let Some(event) = stdin
         .get("hook_event_name")
         .and_then(Value::as_str)
@@ -330,6 +334,59 @@ fn message_hook(cmd: &mut Cmd) -> Result<String, CliError> {
         json!({"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}})
     };
     Ok(format!("{out}\n"))
+}
+
+/// The hook's stdin as JSON (`Null` if it isn't).
+fn stdin_json(cmd: &Cmd) -> Value {
+    let raw = match &cmd.ctx.stdin {
+        Some(s) => s.clone(),
+        None => {
+            let mut s = String::new();
+            let _ = std::io::stdin().read_to_string(&mut s);
+            s
+        }
+    };
+    serde_json::from_str(&raw).unwrap_or(Value::Null)
+}
+
+/// The `surface.agent_session` params a session hook's input asks for, if any.
+fn session_params(stdin: &Value, surf: &str) -> Option<serde_json::Map<String, Value>> {
+    let id = stdin.get("session_id").and_then(Value::as_str)?;
+    let mut p = serde_json::Map::new();
+    p.insert("surface_id".into(), surf.into());
+    p.insert("session_id".into(), id.into());
+    match stdin.get("hook_event_name").and_then(Value::as_str)? {
+        "SessionStart" => {
+            p.insert("kind".into(), "claude".into());
+        }
+        "SessionEnd" => {
+            let reason = stdin.get("reason").and_then(Value::as_str).unwrap_or("");
+            if !ENDED_ON_PURPOSE.contains(&reason) {
+                return None;
+            }
+            p.insert("clear".into(), true.into());
+        }
+        _ => return None,
+    }
+    Some(p)
+}
+
+/// `cmux hooks session --source claude`: Claude Code's `SessionStart` and `SessionEnd` hook
+/// (M10 plan V1). Tells the app which session runs in this terminal; prints `{}` always.
+fn session_hook(cmd: &mut Cmd) -> Result<String, CliError> {
+    let claude = cmd
+        .args
+        .iter()
+        .any(|a| a == "claude" || a == "--source=claude");
+    let linux = cmd.env("CMUX_LINUX").and_then(parse_bool) == Some(true);
+    let surf = cmd.env("CMUX_SURFACE_ID").filter(|s| linux && is_uuid(s));
+    if let (true, Some(surf)) = (claude, surf) {
+        let stdin = stdin_json(cmd);
+        if let Some(p) = session_params(&stdin, &surf) {
+            let _ = call(cmd, "surface.agent_session", &p, Duration::from_secs(5));
+        }
+    }
+    Ok("{}\n".to_string())
 }
 
 /// The `feed.push` result, or `None` on any socket or server error.
@@ -388,6 +445,34 @@ mod tests {
         install(&mut e, CMD).unwrap();
         uninstall(&mut e).unwrap();
         assert_eq!(e, json!({}));
+    }
+
+    #[test]
+    fn install_adds_the_session_hooks() {
+        let mut v = json!({});
+        install(&mut v, CMD).unwrap();
+        for e in SESSION_EVENTS {
+            let c = v["hooks"][e][0]["hooks"][0]["command"].as_str().unwrap();
+            assert!(c.contains(SESSION_MARKER), "{e}: {c}");
+        }
+    }
+
+    #[test]
+    fn session_params_follow_the_event_and_reason() {
+        let start = json!({"hook_event_name": "SessionStart", "session_id": "s1"});
+        let p = session_params(&start, "S").unwrap();
+        assert_eq!(
+            Value::Object(p),
+            json!({"surface_id": "S", "session_id": "s1", "kind": "claude"})
+        );
+        let quit = json!({"hook_event_name": "SessionEnd", "session_id": "s1", "reason": "prompt_input_exit"});
+        assert_eq!(session_params(&quit, "S").unwrap()["clear"], json!(true));
+        let killed =
+            json!({"hook_event_name": "SessionEnd", "session_id": "s1", "reason": "other"});
+        assert!(session_params(&killed, "S").is_none());
+        assert!(
+            session_params(&json!({"hook_event_name": "Stop", "session_id": "s"}), "S").is_none()
+        );
     }
 
     #[test]

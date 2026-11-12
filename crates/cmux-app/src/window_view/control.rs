@@ -262,6 +262,9 @@ impl WindowView {
             "workspace.create" => self.create_workspace(params, window, cx),
             "automation.list" | "automation.reload" => self.automation_from_socket(method),
             "workspace.auto_name" => self.auto_name_from_socket(&snap, params, cx),
+            "vault.list" | "vault.resume" | "surface.agent_session" => {
+                self.vault_from_socket(&snap, method, params, cx)
+            }
             m if m.starts_with("agent.message.") => {
                 self.message_from_socket(&snap, method, params, cx)
             }

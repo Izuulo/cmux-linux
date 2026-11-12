@@ -250,7 +250,8 @@ impl WindowView {
         cx: &mut Context<Self>,
     ) -> bool {
         let (style, shell) = (self.style.clone(), self.shell.clone());
-        let (layout, cwds) = (saved.layout(), saved.cwds.clone());
+        let (layout, terms) = (saved.layout(), saved.terms.clone());
+        let inputs = saved.inputs(&self.vault_agents);
         let view = cx.new(|cx| {
             WorkspaceView::restore(
                 WorkspaceId(0),
@@ -258,7 +259,8 @@ impl WindowView {
                 shell,
                 style,
                 layout,
-                cwds,
+                terms,
+                inputs,
                 BAR_H,
                 window,
                 cx,

@@ -20,6 +20,7 @@ mod help;
 mod hooks;
 mod notify;
 mod tmux;
+mod vault;
 
 use args::Global;
 use client::Client;
@@ -154,6 +155,7 @@ fn run_inner(args: &[String], ctx: &Ctx) -> Result<String, CliError> {
         "workspace-group" => groups::workspace_group(&mut cmd),
         "agent" => agent::agent(&mut cmd),
         "automation" => automation::automation(&mut cmd),
+        "vault" => vault::vault(&mut cmd),
         other => fail(format!("{other} is not available yet")),
     }
 }

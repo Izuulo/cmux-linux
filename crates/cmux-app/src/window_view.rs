@@ -39,6 +39,7 @@ mod panel;
 mod rename;
 pub mod session;
 mod sidebar;
+mod vault_ctl;
 
 use rename::RenameInput;
 
@@ -129,6 +130,8 @@ pub struct WindowView {
     /// The last text written to `session.json`.
     last_saved: Option<String>,
     _session_subs: Vec<Subscription>,
+    /// `[[vault.agents]]` from `config.toml`, read at start (M10 plan V2).
+    vault_agents: Vec<cmux_config::vault::Registration>,
 }
 
 /// Metadata rescan period (plan D2) and PR loop tick (D5).
@@ -213,6 +216,7 @@ impl WindowView {
             window_bounds: None,
             last_saved: None,
             _session_subs: Vec::new(),
+            vault_agents: vault_ctl::load(),
         };
         this._tasks = vec![Self::meta_loop(cx), Self::pr_loop(cx)];
         if let Some(mut requests) = requests {
@@ -268,9 +272,12 @@ impl WindowView {
         let ids: Vec<WorkspaceId> = self.workspaces.list().iter().map(|w| w.id).collect();
         for (id, ws) in ids.iter().zip(&saved.workspaces) {
             let (style, shell) = (self.style.clone(), self.shell.clone());
-            let (layout, cwds) = (ws.layout.layout(), ws.layout.cwds.clone());
+            let (layout, terms) = (ws.layout.layout(), ws.layout.terms.clone());
+            let inputs = ws.layout.inputs(&self.vault_agents);
             let view = cx.new(|cx| {
-                WorkspaceView::restore(*id, false, shell, style, layout, cwds, 0., window, cx)
+                WorkspaceView::restore(
+                    *id, false, shell, style, layout, terms, inputs, 0., window, cx,
+                )
             });
             if !self.register_view(*id, view, window, cx) && self.workspaces.len() > 1 {
                 self.workspaces.close(*id);

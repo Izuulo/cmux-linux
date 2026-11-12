@@ -42,7 +42,7 @@ original. It is a **local app**: no cloud services, no browser, no account.
 
 Also here: an agent approval Feed, workspace groups, a Dock, agent-to-agent
 messages, workspace auto-naming, automations and Claude Code teams in splits
-(below), and the layout comes back after a restart. Later: agent session resume,
+(below), and the layout and running agent sessions come back after a restart. Later:
 opt-in tmux persistence, a command palette and SSH workspaces.
 
 ## How it's built
@@ -477,8 +477,33 @@ workspaces with their names, groups, splits, tabs and focus, the Dock, and each 
 directory. The app saves to `~/.local/state/cmux-linux/session.json` every 8 seconds when
 something changed and once more on quit, so a crash loses at most the last few seconds. Only
 the layout comes back: each terminal starts a new shell, and scrollback, notifications, the
-Feed and agent messages are not kept. Start with `CMUX_DISABLE_SESSION_RESTORE=1` (or any
+Feed and agent messages are not kept, except for agent sessions (below). Start with `CMUX_DISABLE_SESSION_RESTORE=1` (or any
 argument) to skip it; a file that can't be read is moved to `session.json.bad`.
+
+### Agent sessions
+
+A Claude Code session that was still running when the app quit comes back in its terminal:
+the new shell gets `claude --resume <session id>` typed into it. Claude reports its session
+through two hooks that `cmux hooks setup` installs (`SessionStart`, `SessionEnd`; run setup
+again if you installed the hooks before). Leaving Claude yourself (`/exit`, Ctrl+D, `/clear`,
+logout) forgets the session; Claude being killed with the app keeps it.
+
+Other agents can be added in `~/.config/cmux-linux/config.toml`. One is recognised when a
+terminal's running program has that name and carries its session id after an option:
+
+```toml
+[[vault.agents]]
+id = "pi"
+name = "Pi"
+process_name = "pi"
+argv_option = "--session"
+resume_command = "{{executable}} --session {{sessionId}}"
+```
+
+`resume_command` must contain `{{sessionId}}`; `{{executable}}` and `{{cwd}}` are filled in
+too. `cmux vault list` shows every session that would resume, `cmux vault resume <surface>`
+types its resume line again. Session ids with anything but letters, digits, `.`, `_` and `-`
+are ignored, since the line goes to a shell.
 
 ## Contributing
 

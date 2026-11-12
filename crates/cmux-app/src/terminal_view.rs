@@ -281,6 +281,11 @@ impl TerminalView {
         self.session.process_id()
     }
 
+    /// The foreground job's pid, when one (not just the idle shell) is running.
+    pub fn foreground_pid(&self) -> Option<u32> {
+        self.session.foreground_pid()
+    }
+
     /// Whether a foreground job (not just the idle shell) is running.
     pub fn busy(&self) -> bool {
         self.session.foreground_busy()

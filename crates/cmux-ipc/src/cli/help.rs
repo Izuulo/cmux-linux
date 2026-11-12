@@ -2,7 +2,10 @@
 
 /// (command, usage line, help text). Groups are cmux's task groups.
 pub(crate) const GROUPS: &[(&str, &[&str])] = &[
-    ("Start & Resume", &["new-workspace", "claude-teams"]),
+    (
+        "Start & Resume",
+        &["new-workspace", "claude-teams", "vault"],
+    ),
     (
         "Navigate & Arrange",
         &[
@@ -74,9 +77,10 @@ pub(crate) fn usage_line(cmd: &str) -> Option<&'static str> {
             "agent message <target> [--from <name>] <text|-> | agent message --reply-to <id> <text|-> | agent inbox [--surface <target>] [--state <state>] [--limit <n>] [--mark-read]"
         }
         "automation" => "automation <list|reload>",
+        "vault" => "vault <list|resume <surface>>",
         "claude-teams" => "claude-teams [claude-args...]",
         "hooks" => {
-            "hooks <setup|uninstall> [--settings-file <path>] | hooks <feed|message> --source claude"
+            "hooks <setup|uninstall> [--settings-file <path>] | hooks <feed|message|session> --source claude"
         }
         "workspace-group" => {
             "workspace-group <list|create|ungroup|delete|rename|collapse|expand|pin|unpin|add|remove|set-anchor|new-workspace|focus> [options]"
@@ -146,6 +150,7 @@ pub(crate) fn command(cmd: &str) -> Option<String> {
         "workspace-group" => WORKSPACE_GROUP,
         "agent" => AGENT,
         "automation" => AUTOMATION,
+        "vault" => VAULT,
         "claude-teams" => CLAUDE_TEAMS,
         "ping" => PING,
         _ => return None,
@@ -182,7 +187,7 @@ Example:
 "#;
 
 const HOOKS: &str = "Usage: cmux hooks <setup|uninstall> [--settings-file <path>]
-       cmux hooks <feed|message> --source claude
+       cmux hooks <feed|message|session> --source claude
 
   setup      Add cmux's hooks to Claude Code's settings
   uninstall  Remove cmux's hooks from Claude Code's settings
@@ -190,6 +195,8 @@ const HOOKS: &str = "Usage: cmux hooks <setup|uninstall> [--settings-file <path>
   message    Run as Claude Code's UserPromptSubmit, PostToolUse and Stop hook: hand over
              the messages other agents left with `cmux agent message`; on Stop also
              report the turn's end for workspace auto-naming
+  session    Run as Claude Code's SessionStart and SessionEnd hook: record which Claude
+             session runs in this terminal, so it resumes after an app restart
 ";
 
 const DISMISS: &str = "Usage: cmux dismiss-notification (--id <uuid> | --all-read)
@@ -419,6 +426,17 @@ Rules in ~/.config/cmux-linux/automations.json run actions when the app emits an
 
   list    Show the loaded rules, how often each fired, and why any rule was left out
   reload  Read automations.json again
+";
+
+const VAULT: &str = "Usage: cmux vault list
+       cmux vault resume <surface>
+
+Agent sessions that resume when the app restarts: Claude Code sessions reported by
+its hooks (`cmux hooks setup`) and agents from [[vault.agents]] in
+~/.config/cmux-linux/config.toml, found by their running process.
+
+  list    Show each session: surface, workspace, agent, session id, directory
+  resume  Type the session's resume command into its surface again
 ";
 
 const AGENT: &str = r#"Usage: cmux agent message <target> [--from <name>] <text|->
