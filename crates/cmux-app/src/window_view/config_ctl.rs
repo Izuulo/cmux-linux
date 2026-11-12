@@ -25,6 +25,10 @@ pub(super) struct ConfigWatch {
 }
 
 impl ConfigWatch {
+    pub(super) fn env(&self) -> Option<&Env> {
+        self.env.as_ref()
+    }
+
     /// `ghostty_files`: what the startup load read (`Loaded::files`).
     pub(super) fn new(env: Option<Env>, ghostty_files: Vec<PathBuf>) -> Self {
         let toml = Watched::new(env.iter().map(Env::cmux_config_file).collect());
@@ -95,6 +99,9 @@ impl WindowView {
         for view in self.views.values().chain(&self.dock) {
             view.update(cx, |v, cx| v.set_style(style.clone(), cx));
         }
+        if let Some(h) = &self.settings {
+            h.update(cx, |v, _, cx| v.set_style(style.clone(), cx)).ok();
+        }
         window.set_background_appearance(style.background_appearance());
         #[cfg(target_os = "linux")]
         {
@@ -130,5 +137,8 @@ impl WindowView {
         log(&keys.warnings);
         log(&bad);
         self.vault_agents = vault_ctl::load();
+        if let Some(h) = &self.settings {
+            h.update(cx, |v, _, cx| v.toml_changed(cx)).ok();
+        }
     }
 }

@@ -54,6 +54,7 @@ gpui::actions!(
         GoToWorkspace,
         CommandPaletteNext,
         CommandPalettePrevious,
+        OpenSettings,
     ]
 );
 
@@ -117,6 +118,7 @@ pub fn action_for(b: &Binding) -> Option<Box<dyn Action>> {
         "goToWorkspace" => Box::new(GoToWorkspace),
         "commandPaletteNext" => Box::new(CommandPaletteNext),
         "commandPalettePrevious" => Box::new(CommandPalettePrevious),
+        "openSettings" => Box::new(OpenSettings),
         "selectWorkspaceByNumber" => Box::new(SelectWorkspaceByNumber(b.number?)),
         "selectSurfaceByNumber" => Box::new(SelectSurfaceByNumber(b.number?)),
         _ => return None,
@@ -174,6 +176,7 @@ pub const PALETTE: &[(&str, &str)] = &[
     ("switchRightSidebarToDock", "Show Sidebar Dock"),
     ("commandPalette", "Command Palette…"),
     ("goToWorkspace", "Go to Workspace…"),
+    ("openSettings", "Settings…"),
 ];
 
 /// Each action's first chord gpui accepted, as configured (`Super+Shift+P`), for the palette.

@@ -318,9 +318,17 @@ impl WindowView {
                 let Ok(ks) = Keystroke::parse(&chord) else {
                     return Err(RpcError::new("invalid_params", "Invalid combo"));
                 };
+                // The key goes where a real press would: the Settings window when it is in
+                // front, else this one.
+                let other = cx.active_window().filter(|w| *w != window.window_handle());
                 // After this update: the handlers update this view again.
-                window.defer(cx, move |window, cx| {
-                    window.dispatch_keystroke(ks, cx);
+                window.defer(cx, move |window, cx| match other {
+                    Some(w) => {
+                        w.update(cx, |_, w, cx| w.dispatch_keystroke(ks, cx)).ok();
+                    }
+                    None => {
+                        window.dispatch_keystroke(ks, cx);
+                    }
                 });
                 Ok(json!({}))
             }

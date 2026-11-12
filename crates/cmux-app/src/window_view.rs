@@ -39,7 +39,7 @@ mod message_ctl;
 mod notify;
 mod palette;
 mod panel;
-mod rename;
+pub(crate) mod rename;
 pub mod session;
 mod sidebar;
 mod vault_ctl;
@@ -140,6 +140,8 @@ pub struct WindowView {
     /// The config files polled for live apply (M12 plan A1).
     config: config_ctl::ConfigWatch,
     _appearance: Option<Subscription>,
+    /// The Settings window, once opened (M12 plan S1); closed with this window.
+    settings: Option<gpui::WindowHandle<crate::settings::SettingsView>>,
 }
 
 /// Metadata rescan period (plan D2) and PR loop tick (D5).
@@ -232,6 +234,7 @@ impl WindowView {
             vault_agents: vault_ctl::load(),
             config: config_ctl::ConfigWatch::new(env, ghostty_files),
             _appearance: None,
+            settings: None,
         };
         this._tasks = vec![
             Self::meta_loop(cx),
@@ -781,6 +784,7 @@ impl Render for WindowView {
             .on_action(
                 cx.listener(|this, _: &GoToWorkspace, w, cx| this.toggle_palette(false, w, cx)),
             )
+            .on_action(cx.listener(|this, _: &OpenSettings, _, cx| this.open_settings(cx)))
             .capture_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, w, cx| {
                 if ev.keystroke.key != "escape" {
                     return;
@@ -822,6 +826,13 @@ impl Render for WindowView {
 }
 
 impl WindowView {
+    fn open_settings(&mut self, cx: &mut Context<Self>) {
+        let Some(env) = self.config.env().cloned() else {
+            return eprintln!("cmux-linux: no config directory, so no Settings");
+        };
+        self.settings = crate::settings::open(self.settings.take(), env, self.style.clone(), cx);
+    }
+
     fn cycle(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.workspaces.cycle(forward) {
             let id = self.workspaces.selected();

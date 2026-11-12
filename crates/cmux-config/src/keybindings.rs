@@ -87,6 +87,8 @@ pub const DEFAULTS: &[(&str, &[&str])] = &[
     ("goToWorkspace", &["super+p"]),
     ("commandPaletteNext", &["ctrl+n"]),
     ("commandPalettePrevious", &["ctrl+p"]),
+    // Settings window (M12 plan S1): cmux ⌘,.
+    ("openSettings", &["super+,"]),
 ];
 
 const NUMBERED: &[&str] = &["selectSurfaceByNumber", "selectWorkspaceByNumber"];

@@ -476,7 +476,13 @@ impl WindowView {
                 this.save_session(cx);
                 async {}
             }),
-            cx.on_release(|this, cx| this.save_session(cx)),
+            cx.on_release(|this, cx| {
+                this.save_session(cx);
+                // Otherwise the open Settings window would keep the app running.
+                if let Some(h) = this.settings.take() {
+                    h.update(cx, |_, window, _| window.remove_window()).ok();
+                }
+            }),
         ];
     }
 }
