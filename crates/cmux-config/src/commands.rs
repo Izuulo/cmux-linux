@@ -64,7 +64,8 @@ pub struct Command {
     pub run: Run,
     /// What trust is kept for: the command text, or the `workspace` object as JSON.
     pub fingerprint: String,
-    /// The file it came from (canonical when possible).
+    /// The file it came from, as found (not canonical: trust is keyed on it, and a symlinked
+    /// project file must not borrow its target's trust).
     pub source: PathBuf,
     /// From a project file, not the global one: asks before running until trusted.
     pub project: bool,
@@ -100,11 +101,10 @@ pub fn find_project(dir: &Path) -> Option<PathBuf> {
 /// fine.
 pub fn load(global: Option<&Path>, cwd: Option<&Path>) -> Loaded {
     let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
-    let global = global.map(canon);
+    let global = global.map(Path::to_path_buf);
     let project = cwd
         .and_then(find_project)
-        .map(|p| canon(&p))
-        .filter(|p| Some(p) != global.as_ref());
+        .filter(|p| global.as_deref().map(canon) != Some(canon(p)));
     let mut out = Loaded::default();
     for (path, is_project) in [(project, true), (global, false)] {
         let Some(path) = path else { continue };
@@ -306,7 +306,11 @@ fn node(v: &Value, depth: usize, i: usize, warnings: &mut Vec<String>) -> Result
                     command: string(s, "command")?,
                     cwd: string(s, "cwd")?,
                     env: env(s)?,
-                    focus: s.get("focus").and_then(Value::as_bool).unwrap_or(false),
+                    focus: match s.get("focus") {
+                        None => false,
+                        Some(Value::Bool(b)) => *b,
+                        Some(_) => return Err("`focus` must be true or false".into()),
+                    },
                 });
             }
             if list.is_empty() {
@@ -570,6 +574,10 @@ mod tests {
                 r#"{"commands":[{"name":"a","workspace":{"layout":{"direction":"vertical","children":[]}}}]}"#,
                 "exactly 2 children",
             ),
+            (
+                r#"{"commands":[{"name":"a","workspace":{"layout":{"pane":{"surfaces":[{"type":"terminal","focus":"yes"}]}}}}]}"#,
+                "`focus` must be",
+            ),
             (r#"{"commands":["#, "EOF"),
         ] {
             let e = one(text).unwrap_err();
@@ -669,6 +677,18 @@ mod tests {
         let mut confirm = c.clone();
         confirm.confirm = true;
         assert!(t.needs_prompt(&confirm));
+        // A symlink to a trusted file is a different file.
+        let link = d.0.join("link/cmux.json");
+        std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&src, &link).unwrap();
+        std::fs::write(
+            &src,
+            json!({"commands": [{"name": "x", "command": "make"}]}).to_string(),
+        )
+        .unwrap();
+        let found = load(None, Some(link.parent().unwrap()));
+        assert_eq!(found.commands[0].source, link);
+        assert!(t.needs_prompt(&found.commands[0]));
         let mut global = c.clone();
         global.project = false;
         global.fingerprint = "anything".into();

@@ -95,7 +95,12 @@ impl WindowView {
         }
         let title = commands::sanitize(&c.name);
         let detail = format!(
-            "This project action comes from:\n\n{}\n\nIt will run:\n\n{}",
+            "This {} comes from:\n\n{}\n\nIt will run:\n\n{}",
+            if c.project {
+                "project action"
+            } else {
+                "action"
+            },
             commands::sanitize(&c.source.display().to_string()),
             commands::disclosure(&c),
         );
