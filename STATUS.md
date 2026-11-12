@@ -89,7 +89,7 @@ Plasma ≤6.6 blur (`org_kde_kwin_blur`): only if Task 8 finds no `ext_backgroun
 - **M1 exit criteria 2–3:** take the screenshot pair and run `CMUX_TRACE_LATENCY=1` next time the user is at the desktop.
 - Mouse: touchpad may scroll ~3× Ghostty's rate; no drag threshold, shift-click extend, autoscroll, horizontal wheel; mouse glue untested.
 - Render: underline styles simplified; per-cell Font clone in prepaint; blink task always wakes.
-- IME: preedit has no background and isn't clamped; `bounds_for_range` approximate.; real IME (fcitx/ibus) unverified.
+- IME: preedit has no background and isn't clamped; `bounds_for_range` approximate; real IME (fcitx/ibus) unverified.
 - PTY: `resize` locks on GUI thread.
 - Term: epoch over-invalidates on any ESC[3J; title/bell coalesced per feed.
 - Config: quoted `?` path handling; theme files' own `theme`/`config-file` lines ignored.
