@@ -197,6 +197,31 @@ to commands, deleting it back to workspaces. Up/Down or Ctrl+N/Ctrl+P
 (`commandPaletteNext`/`commandPalettePrevious`, only inside the palette) move, Enter runs,
 Escape or a click outside closes. Pressing the same shortcut again closes it.
 
+### Custom commands (`cmux.json`)
+
+The palette also lists `Custom: <name>` rows from `cmux.json`: the project file, found by
+walking up from the selected workspace's directory (`.cmux/cmux.json` before `cmux.json` in
+each directory), and `~/.config/cmux-linux/cmux.json`. Project commands win by name. Only
+`commands` is read, in cmux's format:
+
+```json
+{"commands": [
+  {"name": "test", "keywords": ["check"], "command": "cargo test"},
+  {"name": "dev", "restart": "recreate", "workspace": {
+    "cwd": "web", "env": {"PORT": "3000"},
+    "layout": {"direction": "horizontal", "split": 0.5, "children": [
+      {"pane": {"surfaces": [{"type": "terminal", "command": "npm run dev"}]}},
+      {"pane": {"surfaces": [{"type": "terminal", "cwd": "~", "focus": true}]}}]}}}
+]}
+```
+
+`command` is typed into the focused terminal; `workspace` opens a workspace with that layout
+(`restart`: `new`, `ignore`, `recreate` or `confirm` when one with that title exists). A
+command from a project file asks before it runs (Run, Trust and Run, Cancel); trust is kept
+per file and exact command in `~/.local/state/cmux-linux/trusted-commands.json`, so a changed
+command asks again. `"confirm": true` always asks. A file that fails to parse shows a
+`cmux.json: <error>` row.
+
 ## Window buttons
 
 On Linux the window has no system title bar or border. Close, minimize and maximize are the
