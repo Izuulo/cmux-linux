@@ -552,8 +552,11 @@ impl WindowView {
     /// `REMOTE_EVERY`, the remote cwd from OSC 7 when the remote shell sends one.
     fn remote_loop(cx: &mut Context<Self>) -> Task<()> {
         cx.spawn(async move |this, cx| {
+            let mut first = true;
             loop {
-                cx.background_executor().timer(REMOTE_EVERY).await;
+                if !std::mem::take(&mut first) {
+                    cx.background_executor().timer(REMOTE_EVERY).await;
+                }
                 let Ok(jobs) = this.read_with(cx, |s, cx| {
                     s.views
                         .iter()

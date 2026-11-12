@@ -145,15 +145,45 @@ fn run(argv: &[String]) -> Result<String, String> {
     }
 }
 
+/// A workspace's `remote` from JSON (socket or `session.json`): a non-empty array of strings
+/// starting with `ssh`; anything else is None.
+pub fn argv_from_json(v: &serde_json::Value) -> Option<Vec<String>> {
+    let argv: Vec<String> = v
+        .as_array()?
+        .iter()
+        .map(|s| s.as_str().map(str::to_string))
+        .collect::<Option<_>>()?;
+    (argv.len() > 1 && argv[0] == "ssh").then_some(argv)
+}
+
+/// Blocking: whether the workspace's ssh master is up (`ssh -O check`).
+pub fn master_up(argv: &[String]) -> bool {
+    check_argv(argv).is_some_and(|a| run(&a).is_ok())
+}
+
 /// Blocking: the sidebar for one remote workspace, or just the host while no master is up.
 pub fn poll(argv: &[String], cwd: Option<&str>) -> WorkspaceMeta {
     let dest = argv.last().map_or("", String::as_str);
-    let up = check_argv(argv).is_some_and(|a| run(&a).is_ok());
+    let up = master_up(argv);
     let out = up
         .then(|| probe_argv(argv, cwd))
         .flatten()
         .and_then(|a| run(&a).ok());
     meta(dest, cwd, out.as_deref())
+}
+
+/// What a drop types: each path shell-quoted, in drop order, an image as its next `uploaded`
+/// remote path (empty `uploaded`: all local).
+pub fn drop_text(paths: &[std::path::PathBuf], uploaded: &[String]) -> String {
+    let mut up = uploaded.iter();
+    paths
+        .iter()
+        .map(|p| match up.len() > 0 && is_image(p) {
+            true => quote(up.next().map_or("", String::as_str)),
+            false => quote(&p.to_string_lossy()),
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub fn is_image(path: &Path) -> bool {
@@ -214,7 +244,9 @@ pub fn upload_argvs(argv: &[String], home: &str, files: &[&Path]) -> Option<Uplo
 pub fn upload(argv: &[String], files: &[&Path]) -> Result<Vec<String>, String> {
     let prep = ssh_argv(
         argv,
-        &[r#"mkdir -p -m700 ~/.cache/cmux/paste && printf %s "$HOME""#],
+        &[
+            r#"mkdir -p -m700 ~/.cache/cmux/paste && chmod 700 ~/.cache/cmux/paste && printf %s "$HOME""#,
+        ],
     )
     .ok_or("not a cmux ssh workspace")?;
     let out = run(&prep)?;
@@ -246,6 +278,34 @@ mod tests {
             .split(' ')
             .map(String::from)
             .collect()
+    }
+
+    #[test]
+    fn drop_text_keeps_order_and_quotes() {
+        let paths: Vec<_> = ["/l/a b.png", "/l/n.txt", "/l/c.gif"]
+            .map(std::path::PathBuf::from)
+            .to_vec();
+        assert_eq!(drop_text(&paths, &[]), "'/l/a b.png' /l/n.txt /l/c.gif");
+        let up = ["/h/p/1.png".to_string(), "/h/p/2 x.gif".into()];
+        assert_eq!(drop_text(&paths, &up), "/h/p/1.png /l/n.txt '/h/p/2 x.gif'");
+    }
+
+    #[test]
+    fn remote_json_must_be_an_ssh_argv() {
+        use serde_json::json;
+        assert_eq!(
+            argv_from_json(&json!(["ssh", "-tt", "h"])),
+            Some(vec!["ssh".into(), "-tt".into(), "h".into()])
+        );
+        for bad in [
+            json!(["ssh", "-tt", 5, "h"]),
+            json!(["bash", "h"]),
+            json!(["ssh"]),
+            json!("ssh h"),
+            json!([]),
+        ] {
+            assert_eq!(argv_from_json(&bad), None, "{bad}");
+        }
     }
 
     #[test]

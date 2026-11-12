@@ -85,6 +85,7 @@ fn ssh_rejects_bad_input() {
     for (args, want) in [
         (vec!["ssh"], "Usage: cmux ssh"),
         (vec!["ssh", "-oProxyCommand=x"], "invalid destination"),
+        (vec!["ssh", "ssh://u@h:22"], "is a URI"),
         (vec!["ssh", "h", "--port", "0"], "--port must be"),
         (vec!["ssh", "h", "--port", "x"], "--port must be"),
         (

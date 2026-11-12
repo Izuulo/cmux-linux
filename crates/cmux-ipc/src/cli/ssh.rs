@@ -7,7 +7,7 @@ use super::commands::{Flags, parse_bool};
 use super::{CliError, Cmd, fail};
 use crate::ssh::{self, Target};
 
-const USAGE: &str = "Usage: cmux ssh <destination> [--port <n>] [--identity <path>] [--name <title>] [--command <text>] [--ssh-option <opt>]... [--focus <true|false>]";
+const USAGE: &str = "Usage: cmux ssh <destination> [--port <n>] [--identity <path>] [--name <title>] [--command <text>] [--ssh-option <opt>]... [--focus <true|false>] [--window <id|ref|index>]";
 
 pub(crate) fn ssh(cmd: &mut Cmd) -> Result<String, CliError> {
     let args = cmd.args.clone();
@@ -53,6 +53,12 @@ pub(crate) fn ssh(cmd: &mut Cmd) -> Result<String, CliError> {
     // ssh would read it as an option.
     if dest.starts_with('-') {
         return fail(format!("ssh: invalid destination `{dest}`"));
+    }
+    // The sidebar probe and scp take `host` and `host:path`, not URIs.
+    if dest.starts_with("ssh://") {
+        return fail(format!(
+            "ssh: `{dest}` is a URI; use user@host and --port instead"
+        ));
     }
     t.destination = dest;
     if let Some(p) = values.get("--port") {

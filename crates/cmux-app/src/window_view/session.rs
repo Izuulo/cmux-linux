@@ -302,15 +302,8 @@ pub fn from_json(v: &Value) -> Option<Saved> {
                 auto_title: b(w, "auto_title"),
                 group: w.get("group").and_then(Value::as_u64).map(|g| g as usize),
                 layout: layout_from(w)?,
-                remote: w
-                    .get("remote")
-                    .and_then(Value::as_array)
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(|s| Some(s.as_str()?.to_string()))
-                            .collect::<Vec<_>>()
-                    })
-                    .filter(|a| !a.is_empty()),
+                // A malformed one restores as a local workspace, never as another command.
+                remote: w.get("remote").and_then(cmux_meta::remote::argv_from_json),
             })
         })
         .collect::<Option<Vec<_>>>()?;
@@ -567,6 +560,13 @@ mod tests {
     fn json_round_trips() {
         let s = sample();
         assert_eq!(from_json(&to_json(&s)), Some(s));
+    }
+
+    #[test]
+    fn a_malformed_remote_restores_local() {
+        let mut v = to_json(&sample());
+        v["workspaces"][0]["remote"] = json!(["ssh", "-tt", 5, "h"]);
+        assert_eq!(from_json(&v).unwrap().workspaces[0].remote, None);
     }
 
     #[test]

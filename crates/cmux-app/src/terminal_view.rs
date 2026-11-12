@@ -345,14 +345,12 @@ impl TerminalView {
     /// workspace images are first uploaded and their remote paths typed (M11 plan S4).
     fn file_drop(&mut self, paths: &ExternalPaths, _: &mut Window, cx: &mut Context<Self>) {
         let paths = paths.paths().to_vec();
-        let local = |p: &std::path::Path| remote::quote(&p.to_string_lossy());
         let Some(argv) = self
             .remote
             .clone()
             .filter(|_| paths.iter().any(|p| remote::is_image(p)))
         else {
-            let text = paths.iter().map(|p| local(p)).collect::<Vec<_>>().join(" ");
-            return self.send_input(text.into_bytes(), cx);
+            return self.send_input(remote::drop_text(&paths, &[]).into_bytes(), cx);
         };
         cx.spawn(async move |this, cx| {
             let images: Vec<_> = paths
@@ -368,18 +366,7 @@ impl TerminalView {
                 })
                 .await;
             let _ = this.update(cx, |view, cx| match uploaded {
-                Ok(mut remote_paths) => {
-                    remote_paths.reverse();
-                    let text = paths
-                        .iter()
-                        .map(|p| match remote::is_image(p) {
-                            true => remote::quote(&remote_paths.pop().unwrap_or_default()),
-                            false => local(p),
-                        })
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    view.send_input(text.into_bytes(), cx);
-                }
+                Ok(up) => view.send_input(remote::drop_text(&paths, &up).into_bytes(), cx),
                 Err(e) => cx.emit(TerminalEvent::Notify {
                     title: "Upload failed".into(),
                     body: e,
