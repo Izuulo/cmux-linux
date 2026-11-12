@@ -7,3 +7,4 @@ pub mod ghostty;
 pub mod keybindings;
 pub mod ui;
 pub mod vault;
+pub mod watch;

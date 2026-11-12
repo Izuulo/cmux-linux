@@ -71,6 +71,11 @@ pub struct Loaded {
     pub config: Config,
     /// One line each, `path:line: key: problem`. Never fatal.
     pub warnings: Vec<String>,
+    /// What a change to should reload: both main-file names (read or not), every include read,
+    /// and the theme file.
+    // shortcut: a missing optional include or a newly shadowing user theme is not watched; add
+    // their candidate paths if someone relies on creating one live.
+    pub files: Vec<PathBuf>,
 }
 
 struct Entry {
@@ -83,13 +88,13 @@ struct Entry {
 /// order (later wins).
 pub fn load(env: &Env) -> Loaded {
     let mut warnings = Vec::new();
-    let main = ["config.ghostty", "config"]
+    let mut files: Vec<PathBuf> = ["config.ghostty", "config"]
         .iter()
         .map(|name| env.config_dir.join(name))
-        .find(|p| p.is_file());
+        .collect();
     let mut user = Vec::new();
-    if let Some(main) = main {
-        read_with_includes(env, &main, &mut user, &mut warnings);
+    if let Some(main) = files.iter().find(|p| p.is_file()).cloned() {
+        read_with_includes(env, &main, &mut user, &mut warnings, &mut files);
     }
 
     let mut config = Config::default();
@@ -99,12 +104,17 @@ pub fn load(env: &Env) -> Loaded {
                 let mut entries = Vec::new();
                 read_file(&path, &mut entries, &mut Vec::new(), &mut warnings);
                 apply_all(&mut config, &entries, &mut warnings);
+                files.push(path);
             }
             Err(e) => warnings.push(format!("{}: theme: {e}", theme.origin)),
         }
     }
     apply_all(&mut config, &user, &mut warnings);
-    Loaded { config, warnings }
+    Loaded {
+        config,
+        warnings,
+        files,
+    }
 }
 
 fn apply_all(config: &mut Config, entries: &[Entry], warnings: &mut Vec<String>) {
@@ -142,7 +152,13 @@ fn read_file(
 
 /// Ghostty's `loadRecursiveFiles`: a FIFO queue, so the main file's includes load before
 /// the includes they add. Each file is read once; a repeat is reported as a cycle.
-fn read_with_includes(env: &Env, main: &Path, out: &mut Vec<Entry>, warnings: &mut Vec<String>) {
+fn read_with_includes(
+    env: &Env,
+    main: &Path,
+    out: &mut Vec<Entry>,
+    warnings: &mut Vec<String>,
+    files: &mut Vec<PathBuf>,
+) {
     let mut queue = VecDeque::from([main.to_path_buf()]);
     // Canonical paths read so far. Never popped, so cycle detection covers the whole load.
     let mut visited: Vec<PathBuf> = Vec::new();
@@ -179,6 +195,7 @@ fn read_with_includes(env: &Env, main: &Path, out: &mut Vec<Entry>, warnings: &m
                 None => dir.join(name),
             };
             if target.is_file() {
+                files.push(target.clone());
                 queue.push_back(target);
             } else if !optional {
                 warnings.push(format!("{}: config-file not found: {name}", path.display()));
@@ -348,10 +365,26 @@ mod tests {
             "ghostty/config.ghostty",
             "background = #000000\ntheme = Night\n",
         );
-        let cfg = load(&env).config;
+        let loaded = load(&env);
+        let cfg = loaded.config;
         assert_eq!(cfg.palette[1], Some(RED));
         assert_eq!(cfg.foreground, BLACK, "from theme");
         assert_eq!(cfg.background, BLACK, "user overrides theme");
+        assert!(loaded.files.contains(&root.join("res/themes/Night")));
+    }
+
+    #[test]
+    fn files_lists_both_main_names_and_includes_read() {
+        let (root, env) = fixture("files");
+        write(
+            &root,
+            "ghostty/config",
+            "config-file = extra\nconfig-file = ?missing\n",
+        );
+        write(&root, "ghostty/extra", "");
+        let files = load(&env).files;
+        let want = ["ghostty/config.ghostty", "ghostty/config", "ghostty/extra"];
+        assert_eq!(files, want.map(|f| root.join(f)));
     }
 
     #[test]
