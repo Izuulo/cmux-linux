@@ -111,7 +111,49 @@ impl WorkspaceView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        Self::build(id, false, shell, style, cwd, window, cx)
+        Self::build(
+            id,
+            false,
+            shell,
+            style,
+            Layout::new(),
+            vec![cwd],
+            window,
+            cx,
+        )
+    }
+
+    /// A workspace (or, with `dock`, the Dock) rebuilt from `session.json` (M10 plan L5, L6):
+    /// `cwds` are per surface in `Layout::surfaces` order. Surfaces whose shell fails are
+    /// dropped; `has_terminals` is false when none started.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn restore(
+        id: WorkspaceId,
+        dock: bool,
+        shell: Rc<ShellEnv>,
+        style: Rc<TermStyle>,
+        layout: Layout,
+        cwds: Vec<Option<String>>,
+        top_inset: f32,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let mut this = Self::build(id, dock, shell, style, layout, cwds, window, cx);
+        this.top_inset = top_inset;
+        this
+    }
+
+    /// The tree's shape, the focused pane (tree order) and each surface's cwd in
+    /// `Layout::surfaces` order (M10 plan L3).
+    pub(crate) fn saved(&self, cx: &App) -> (cmux_core::Shape, usize, Vec<Option<String>>) {
+        let (shape, focused) = self.layout.shape();
+        let cwds = self
+            .layout
+            .surfaces()
+            .iter()
+            .map(|s| self.surfaces.get(s).and_then(|s| s.view.read(cx).cwd()))
+            .collect();
+        (shape, focused, cwds)
     }
 
     /// The window's Dock: the same panes, tabs and splits under the right sidebar's bar.
@@ -124,17 +166,28 @@ impl WorkspaceView {
         cx: &mut Context<Self>,
     ) -> Self {
         // No listed workspace has id 0.
-        let mut this = Self::build(WorkspaceId(0), true, shell, style, cwd, window, cx);
+        let mut this = Self::build(
+            WorkspaceId(0),
+            true,
+            shell,
+            style,
+            Layout::new(),
+            vec![cwd],
+            window,
+            cx,
+        );
         this.top_inset = top_inset;
         this
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build(
         id: WorkspaceId,
         dock: bool,
         shell: Rc<ShellEnv>,
         style: Rc<TermStyle>,
-        cwd: Option<String>,
+        layout: Layout,
+        cwds: Vec<Option<String>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -148,7 +201,7 @@ impl WorkspaceView {
         let mut this = Self {
             id,
             shell,
-            layout: Layout::new(),
+            layout,
             surfaces: HashMap::new(),
             style,
             focus: cx.focus_handle(),
@@ -166,12 +219,18 @@ impl WorkspaceView {
             flash_seq: 0,
             _subscriptions: vec![lost],
         };
-        let first = this.layout.active_surface();
-        if this.add_terminal(first, cwd, window, cx) {
-            this.focus_active(window, cx);
-        } else {
-            this.has_terminals = false;
+        let mut cwds = cwds.into_iter();
+        for surface in this.layout.surfaces() {
+            let cwd = cwds.next().flatten();
+            if !this.add_terminal(surface, cwd, window, cx)
+                && this.layout.close_surface(surface) == Closed::LastSurface
+            {
+                // The last one left failed: nothing started at all.
+                this.has_terminals = false;
+                return this;
+            }
         }
+        this.focus_active(window, cx);
         this
     }
 

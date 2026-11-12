@@ -37,6 +37,7 @@ mod message_ctl;
 mod notify;
 mod panel;
 mod rename;
+pub mod session;
 mod sidebar;
 
 use rename::RenameInput;
@@ -123,6 +124,11 @@ pub struct WindowView {
     /// effect is then inert and its destroy is still allowed (blur.rs).
     #[cfg(target_os = "linux")]
     _blur: Option<crate::blur::WindowBlur>,
+    /// Width, height and maximized, from the last render (M10 `session.json`).
+    window_bounds: Option<(f32, f32, bool)>,
+    /// The last text written to `session.json`.
+    last_saved: Option<String>,
+    _session_subs: Vec<Subscription>,
 }
 
 /// Metadata rescan period (plan D2) and PR loop tick (D5).
@@ -132,8 +138,13 @@ const PR_FETCHES_PER_TICK: usize = 3;
 const GH_DEADLINE: Duration = Duration::from_secs(15);
 
 impl WindowView {
-    /// Quits if the first shell fails to start.
-    pub fn new(style: Rc<TermStyle>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    /// Quits if the first shell fails to start. `saved`: the session to restore (M10).
+    pub fn new(
+        style: Rc<TermStyle>,
+        saved: Option<session::Saved>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         // Blur only when Ghostty asks for it and there is something to see through (plan D4).
         #[cfg(target_os = "linux")]
         let blur = if style.cfg.background_blur && style.cfg.background_opacity < 1.0 {
@@ -199,6 +210,9 @@ impl WindowView {
             desktop_ids: Default::default(),
             #[cfg(target_os = "linux")]
             _blur: blur,
+            window_bounds: None,
+            last_saved: None,
+            _session_subs: Vec::new(),
         };
         this._tasks = vec![Self::meta_loop(cx), Self::pr_loop(cx)];
         if let Some(mut requests) = requests {
@@ -231,11 +245,56 @@ impl WindowView {
                 this.read_selected(window, cx);
             }
         }));
-        let id = this.workspaces.selected();
-        if !this.make_view(id, None, window, cx) {
-            cx.quit();
+        if !saved.is_some_and(|s| this.restore(s, window, cx)) {
+            this.workspaces = Workspaces::new();
+            let id = this.workspaces.selected();
+            if !this.make_view(id, None, window, cx) {
+                cx.quit();
+            }
         }
+        this.start_session_saving(cx);
         this
+    }
+
+    /// Rebuilds the saved workspaces, groups, sidebars and Dock. False (nothing kept) when no
+    /// workspace's shell started.
+    fn restore(
+        &mut self,
+        saved: session::Saved,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        self.workspaces = session::workspaces_from(&saved);
+        let ids: Vec<WorkspaceId> = self.workspaces.list().iter().map(|w| w.id).collect();
+        for (id, ws) in ids.iter().zip(&saved.workspaces) {
+            let (style, shell) = (self.style.clone(), self.shell.clone());
+            let (layout, cwds) = (ws.layout.layout(), ws.layout.cwds.clone());
+            let view = cx.new(|cx| {
+                WorkspaceView::restore(*id, false, shell, style, layout, cwds, 0., window, cx)
+            });
+            if !self.register_view(*id, view, window, cx) && self.workspaces.len() > 1 {
+                self.workspaces.close(*id);
+            }
+        }
+        if self.views.is_empty() {
+            return false;
+        }
+        self.sidebar_visible = saved.sidebar_visible;
+        self.sidebar_width = saved.sidebar_width;
+        self.right_sidebar_open = saved.right_open;
+        self.right_mode = if saved.right_dock {
+            dock::RightMode::Dock
+        } else {
+            dock::RightMode::Feed
+        };
+        self.right_width = saved.right_width;
+        if let Some(d) = &saved.dock {
+            self.dock_seeded = true;
+            self.restore_dock(d, window, cx);
+        }
+        let sel = self.workspaces.selected();
+        self.select(sel, window, cx);
+        true
     }
 
     pub fn workspaces(&self) -> &Workspaces {
@@ -252,6 +311,17 @@ impl WindowView {
     ) -> bool {
         let (style, shell) = (self.style.clone(), self.shell.clone());
         let view = cx.new(|cx| WorkspaceView::new(id, shell, style, cwd, window, cx));
+        self.register_view(id, view, window, cx)
+    }
+
+    /// Subscribes to and lists a new view; false if its shell failed to start.
+    fn register_view(
+        &mut self,
+        id: WorkspaceId,
+        view: Entity<WorkspaceView>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
         if !view.read(cx).has_terminals() {
             return false;
         }
@@ -528,6 +598,7 @@ impl Focusable for WindowView {
 
 impl Render for WindowView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.note_window_bounds(window);
         if !cx.has_active_drag() {
             self.drop_gap = None;
             self.dragging = None;
@@ -558,6 +629,7 @@ impl Render for WindowView {
             .on_action(
                 cx.listener(|this, _: &NewWorkspace, w, cx| this.new_workspace(false, w, cx)),
             )
+            .on_action(cx.listener(|_, _: &Quit, _, cx| cx.quit()))
             .on_action(cx.listener(|this, _: &CloseWorkspace, w, cx| {
                 let id = this.workspaces.selected();
                 this.request_close(id, w, cx);

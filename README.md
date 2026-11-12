@@ -42,7 +42,8 @@ original. It is a **local app**: no cloud services, no browser, no account.
 
 Also here: an agent approval Feed, workspace groups, a Dock, agent-to-agent
 messages, workspace auto-naming, automations and Claude Code teams in splits
-(below). Later: session restore, a command palette and SSH workspaces.
+(below), and the layout comes back after a restart. Later: agent session resume,
+opt-in tmux persistence, a command palette and SSH workspaces.
 
 ## How it's built
 
@@ -468,6 +469,16 @@ Not ported from cmux: the tidy teammate column (splits go where Claude asks, and
 there is no room), `capture-pane`, tmux windows and sessions, and restoring a team after a
 restart. A tmux command the script doesn't know fails with "Unsupported tmux compatibility
 command", so a new Claude Code version shows what it needs.
+
+## Session restore
+
+Quitting (Super+Q) and starting again brings back the window size, both sidebars, the
+workspaces with their names, groups, splits, tabs and focus, the Dock, and each terminal's
+directory. The app saves to `~/.local/state/cmux-linux/session.json` every 8 seconds when
+something changed and once more on quit, so a crash loses at most the last few seconds. Only
+the layout comes back: each terminal starts a new shell, and scrollback, notifications, the
+Feed and agent messages are not kept. Start with `CMUX_DISABLE_SESSION_RESTORE=1` (or any
+argument) to skip it; a file that can't be read is moved to `session.json.bad`.
 
 ## Contributing
 

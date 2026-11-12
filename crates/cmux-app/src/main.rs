@@ -49,10 +49,19 @@ fn main() {
             } else {
                 WindowBackgroundAppearance::Transparent
             };
-        let bounds = Bounds::centered(None, size(px(1100.), px(700.)), cx);
+        let saved = cmux_app::window_view::session::load();
+        let (w, h, maximized) = saved.as_ref().map_or((1100., 700., false), |s| {
+            (s.width.max(300.), s.height.max(400.), s.maximized)
+        });
+        let bounds = Bounds::centered(None, size(px(w), px(h)), cx);
+        let window_bounds = if maximized {
+            WindowBounds::Maximized(bounds)
+        } else {
+            WindowBounds::Windowed(bounds)
+        };
         cx.open_window(
             WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                window_bounds: Some(window_bounds),
                 window_background,
                 app_id: Some("cmux-linux".into()),
                 // We draw the window buttons ourselves (csd.rs); macOS keeps its title bar.
@@ -60,7 +69,7 @@ fn main() {
                     .then_some(gpui::WindowDecorations::Client),
                 ..Default::default()
             },
-            |window, cx| cx.new(|cx| WindowView::new(style, window, cx)),
+            |window, cx| cx.new(|cx| WindowView::new(style, saved, window, cx)),
         )
         .expect("open window");
         cx.activate(true);
