@@ -80,6 +80,11 @@ pub const DEFAULTS: &[(&str, &[&str])] = &[
     ("newWorkspaceGroup", &["ctrl+super+g"]),
     ("toggleFocusedWorkspaceGroupCollapsed", &["ctrl+super+."]),
     ("switchRightSidebarToDock", &["ctrl+5"]),
+    // Command palette (M11 plan P1, P2); Next/Previous only inside it.
+    ("commandPalette", &["super+shift+p"]),
+    ("goToWorkspace", &["super+p"]),
+    ("commandPaletteNext", &["ctrl+n"]),
+    ("commandPalettePrevious", &["ctrl+p"]),
 ];
 
 const NUMBERED: &[&str] = &["selectSurfaceByNumber", "selectWorkspaceByNumber"];
@@ -89,11 +94,36 @@ const NUMBERED: &[&str] = &["selectSurfaceByNumber", "selectWorkspaceByNumber"];
 /// contextless one as deepest); the Feed wins because tab 4's handler lives on WorkspaceView,
 /// off the sidebar's dispatch path, and its later DEFAULTS entry breaks the tie.
 fn context(action: &str) -> Option<&'static str> {
-    matches!(
-        action,
-        "switchRightSidebarToFeed" | "switchRightSidebarToDock"
-    )
-    .then_some("RightSidebar")
+    match action {
+        "switchRightSidebarToFeed" | "switchRightSidebarToDock" => Some("RightSidebar"),
+        "commandPaletteNext" | "commandPalettePrevious" => Some("CommandPalette"),
+        _ => None,
+    }
+}
+
+/// A gpui keystroke (`shift-super-p`) as a hint (`Super+Shift+P`).
+pub fn display(keystroke: &str) -> String {
+    let minus = keystroke
+        .strip_suffix('-')
+        .filter(|m| m.is_empty() || m.ends_with('-'));
+    let (mods, key) = match minus {
+        Some(m) => (m, "-"),
+        None => keystroke.rsplit_once('-').unwrap_or(("", keystroke)),
+    };
+    let mut out: Vec<String> = ["super", "ctrl", "alt", "shift"]
+        .into_iter()
+        .filter(|m| mods.split('-').any(|x| x == *m))
+        .map(|m| {
+            let mut c = m.chars();
+            c.next().unwrap().to_uppercase().chain(c).collect()
+        })
+        .collect();
+    let mut c = key.chars();
+    out.push(
+        c.next()
+            .map_or(String::new(), |f| f.to_uppercase().chain(c).collect()),
+    );
+    out.join("+")
 }
 
 /// What a US-layout Shift turns a key into. gpui on Linux reports Shift+] as key `}` with
@@ -476,6 +506,28 @@ mod tests {
         assert!(k.warnings.is_empty(), "{:?}", k.warnings);
         assert_eq!(chord(&k, "markAllNotificationsRead"), vec!["ctrl-m"]);
         assert_eq!(chord(&k, "clearAllNotifications"), vec!["ctrl-shift-m"]);
+    }
+
+    #[test]
+    fn palette_defaults_bind_like_cmux() {
+        let k = keybindings(None, "config.toml");
+        assert_eq!(keys_for(&k, "commandPalette"), vec!["shift-super-p"]);
+        assert_eq!(keys_for(&k, "goToWorkspace"), vec!["super-p"]);
+        let next = k.bindings.iter().find(|b| b.action == "commandPaletteNext");
+        assert_eq!(
+            next.map(|b| (b.keystroke.as_str(), b.context)),
+            Some(("ctrl-n", Some("CommandPalette")))
+        );
+    }
+
+    #[test]
+    fn keystrokes_display_as_hints() {
+        assert_eq!(display("shift-super-p"), "Super+Shift+P");
+        assert_eq!(display("ctrl-alt-super-]"), "Super+Ctrl+Alt+]");
+        assert_eq!(display("alt-super-left"), "Super+Alt+Left");
+        assert_eq!(display("ctrl--"), "Ctrl+-");
+        assert_eq!(display("-"), "-");
+        assert_eq!(display("ctrl-tab"), "Ctrl+Tab");
     }
 
     #[test]

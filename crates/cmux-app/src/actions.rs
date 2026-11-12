@@ -1,5 +1,7 @@
 //! gpui actions for cmux's shortcuts and binding them from cmux-config's table.
 
+use std::collections::HashMap;
+
 use cmux_config::keybindings::{Binding, Keybindings};
 use gpui::{Action, App, KeyBinding, KeyBindingContextPredicate, PlatformKeyboardMapper};
 
@@ -48,6 +50,10 @@ gpui::actions!(
         NewWorkspaceGroup,
         ToggleWorkspaceGroupCollapsed,
         Quit,
+        CommandPalette,
+        GoToWorkspace,
+        CommandPaletteNext,
+        CommandPalettePrevious,
     ]
 );
 
@@ -107,11 +113,80 @@ pub fn action_for(b: &Binding) -> Option<Box<dyn Action>> {
         "newWorkspaceGroup" => Box::new(NewWorkspaceGroup),
         "toggleFocusedWorkspaceGroupCollapsed" => Box::new(ToggleWorkspaceGroupCollapsed),
         "quit" => Box::new(Quit),
+        "commandPalette" => Box::new(CommandPalette),
+        "goToWorkspace" => Box::new(GoToWorkspace),
+        "commandPaletteNext" => Box::new(CommandPaletteNext),
+        "commandPalettePrevious" => Box::new(CommandPalettePrevious),
         "selectWorkspaceByNumber" => Box::new(SelectWorkspaceByNumber(b.number?)),
         "selectSurfaceByNumber" => Box::new(SelectSurfaceByNumber(b.number?)),
         _ => return None,
     })
 }
+
+/// The palette's commands (M11 plan P3): a title for every `DEFAULTS` action but the numbered
+/// ones (the switcher reaches those) and the palette's own Next/Previous. Titles are cmux's
+/// `ShortcutAction.displayName`.
+pub const PALETTE: &[(&str, &str)] = &[
+    ("copy", "Copy"),
+    ("paste", "Paste"),
+    ("splitRight", "Split Right"),
+    ("splitDown", "Split Down"),
+    ("toggleSplitZoom", "Toggle Pane Zoom"),
+    ("equalizeSplits", "Equalize Splits"),
+    ("resizePaneLeft", "Resize Pane Left"),
+    ("resizePaneRight", "Resize Pane Right"),
+    ("resizePaneUp", "Resize Pane Up"),
+    ("resizePaneDown", "Resize Pane Down"),
+    ("focusLeft", "Focus Pane Left"),
+    ("focusRight", "Focus Pane Right"),
+    ("focusUp", "Focus Pane Up"),
+    ("focusDown", "Focus Pane Down"),
+    ("focusPreviousPane", "Focus Previous Pane"),
+    ("focusNextPane", "Focus Next Pane"),
+    ("newSurface", "New Surface"),
+    ("closeTab", "Close Tab"),
+    ("closeOtherTabsInPane", "Close Other Tabs in Pane"),
+    ("nextSurface", "Next Surface"),
+    ("prevSurface", "Previous Surface"),
+    ("moveSurfaceLeft", "Reorder Surface Left"),
+    ("moveSurfaceRight", "Reorder Surface Right"),
+    ("newTab", "New Workspace"),
+    ("closeWorkspace", "Close Workspace"),
+    ("renameWorkspace", "Rename Workspace"),
+    ("nextSidebarTab", "Next Workspace"),
+    ("prevSidebarTab", "Previous Workspace"),
+    ("moveWorkspaceUp", "Move Workspace Up"),
+    ("moveWorkspaceDown", "Move Workspace Down"),
+    ("toggleSidebar", "Toggle Left Sidebar"),
+    ("quit", "Quit cmux"),
+    ("showNotifications", "Show Notifications"),
+    ("jumpToUnread", "Jump to Latest Unread"),
+    ("markAllNotificationsRead", "Mark All Notifications Read"),
+    ("clearAllNotifications", "Clear All Notifications"),
+    ("toggleRightSidebar", "Toggle Right Sidebar"),
+    ("focusRightSidebar", "Toggle Right Sidebar Focus"),
+    ("switchRightSidebarToFeed", "Show Sidebar Feed"),
+    ("newWorkspaceGroup", "New Workspace Group"),
+    (
+        "toggleFocusedWorkspaceGroupCollapsed",
+        "Toggle Focused Workspace's Group Collapse",
+    ),
+    ("switchRightSidebarToDock", "Show Sidebar Dock"),
+    ("commandPalette", "Command Palette…"),
+    ("goToWorkspace", "Go to Workspace…"),
+];
+
+const NOT_IN_PALETTE: &[&str] = &[
+    "selectSurfaceByNumber",
+    "selectWorkspaceByNumber",
+    "commandPaletteNext",
+    "commandPalettePrevious",
+];
+
+/// Each action's first bound chord as a hint (`Super+Shift+P`), for the palette.
+pub struct Hints(pub HashMap<&'static str, String>);
+
+impl gpui::Global for Hints {}
 
 /// One config binding as a gpui `KeyBinding`: contextless, so one scheme decides precedence
 /// (research-gpui.md §1.5), unless the config limits it to a key context. Never panics: a bad
@@ -136,6 +211,13 @@ pub fn bind(cx: &mut App, keybindings: &Keybindings) -> Vec<String> {
         .map(|b| key_binding(b, mapper.as_ref()))
         .partition(Result::is_ok);
     cx.bind_keys(ok.into_iter().map(Result::unwrap));
+    let mut hints = HashMap::new();
+    for b in &keybindings.bindings {
+        hints
+            .entry(b.action)
+            .or_insert_with(|| cmux_config::keybindings::display(&b.keystroke));
+    }
+    cx.set_global(Hints(hints));
     bad.into_iter().map(|e| e.unwrap_err()).collect()
 }
 
@@ -156,6 +238,16 @@ mod tests {
             };
             assert!(action_for(&b).is_some(), "{name}");
         }
+    }
+
+    #[test]
+    fn the_palette_lists_every_config_action() {
+        for (name, _) in DEFAULTS {
+            let listed = PALETTE.iter().filter(|(a, _)| a == name).count();
+            let want = usize::from(!NOT_IN_PALETTE.contains(name));
+            assert_eq!(listed, want, "{name}");
+        }
+        assert_eq!(PALETTE.len() + NOT_IN_PALETTE.len(), DEFAULTS.len());
     }
 
     fn binding_for(action: &str) -> KeyBinding {
