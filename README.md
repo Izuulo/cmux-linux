@@ -140,7 +140,7 @@ opacity and split options such as `unfocused-split-opacity` and `split-divider-c
 
 To make the app's own text, icons and buttons bigger (the terminal font stays Ghostty's
 `font-size`), set a top-level `ui_scale` in `~/.config/cmux-linux/config.toml`, from 0.5
-to 3.0, then restart:
+to 3.0. Changes apply within a second, no restart needed:
 
 ```toml
 ui_scale = 1.25

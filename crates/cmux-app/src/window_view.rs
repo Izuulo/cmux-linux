@@ -137,6 +137,7 @@ pub struct WindowView {
 /// Metadata rescan period (plan D2) and PR loop tick (D5).
 const META_EVERY: Duration = Duration::from_millis(1500);
 const PR_EVERY: Duration = Duration::from_millis(2000);
+const SCALE_EVERY: Duration = Duration::from_millis(1000);
 const PR_FETCHES_PER_TICK: usize = 3;
 const GH_DEADLINE: Duration = Duration::from_secs(15);
 
@@ -218,7 +219,7 @@ impl WindowView {
             _session_subs: Vec::new(),
             vault_agents: vault_ctl::load(),
         };
-        this._tasks = vec![Self::meta_loop(cx), Self::pr_loop(cx)];
+        this._tasks = vec![Self::meta_loop(cx), Self::pr_loop(cx), Self::scale_loop(cx)];
         if let Some(mut requests) = requests {
             this._tasks.push(cx.spawn_in(window, async move |this, cx| {
                 use futures::StreamExt;
@@ -518,6 +519,38 @@ impl WindowView {
                 Some((w.id, WorkspaceInput { panels }))
             })
             .unzip()
+    }
+
+    /// Re-reads `ui_scale` from config.toml, so a change shows without a restart.
+    fn scale_loop(cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn(async move |this, cx| {
+            let Some((dock, _)) = dock::dock_config_path() else {
+                return;
+            };
+            let config = dock.with_file_name("config.toml");
+            loop {
+                cx.background_executor().timer(SCALE_EVERY).await;
+                let path = config.clone();
+                let new = cx
+                    .background_executor()
+                    .spawn(async move { cmux_config::ui::load(&path) })
+                    .await;
+                let old = crate::ui::scale();
+                if new == old {
+                    continue;
+                }
+                crate::ui::set_scale(new);
+                // Dragged widths keep their look relative to the chrome around them.
+                let applied = this.update(cx, |s, cx| {
+                    s.sidebar_width *= new / old;
+                    s.right_width *= new / old;
+                    cx.refresh_windows();
+                });
+                if applied.is_err() {
+                    break;
+                }
+            }
+        })
     }
 
     fn pr_loop(cx: &mut Context<Self>) -> Task<()> {
