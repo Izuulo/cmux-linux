@@ -9,7 +9,8 @@ fn snapshot_cells(term: &mut Terminal) -> Vec<Vec<Cell>> {
     let mut rs = RenderState::new().unwrap();
     rs.update(term).unwrap();
     let mut rows = Vec::new();
-    rs.walk_rows(|_, _, cells| rows.push(cells.to_vec())).unwrap();
+    rs.walk_rows(|_, _, cells| rows.push(cells.to_vec()))
+        .unwrap();
     rows
 }
 
@@ -66,7 +67,9 @@ fn title_and_pty_callbacks() {
     let tc = title_changed.clone();
     let po = pty_out.clone();
     let callbacks = Callbacks {
-        on_pty_write: Some(Box::new(move |bytes| po.lock().unwrap().extend_from_slice(bytes))),
+        on_pty_write: Some(Box::new(move |bytes| {
+            po.lock().unwrap().extend_from_slice(bytes)
+        })),
         on_title_changed: Some(Box::new(move || *tc.lock().unwrap() = true)),
         on_bell: None,
     };
@@ -87,7 +90,9 @@ fn default_colors_answer_osc_queries() {
 
     let po = pty_out.clone();
     let callbacks = Callbacks {
-        on_pty_write: Some(Box::new(move |bytes| po.lock().unwrap().extend_from_slice(bytes))),
+        on_pty_write: Some(Box::new(move |bytes| {
+            po.lock().unwrap().extend_from_slice(bytes)
+        })),
         on_title_changed: None,
         on_bell: None,
     };
@@ -96,17 +101,41 @@ fn default_colors_answer_osc_queries() {
     term.vt_write(b"\x1b]11;?\x07");
     assert!(pty_out.lock().unwrap().is_empty());
 
-    term.set_default_colors(None, Some(Rgb { r: 0x13, g: 0x14, b: 0x15 }), None);
+    term.set_default_colors(
+        None,
+        Some(Rgb {
+            r: 0x13,
+            g: 0x14,
+            b: 0x15,
+        }),
+        None,
+    );
     term.vt_write(b"\x1b]11;?\x07");
     assert_eq!(&*pty_out.lock().unwrap(), b"\x1b]11;rgb:1313/1414/1515\x07");
 
     pty_out.lock().unwrap().clear();
-    term.set_default_colors(Some(Rgb { r: 0x01, g: 0x02, b: 0x03 }), None, None);
+    term.set_default_colors(
+        Some(Rgb {
+            r: 0x01,
+            g: 0x02,
+            b: 0x03,
+        }),
+        None,
+        None,
+    );
     term.vt_write(b"\x1b]10;?\x07");
     assert_eq!(&*pty_out.lock().unwrap(), b"\x1b]10;rgb:0101/0202/0303\x07");
 
     pty_out.lock().unwrap().clear();
-    term.set_default_colors(None, None, Some(Rgb { r: 0xc0, g: 0xc1, b: 0xb5 }));
+    term.set_default_colors(
+        None,
+        None,
+        Some(Rgb {
+            r: 0xc0,
+            g: 0xc1,
+            b: 0xb5,
+        }),
+    );
     term.vt_write(b"\x1b]12;?\x07");
     assert_eq!(&*pty_out.lock().unwrap(), b"\x1b]12;rgb:c0c0/c1c1/b5b5\x07");
 
@@ -136,7 +165,10 @@ fn replace_defaults_can_clear_prior_embedder_colors_and_cursor() {
             Some(Rgb { r: 7, g: 8, b: 9 })
         )
     );
-    assert_eq!(term.effective_cursor_visual().unwrap(), (CursorShape::Bar, false));
+    assert_eq!(
+        term.effective_cursor_visual().unwrap(),
+        (CursorShape::Bar, false)
+    );
 
     term.replace_default_colors(None, None, None);
     term.replace_default_cursor(None, None);
@@ -146,26 +178,55 @@ fn replace_defaults_can_clear_prior_embedder_colors_and_cursor() {
 
 #[test]
 fn ghostty_config_colors_and_palette_defaults_use_engine_parsers() {
-    assert_eq!(ghostty_vt::parse_color("ForestGreen"), Some(Rgb { r: 0x22, g: 0x8b, b: 0x22 }));
+    assert_eq!(
+        ghostty_vt::parse_color("ForestGreen"),
+        Some(Rgb {
+            r: 0x22,
+            g: 0x8b,
+            b: 0x22
+        })
+    );
     assert_eq!(
         ghostty_vt::parse_palette_entry("0xF = #123456"),
-        Some((15, Rgb { r: 0x12, g: 0x34, b: 0x56 }))
+        Some((
+            15,
+            Rgb {
+                r: 0x12,
+                g: 0x34,
+                b: 0x56
+            }
+        ))
     );
     assert_eq!(ghostty_vt::parse_palette_entry("256=#ffffff"), None);
 
     let mut term = Terminal::new(8, 2, 0, Callbacks::default()).unwrap();
     let mut palette = [None; 256];
-    palette[1] = Some(Rgb { r: 0x44, g: 0x55, b: 0x66 });
+    palette[1] = Some(Rgb {
+        r: 0x44,
+        g: 0x55,
+        b: 0x66,
+    });
     term.set_default_palette(&palette);
     term.vt_write(b"\x1b[31mR");
 
     let mut state = RenderState::new().unwrap();
     state.update(&mut term).unwrap();
-    assert_eq!(state.palette_color(1), Rgb { r: 0x44, g: 0x55, b: 0x66 });
+    assert_eq!(
+        state.palette_color(1),
+        Rgb {
+            r: 0x44,
+            g: 0x55,
+            b: 0x66
+        }
+    );
     assert!(!state.palette_overridden(1));
     assert_eq!(
         state.build_frame().unwrap().row_runs(0).unwrap()[0].fg,
-        Some(Rgb { r: 0x44, g: 0x55, b: 0x66 })
+        Some(Rgb {
+            r: 0x44,
+            g: 0x55,
+            b: 0x66
+        })
     );
 }
 
@@ -188,20 +249,29 @@ fn render_state_cursor_visual_tracks_defaults_and_decscusr() {
     let mut rs = RenderState::new().unwrap();
     rs.update(&mut term).unwrap();
     assert!(!term.cursor_overridden());
-    assert_eq!(term.color_overrides().cursor_visual, Some((CursorShape::Bar, false)));
+    assert_eq!(
+        term.color_overrides().cursor_visual,
+        Some((CursorShape::Bar, false))
+    );
     assert_eq!(rs.cursor_visual().unwrap(), (CursorShape::Bar, false));
 
     term.vt_write(b"\x1b[3");
     term.vt_write(b" q");
     rs.update(&mut term).unwrap();
     assert!(term.cursor_overridden());
-    assert_eq!(term.color_overrides().cursor_visual, Some((CursorShape::Underline, true)));
+    assert_eq!(
+        term.color_overrides().cursor_visual,
+        Some((CursorShape::Underline, true))
+    );
     assert_eq!(rs.cursor_visual().unwrap(), (CursorShape::Underline, true));
 
     term.vt_write(b"\x1b[0 q");
     rs.update(&mut term).unwrap();
     assert!(!term.cursor_overridden());
-    assert_eq!(term.color_overrides().cursor_visual, Some((CursorShape::Bar, false)));
+    assert_eq!(
+        term.color_overrides().cursor_visual,
+        Some((CursorShape::Bar, false))
+    );
     assert_eq!(rs.cursor_visual().unwrap(), (CursorShape::Bar, false));
 }
 
@@ -209,7 +279,10 @@ fn render_state_cursor_visual_tracks_defaults_and_decscusr() {
 fn color_overrides_report_resolved_decscusr_visuals_and_resets() {
     let mut term = Terminal::new(80, 24, 0, Callbacks::default()).unwrap();
     term.set_default_cursor(Some(CursorShape::Bar), Some(false));
-    assert_eq!(term.color_overrides().cursor_visual, Some((CursorShape::Bar, false)));
+    assert_eq!(
+        term.color_overrides().cursor_visual,
+        Some((CursorShape::Bar, false))
+    );
     for (value, expected) in [
         (1, (CursorShape::Block, true)),
         (2, (CursorShape::Block, false)),
@@ -223,15 +296,24 @@ fn color_overrides_report_resolved_decscusr_visuals_and_resets() {
     }
 
     term.vt_write(b"\x1b[0 q");
-    assert_eq!(term.color_overrides().cursor_visual, Some((CursorShape::Bar, false)));
+    assert_eq!(
+        term.color_overrides().cursor_visual,
+        Some((CursorShape::Bar, false))
+    );
     assert!(!term.cursor_overridden());
     term.vt_write(b"\x1b[2 q");
     term.vt_write(b"\x1b[ q");
-    assert_eq!(term.color_overrides().cursor_visual, Some((CursorShape::Bar, false)));
+    assert_eq!(
+        term.color_overrides().cursor_visual,
+        Some((CursorShape::Bar, false))
+    );
     assert!(!term.cursor_overridden());
     term.vt_write(b"\x1b[5 q");
     term.vt_write(b"\x1bc");
-    assert_eq!(term.color_overrides().cursor_visual, Some((CursorShape::Bar, false)));
+    assert_eq!(
+        term.color_overrides().cursor_visual,
+        Some((CursorShape::Bar, false))
+    );
     assert!(!term.cursor_overridden());
 }
 
@@ -239,10 +321,16 @@ fn color_overrides_report_resolved_decscusr_visuals_and_resets() {
 fn effective_cursor_visual_follows_active_screen_and_mode_12() {
     let mut term = Terminal::new(80, 24, 0, Callbacks::default()).unwrap();
     term.set_default_cursor(Some(CursorShape::Block), Some(false));
-    assert_eq!(term.effective_cursor_visual().unwrap(), (CursorShape::Block, false));
+    assert_eq!(
+        term.effective_cursor_visual().unwrap(),
+        (CursorShape::Block, false)
+    );
 
     term.vt_write(b"\x1b[6 q");
-    assert_eq!(term.effective_cursor_visual().unwrap(), (CursorShape::Bar, false));
+    assert_eq!(
+        term.effective_cursor_visual().unwrap(),
+        (CursorShape::Bar, false)
+    );
 
     term.vt_write(b"\x1b[?1049h\x1b[3 q\x1b[?1049l");
     assert_eq!(
@@ -252,8 +340,14 @@ fn effective_cursor_visual_follows_active_screen_and_mode_12() {
     );
 
     term.vt_write(b"\x1b[?12l");
-    assert_eq!(term.effective_cursor_visual().unwrap(), (CursorShape::Bar, false));
-    assert_eq!(term.color_overrides().cursor_visual, Some((CursorShape::Bar, false)));
+    assert_eq!(
+        term.effective_cursor_visual().unwrap(),
+        (CursorShape::Bar, false)
+    );
+    assert_eq!(
+        term.color_overrides().cursor_visual,
+        Some((CursorShape::Bar, false))
+    );
 }
 
 #[test]
@@ -281,7 +375,10 @@ fn cursor_activity_advances_for_same_pair_screen_roundtrips_and_resets() {
 fn cursor_override_tracker_matches_control_string_exits() {
     let mut term = Terminal::new(80, 24, 0, Callbacks::default()).unwrap();
     term.vt_write(b"\x1b]2;not-a-sequence \x1b[3 q\x07");
-    assert!(term.cursor_overridden(), "ESC exits OSC before the following DECSCUSR");
+    assert!(
+        term.cursor_overridden(),
+        "ESC exits OSC before the following DECSCUSR"
+    );
     term.vt_write(b"\x1bc");
     assert!(!term.cursor_overridden());
 
@@ -293,11 +390,17 @@ fn cursor_override_tracker_matches_control_string_exits() {
     term.vt_write(b"\x1bc");
     assert!(!term.cursor_overridden());
     term.vt_write(b"\x1bPab\x18\x1b[3 q");
-    assert!(term.cursor_overridden(), "CAN must abort DCS before the next DECSCUSR");
+    assert!(
+        term.cursor_overridden(),
+        "CAN must abort DCS before the next DECSCUSR"
+    );
     term.vt_write(b"\x1bc");
     assert!(!term.cursor_overridden());
     term.vt_write(b"\x1bPab\x1b[5 q");
-    assert!(term.cursor_overridden(), "ESC must leave DCS before the next DECSCUSR");
+    assert!(
+        term.cursor_overridden(),
+        "ESC must leave DCS before the next DECSCUSR"
+    );
 }
 
 #[test]
@@ -366,7 +469,9 @@ fn assert_theme_portable_replay_boundaries(
             source.vt_stream_is_ground(),
             "complete transcript never reached a snapshot boundary after split {split}"
         );
-        let replay = source.vt_replay_bounded_theme_portable(8 * 1024 * 1024).unwrap();
+        let replay = source
+            .vt_replay_bounded_theme_portable(8 * 1024 * 1024)
+            .unwrap();
 
         let mut mirror = Terminal::new(cols, rows, 100, Callbacks::default()).unwrap();
         mirror.vt_write(&replay);
@@ -449,8 +554,10 @@ fn theme_portable_replay_preserves_zsh_startup_at_every_byte_boundary() {
     let delayed_boundaries =
         assert_theme_portable_replay_boundaries("zsh-startup", ZSH_STARTUP_CAPTURE, 97, 69);
     let osc7 = b"\x1b]7;file://";
-    let osc7_start =
-        ZSH_STARTUP_CAPTURE.windows(osc7.len()).position(|window| window == osc7).unwrap();
+    let osc7_start = ZSH_STARTUP_CAPTURE
+        .windows(osc7.len())
+        .position(|window| window == osc7)
+        .unwrap();
     let unsafe_boundary = osc7_start + 1;
     assert!(
         delayed_boundaries.contains(&unsafe_boundary),
@@ -477,19 +584,25 @@ fn theme_portable_replay_preserves_stream_state_at_every_byte_boundary() {
         ("SGR", b"\x1b[1;31m".as_slice(), 1),
         ("OSC title", b"\x1b]0;title".as_slice(), 1),
     ] {
-        let start =
-            transcript.windows(sequence.len()).position(|window| window == sequence).unwrap();
+        let start = transcript
+            .windows(sequence.len())
+            .position(|window| window == sequence)
+            .unwrap();
         let boundary = start + unsafe_prefix;
         assert!(
             delayed_boundaries.contains(&boundary),
             "unsafe {label} split {boundary} was admitted without waiting"
         );
     }
-    for (sequence, unsafe_prefix) in
-        [(b"\x1bP".as_slice(), 1), (b"\x1b_".as_slice(), 1), (b"\r\x1b[".as_slice(), 2)]
-    {
-        let start =
-            transcript.windows(sequence.len()).position(|window| window == sequence).unwrap();
+    for (sequence, unsafe_prefix) in [
+        (b"\x1bP".as_slice(), 1),
+        (b"\x1b_".as_slice(), 1),
+        (b"\r\x1b[".as_slice(), 2),
+    ] {
+        let start = transcript
+            .windows(sequence.len())
+            .position(|window| window == sequence)
+            .unwrap();
         let boundary = start + unsafe_prefix;
         assert!(
             delayed_boundaries.contains(&boundary),
@@ -514,7 +627,9 @@ fn assert_theme_portable_replay_resumes_mid_sequence(
         let mut source = Terminal::new(cols, rows, 100, Callbacks::default()).unwrap();
         source.vt_write(&transcript[..split]);
         let resumable = source.vt_replay_resumes_stream();
-        let replay = source.vt_replay_bounded_theme_portable_with_aliases(8 * 1024 * 1024).unwrap();
+        let replay = source
+            .vt_replay_bounded_theme_portable_with_aliases(8 * 1024 * 1024)
+            .unwrap();
 
         // Consumers append their own color sequences after the replay bytes,
         // so those must end at a parser boundary. The incomplete sequence is
@@ -580,25 +695,41 @@ fn theme_portable_replay_resumes_zsh_startup_at_every_byte() {
 fn replay_after_invalid_utf8_does_not_duplicate_replacement_characters() {
     // Ghostty prints U+FFFD for an abandoned lead byte, so that byte is part
     // of the snapshot and must not be replayed again as a pending sequence.
-    for prefix in [&b"a\xce\x1b[3"[..], &b"a\xe2\x82\x1b]0;t"[..], &b"a\xf0\x9f\x1b"[..]] {
+    for prefix in [
+        &b"a\xce\x1b[3"[..],
+        &b"a\xe2\x82\x1b]0;t"[..],
+        &b"a\xf0\x9f\x1b"[..],
+    ] {
         let mut source = Terminal::new(20, 2, 0, Callbacks::default()).unwrap();
         source.vt_write(prefix);
         assert!(source.vt_replay_resumes_stream(), "{prefix:?}");
-        let replay = source.vt_replay_bounded_theme_portable(1024 * 1024).unwrap();
+        let replay = source
+            .vt_replay_bounded_theme_portable(1024 * 1024)
+            .unwrap();
         let mut mirror = Terminal::new(20, 2, 0, Callbacks::default()).unwrap();
         mirror.vt_write(&replay);
         for term in [&mut source, &mut mirror] {
             term.vt_write(b"1mX\x07\x1b\\Y");
         }
-        assert_eq!(source.viewport_text().unwrap(), mirror.viewport_text().unwrap(), "{prefix:?}");
-        assert_eq!(snapshot_cells(&mut source), snapshot_cells(&mut mirror), "{prefix:?}");
+        assert_eq!(
+            source.viewport_text().unwrap(),
+            mirror.viewport_text().unwrap(),
+            "{prefix:?}"
+        );
+        assert_eq!(
+            snapshot_cells(&mut source),
+            snapshot_cells(&mut mirror),
+            "{prefix:?}"
+        );
     }
 }
 
 fn pending_after(prefix: &[u8]) -> Vec<u8> {
     let mut term = Terminal::new(20, 3, 0, Callbacks::default()).unwrap();
     term.vt_write(prefix);
-    term.vt_replay_bounded_theme_portable_with_aliases(1024 * 1024).unwrap().pending_sequence
+    term.vt_replay_bounded_theme_portable_with_aliases(1024 * 1024)
+        .unwrap()
+        .pending_sequence
 }
 
 /// A pending sequence must hold only bytes the source parser has not acted
@@ -637,10 +768,16 @@ fn replay_inside_a_csi_does_not_ring_the_bell_again() {
     let mut source = Terminal::new(20, 3, 0, callbacks(&source_rings)).unwrap();
     source.vt_write(b"\x1b[3\x07");
     assert_eq!(*source_rings.lock().unwrap(), 1);
-    let replay = source.vt_replay_bounded_theme_portable(1024 * 1024).unwrap();
+    let replay = source
+        .vt_replay_bounded_theme_portable(1024 * 1024)
+        .unwrap();
     let mut mirror = Terminal::new(20, 3, 0, callbacks(&rings)).unwrap();
     mirror.vt_write(&replay);
-    assert_eq!(*rings.lock().unwrap(), 0, "the replayed pending sequence rang the bell again");
+    assert_eq!(
+        *rings.lock().unwrap(),
+        0,
+        "the replayed pending sequence rang the bell again"
+    );
 }
 
 #[test]
@@ -671,15 +808,29 @@ fn theme_portable_replay_preserves_pending_wrap() {
         source.vt_write(prefix);
         assert!(source.vt_stream_is_ground(), "{label}");
 
-        let replay = source.vt_replay_bounded_theme_portable(8 * 1024 * 1024).unwrap();
+        let replay = source
+            .vt_replay_bounded_theme_portable(8 * 1024 * 1024)
+            .unwrap();
         let mut mirror = Terminal::new(5, 3, 0, Callbacks::default()).unwrap();
         mirror.vt_write(&replay);
 
         source.vt_write(b"X");
         mirror.vt_write(b"X");
-        assert_eq!(snapshot_cells(&mut source), snapshot_cells(&mut mirror), "{label}");
-        assert_eq!(source.cursor_position(), mirror.cursor_position(), "{label}");
-        assert_eq!(source.viewport_text().unwrap(), mirror.viewport_text().unwrap(), "{label}");
+        assert_eq!(
+            snapshot_cells(&mut source),
+            snapshot_cells(&mut mirror),
+            "{label}"
+        );
+        assert_eq!(
+            source.cursor_position(),
+            mirror.cursor_position(),
+            "{label}"
+        );
+        assert_eq!(
+            source.viewport_text().unwrap(),
+            mirror.viewport_text().unwrap(),
+            "{label}"
+        );
     }
 }
 
@@ -689,7 +840,9 @@ fn pending_wrap_replay_preserves_cursor_with_origin_mode() {
     source.vt_write(b"\x1b[2;4r\x1b[?6h\x1b[2;1Habcde");
     assert!(source.mode(6, false));
 
-    let replay = source.vt_replay_bounded_theme_portable(8 * 1024 * 1024).unwrap();
+    let replay = source
+        .vt_replay_bounded_theme_portable(8 * 1024 * 1024)
+        .unwrap();
     let mut mirror = Terminal::new(5, 5, 0, Callbacks::default()).unwrap();
     mirror.vt_write(&replay);
 
@@ -697,7 +850,10 @@ fn pending_wrap_replay_preserves_cursor_with_origin_mode() {
     mirror.vt_write(b"X");
     assert_eq!(snapshot_cells(&mut source), snapshot_cells(&mut mirror));
     assert_eq!(source.cursor_position(), mirror.cursor_position());
-    assert_eq!(source.viewport_text().unwrap(), mirror.viewport_text().unwrap());
+    assert_eq!(
+        source.viewport_text().unwrap(),
+        mirror.viewport_text().unwrap()
+    );
 }
 
 #[test]
@@ -710,7 +866,9 @@ fn pending_wrap_replay_uses_the_active_area_while_viewport_is_scrolled() {
     source.scroll_delta(-2);
     assert!(source.scrollbar().unwrap().scrolled_back());
 
-    let replay = source.vt_replay_bounded_theme_portable(8 * 1024 * 1024).unwrap();
+    let replay = source
+        .vt_replay_bounded_theme_portable(8 * 1024 * 1024)
+        .unwrap();
     let mut mirror = Terminal::new(5, 3, 100, Callbacks::default()).unwrap();
     mirror.vt_write(&replay);
 
@@ -803,18 +961,34 @@ fn vt_replay_preserves_a_hyperlink_across_soft_wrapped_rows() {
     // several physical rows. A replay must retain every query item and the
     // fragment, rather than stopping at the first soft-wrap boundary.
     let source_text = source.selection_text_absolute((0, 0), (19, 7)).unwrap();
-    assert!(source_text.contains("duplicate=2"), "source text was {source_text:?}");
-    assert!(source_text.contains("#frag-B"), "source text was {source_text:?}");
+    assert!(
+        source_text.contains("duplicate=2"),
+        "source text was {source_text:?}"
+    );
+    assert!(
+        source_text.contains("#frag-B"),
+        "source text was {source_text:?}"
+    );
 
     let replay = source.vt_replay_bounded_bytes(1024 * 1024).unwrap();
-    assert!(replay.windows(url.len()).any(|window| window == url.as_bytes()));
+    assert!(
+        replay
+            .windows(url.len())
+            .any(|window| window == url.as_bytes())
+    );
 
     let mut target = Terminal::new(20, 8, 1000, Callbacks::default()).unwrap();
     target.vt_write(&replay);
     let target_text = target.selection_text_absolute((0, 0), (19, 7)).unwrap();
     assert_eq!(target_text, source_text, "replayed soft-wrap text changed");
-    assert!(target_text.contains("duplicate=2"), "target text was {target_text:?}");
-    assert!(target_text.contains("#frag-B"), "target text was {target_text:?}");
+    assert!(
+        target_text.contains("duplicate=2"),
+        "target text was {target_text:?}"
+    );
+    assert!(
+        target_text.contains("#frag-B"),
+        "target text was {target_text:?}"
+    );
 }
 
 #[test]
@@ -831,8 +1005,14 @@ fn vt_replay_preserves_plain_url_text_across_soft_wrapped_rows() {
     target.vt_write(&replay);
     let target_text = target.selection_text_absolute((0, 0), (19, 7)).unwrap();
     assert_eq!(target_text, source_text, "replayed plain URL text changed");
-    assert!(target_text.contains("duplicate=2"), "target text was {target_text:?}");
-    assert!(target_text.contains("#frag-B"), "target text was {target_text:?}");
+    assert!(
+        target_text.contains("duplicate=2"),
+        "target text was {target_text:?}"
+    );
+    assert!(
+        target_text.contains("#frag-B"),
+        "target text was {target_text:?}"
+    );
 }
 
 #[test]
@@ -909,13 +1089,21 @@ fn erased_cells_preserve_indexed_and_rgb_background_specs() {
     indexed.vt_write(b"\x1b[48;5;100m\x1b[K");
     let rows = snapshot_cells(&mut indexed);
     assert!(rows[0].iter().all(|cell| cell.text.is_empty()));
-    assert!(rows[0].iter().all(|cell| cell.bg == ColorSpec::Palette(100)));
+    assert!(
+        rows[0]
+            .iter()
+            .all(|cell| cell.bg == ColorSpec::Palette(100))
+    );
 
     let mut rgb = Terminal::new(5, 1, 0, Callbacks::default()).unwrap();
     rgb.vt_write(b"\x1b[48;2;1;2;3m\x1b[K");
     let rows = snapshot_cells(&mut rgb);
     assert!(rows[0].iter().all(|cell| cell.text.is_empty()));
-    assert!(rows[0].iter().all(|cell| cell.bg == ColorSpec::Rgb(Rgb { r: 1, g: 2, b: 3 })));
+    assert!(
+        rows[0]
+            .iter()
+            .all(|cell| cell.bg == ColorSpec::Rgb(Rgb { r: 1, g: 2, b: 3 }))
+    );
 }
 
 #[test]
@@ -934,7 +1122,11 @@ fn render_state_reports_palette_overrides() {
 fn terminal_tracks_same_valued_osc_palette_overrides_and_resets() {
     let mut term = Terminal::new(5, 1, 0, Callbacks::default()).unwrap();
     let mut defaults = [None; 256];
-    defaults[1] = Some(Rgb { r: 0x44, g: 0x55, b: 0x66 });
+    defaults[1] = Some(Rgb {
+        r: 0x44,
+        g: 0x55,
+        b: 0x66,
+    });
     term.set_default_palette(&defaults);
 
     assert!(!term.palette_overridden(1));
@@ -943,8 +1135,18 @@ fn terminal_tracks_same_valued_osc_palette_overrides_and_resets() {
 
     let mut state = RenderState::new().unwrap();
     state.update(&mut term).unwrap();
-    assert_eq!(state.palette_color(1), Rgb { r: 0x44, g: 0x55, b: 0x66 });
-    assert!(!state.palette_overridden(1), "value equality cannot identify authored state");
+    assert_eq!(
+        state.palette_color(1),
+        Rgb {
+            r: 0x44,
+            g: 0x55,
+            b: 0x66
+        }
+    );
+    assert!(
+        !state.palette_overridden(1),
+        "value equality cannot identify authored state"
+    );
 
     term.vt_write(b"\x1b]4;2;rgb:01/");
     term.vt_write(b"02/03\x1b\\");
@@ -960,79 +1162,202 @@ fn terminal_tracks_same_valued_osc_palette_overrides_and_resets() {
     assert!(term.palette_overridden(8));
     term.vt_write(b"\x1b]21;7=;8=?\x1b\\");
     assert!(!term.palette_overridden(7));
-    assert!(term.palette_overridden(8), "query must not alter authored state");
+    assert!(
+        term.palette_overridden(8),
+        "query must not alter authored state"
+    );
 
     term.vt_write(b"\x1b]21;1_8=#112233;_19=#ffffff;20_=#ffffff\x1b\\");
-    assert!(term.palette_overridden(18), "OSC 21 must accept Zig's embedded underscores");
-    assert!(!term.palette_overridden(19), "OSC 21 must reject a leading underscore");
-    assert!(!term.palette_overridden(20), "OSC 21 must reject a trailing underscore");
+    assert!(
+        term.palette_overridden(18),
+        "OSC 21 must accept Zig's embedded underscores"
+    );
+    assert!(
+        !term.palette_overridden(19),
+        "OSC 21 must reject a leading underscore"
+    );
+    assert!(
+        !term.palette_overridden(20),
+        "OSC 21 must reject a trailing underscore"
+    );
     state.update(&mut term).unwrap();
-    assert_eq!(state.palette_color(18), Rgb { r: 0x11, g: 0x22, b: 0x33 });
+    assert_eq!(
+        state.palette_color(18),
+        Rgb {
+            r: 0x11,
+            g: 0x22,
+            b: 0x33
+        }
+    );
 
     term.vt_write(b"\x1b]4;+19;#223344;-0;#001122;20_;#ffffff\x1b\\");
-    assert!(term.palette_overridden(19), "OSC 4 must accept Zig's positive sign grammar");
-    assert!(term.palette_overridden(0), "OSC 4 must accept Zig's negative zero grammar");
-    assert!(!term.palette_overridden(20), "OSC 4 must reject a trailing underscore");
+    assert!(
+        term.palette_overridden(19),
+        "OSC 4 must accept Zig's positive sign grammar"
+    );
+    assert!(
+        term.palette_overridden(0),
+        "OSC 4 must accept Zig's negative zero grammar"
+    );
+    assert!(
+        !term.palette_overridden(20),
+        "OSC 4 must reject a trailing underscore"
+    );
     state.update(&mut term).unwrap();
-    assert_eq!(state.palette_color(19), Rgb { r: 0x22, g: 0x33, b: 0x44 });
-    assert_eq!(state.palette_color(0), Rgb { r: 0x00, g: 0x11, b: 0x22 });
+    assert_eq!(
+        state.palette_color(19),
+        Rgb {
+            r: 0x22,
+            g: 0x33,
+            b: 0x44
+        }
+    );
+    assert_eq!(
+        state.palette_color(0),
+        Rgb {
+            r: 0x00,
+            g: 0x11,
+            b: 0x22
+        }
+    );
     let original_nine = state.palette_color(9);
     term.vt_write(b"\x9d4;9;#090909\x07");
-    assert!(term.palette_overridden(9), "standalone C1 OSC is normalized before dispatch");
+    assert!(
+        term.palette_overridden(9),
+        "standalone C1 OSC is normalized before dispatch"
+    );
     state.update(&mut term).unwrap();
     assert_eq!(state.palette_color(9), Rgb { r: 9, g: 9, b: 9 });
     term.vt_write(b"\x1b]104;9\x07");
     assert!(!term.palette_overridden(9));
     term.vt_write(b"\xc2\x9d4;9;#090909\x07");
-    assert!(!term.palette_overridden(9), "UTF-8 C1 is printable text, not an OSC opener");
+    assert!(
+        !term.palette_overridden(9),
+        "UTF-8 C1 is printable text, not an OSC opener"
+    );
     state.update(&mut term).unwrap();
     assert_eq!(state.palette_color(9), original_nine);
 
     term.vt_write(b"\x1bPab\x18\x1b]4;10;#0a0a0a\x07");
-    assert!(term.palette_overridden(10), "CAN must abort a non-OSC control string");
+    assert!(
+        term.palette_overridden(10),
+        "CAN must abort a non-OSC control string"
+    );
     term.vt_write(b"\x1bPab\x1b\x1a\x1b]4;11;#0b0b0b\x07");
-    assert!(term.palette_overridden(11), "SUB must abort after an escape in a control string");
+    assert!(
+        term.palette_overridden(11),
+        "SUB must abort after an escape in a control string"
+    );
     term.vt_write(b"\x1b]4;12;#0c0c0c\x1b");
-    assert!(term.palette_overridden(12), "OSC must commit at a split ST's ESC boundary");
+    assert!(
+        term.palette_overridden(12),
+        "OSC must commit at a split ST's ESC boundary"
+    );
     term.vt_write(b"\\");
     assert!(term.palette_overridden(12));
     term.vt_write(b"\x1b]4;13;#0d\x000d0d\x07");
-    assert!(term.palette_overridden(13), "OSC must ignore embedded C0 bytes like Ghostty");
+    assert!(
+        term.palette_overridden(13),
+        "OSC must ignore embedded C0 bytes like Ghostty"
+    );
     state.update(&mut term).unwrap();
-    assert_eq!(state.palette_color(13), Rgb { r: 13, g: 13, b: 13 });
+    assert_eq!(
+        state.palette_color(13),
+        Rgb {
+            r: 13,
+            g: 13,
+            b: 13
+        }
+    );
 
     term.vt_write(b"\x1b\x07]4;14;#0e0e0e\x07");
-    assert!(term.palette_overridden(14), "C0 controls must preserve Ghostty's ESC state");
+    assert!(
+        term.palette_overridden(14),
+        "C0 controls must preserve Ghostty's ESC state"
+    );
     state.update(&mut term).unwrap();
-    assert_eq!(state.palette_color(14), Rgb { r: 14, g: 14, b: 14 });
+    assert_eq!(
+        state.palette_color(14),
+        Rgb {
+            r: 14,
+            g: 14,
+            b: 14
+        }
+    );
 
     let mut oversized = b"\x1b]4;16;#101010".to_vec();
     oversized.extend(std::iter::repeat_n(b';', 2048));
     oversized.push(0x07);
     term.vt_write(&oversized);
-    assert!(!term.palette_overridden(16), "Ghostty rejects fixed OSC capture overflow");
+    assert!(
+        !term.palette_overridden(16),
+        "Ghostty rejects fixed OSC capture overflow"
+    );
     state.update(&mut term).unwrap();
-    assert_ne!(state.palette_color(16), Rgb { r: 16, g: 16, b: 16 });
+    assert_ne!(
+        state.palette_color(16),
+        Rgb {
+            r: 16,
+            g: 16,
+            b: 16
+        }
+    );
 
     term.vt_write(b"\x1b]4;15;#0f0f0f;bad;#010101\x07");
-    assert!(term.palette_overridden(15), "valid OSC 4 prefix must survive a malformed pair");
+    assert!(
+        term.palette_overridden(15),
+        "valid OSC 4 prefix must survive a malformed pair"
+    );
     state.update(&mut term).unwrap();
-    assert_eq!(state.palette_color(15), Rgb { r: 15, g: 15, b: 15 });
+    assert_eq!(
+        state.palette_color(15),
+        Rgb {
+            r: 15,
+            g: 15,
+            b: 15
+        }
+    );
 
     term.vt_write(b"\x1b]4;21;#212121\x07");
     term.vt_write(b"\x1b]104;21\x9d4;22;#222222\x07");
-    assert!(!term.palette_overridden(21), "normalized C1 OSC commits the preceding reset");
-    assert!(term.palette_overridden(22), "normalized C1 OSC begins the following override");
+    assert!(
+        !term.palette_overridden(21),
+        "normalized C1 OSC commits the preceding reset"
+    );
+    assert!(
+        term.palette_overridden(22),
+        "normalized C1 OSC begins the following override"
+    );
     term.vt_write(b"\x1bPq\x9d4;22;#222222\x07");
-    assert!(term.palette_overridden(22), "C1 OSC must leave DCS and begin an OSC");
+    assert!(
+        term.palette_overridden(22),
+        "C1 OSC must leave DCS and begin an OSC"
+    );
     state.update(&mut term).unwrap();
-    assert_eq!(state.palette_color(22), Rgb { r: 0x22, g: 0x22, b: 0x22 });
+    assert_eq!(
+        state.palette_color(22),
+        Rgb {
+            r: 0x22,
+            g: 0x22,
+            b: 0x22
+        }
+    );
 
     term.vt_write(b"\x1b]4;23;#232323\x07");
     term.vt_write(b"\x1b]21;23=\xff\x07");
-    assert!(term.palette_overridden(23), "invalid UTF-8 Kitty values must not become resets");
+    assert!(
+        term.palette_overridden(23),
+        "invalid UTF-8 Kitty values must not become resets"
+    );
     state.update(&mut term).unwrap();
-    assert_eq!(state.palette_color(23), Rgb { r: 0x23, g: 0x23, b: 0x23 });
+    assert_eq!(
+        state.palette_color(23),
+        Rgb {
+            r: 0x23,
+            g: 0x23,
+            b: 0x23
+        }
+    );
 
     term.vt_write(b"\x1b]4;0;#101010\x07");
     let mut too_many_kitty_requests = b"\x1b]21;".to_vec();
@@ -1044,18 +1369,48 @@ fn terminal_tracks_same_valued_osc_palette_overrides_and_resets() {
     }
     too_many_kitty_requests.extend_from_slice(b"\x1b\\");
     term.vt_write(&too_many_kitty_requests);
-    assert!(term.palette_overridden(0), "Ghostty rejects OSC 21 beyond 526 requests");
+    assert!(
+        term.palette_overridden(0),
+        "Ghostty rejects OSC 21 beyond 526 requests"
+    );
     state.update(&mut term).unwrap();
-    assert_eq!(state.palette_color(0), Rgb { r: 0x10, g: 0x10, b: 0x10 });
+    assert_eq!(
+        state.palette_color(0),
+        Rgb {
+            r: 0x10,
+            g: 0x10,
+            b: 0x10
+        }
+    );
 
     term.vt_write(b"\x1b]4;16;#161616\x18");
-    assert!(term.palette_overridden(16), "CAN dispatches Ghostty's valid OSC prefix");
+    assert!(
+        term.palette_overridden(16),
+        "CAN dispatches Ghostty's valid OSC prefix"
+    );
     state.update(&mut term).unwrap();
-    assert_eq!(state.palette_color(16), Rgb { r: 0x16, g: 0x16, b: 0x16 });
+    assert_eq!(
+        state.palette_color(16),
+        Rgb {
+            r: 0x16,
+            g: 0x16,
+            b: 0x16
+        }
+    );
     term.vt_write(b"\x1bPab\x1b]4;17;#171717\x07");
-    assert!(term.palette_overridden(17), "ESC must leave DCS before the next OSC");
+    assert!(
+        term.palette_overridden(17),
+        "ESC must leave DCS before the next OSC"
+    );
     state.update(&mut term).unwrap();
-    assert_eq!(state.palette_color(17), Rgb { r: 0x17, g: 0x17, b: 0x17 });
+    assert_eq!(
+        state.palette_color(17),
+        Rgb {
+            r: 0x17,
+            g: 0x17,
+            b: 0x17
+        }
+    );
 
     term.vt_write(b"\x1b]104;1\x1b\\");
     assert!(!term.palette_overridden(1));
@@ -1073,8 +1428,15 @@ fn terminal_tracks_same_valued_osc_palette_overrides_and_resets() {
     let revision_before_ris = term.color_revision();
     let reapply_before_ris = term.color_reapply_revision();
     term.vt_write(b"\x1bc");
-    assert!(term.palette_overridden(4), "Ghostty RIS preserves palette overrides");
-    assert_ne!(term.color_revision(), revision_before_ris, "RIS must trigger frontend reapply");
+    assert!(
+        term.palette_overridden(4),
+        "Ghostty RIS preserves palette overrides"
+    );
+    assert_ne!(
+        term.color_revision(),
+        revision_before_ris,
+        "RIS must trigger frontend reapply"
+    );
     assert_ne!(
         term.color_reapply_revision(),
         reapply_before_ris,
@@ -1101,7 +1463,10 @@ fn vt_write_returns_the_exact_normalized_stream_across_split_utf8_and_c1_control
         emitted.extend_from_slice(term.vt_write_with_normalized(chunk).as_ref());
     }
 
-    assert_eq!(emitted, b"\xc2\x9fUTF8-continued \x1b_ignored\x1b\\\x1b]4;9;#090909\x1b\\VISIBLE");
+    assert_eq!(
+        emitted,
+        b"\xc2\x9fUTF8-continued \x1b_ignored\x1b\\\x1b]4;9;#090909\x1b\\VISIBLE"
+    );
     assert!(term.palette_overridden(9));
     assert!(term.viewport_text().unwrap().contains("VISIBLE"));
 }
@@ -1110,21 +1475,58 @@ fn vt_write_returns_the_exact_normalized_stream_across_split_utf8_and_c1_control
 fn color_overrides_are_sparse_and_resets_return_to_embedder_defaults() {
     let mut term = Terminal::new(5, 1, 0, Callbacks::default()).unwrap();
     term.set_default_colors(
-        Some(Rgb { r: 220, g: 221, b: 222 }),
-        Some(Rgb { r: 10, g: 11, b: 12 }),
-        Some(Rgb { r: 30, g: 31, b: 32 }),
+        Some(Rgb {
+            r: 220,
+            g: 221,
+            b: 222,
+        }),
+        Some(Rgb {
+            r: 10,
+            g: 11,
+            b: 12,
+        }),
+        Some(Rgb {
+            r: 30,
+            g: 31,
+            b: 32,
+        }),
     );
     let mut palette = [None; 256];
-    palette[3] = Some(Rgb { r: 40, g: 41, b: 42 });
+    palette[3] = Some(Rgb {
+        r: 40,
+        g: 41,
+        b: 42,
+    });
     term.set_default_palette(&palette);
     assert_no_dynamic_color_overrides(&term.color_overrides());
 
     term.vt_write(b"\x1b]4;3;#010203\x07\x1b]10;#111213\x07\x1b]11;#212223\x07\x1b]12;#313233\x07");
     let colors = term.color_overrides();
     assert_eq!(colors.palette[3], Some(Rgb { r: 1, g: 2, b: 3 }));
-    assert_eq!(colors.foreground, Some(Rgb { r: 17, g: 18, b: 19 }));
-    assert_eq!(colors.background, Some(Rgb { r: 33, g: 34, b: 35 }));
-    assert_eq!(colors.cursor, Some(Rgb { r: 49, g: 50, b: 51 }));
+    assert_eq!(
+        colors.foreground,
+        Some(Rgb {
+            r: 17,
+            g: 18,
+            b: 19
+        })
+    );
+    assert_eq!(
+        colors.background,
+        Some(Rgb {
+            r: 33,
+            g: 34,
+            b: 35
+        })
+    );
+    assert_eq!(
+        colors.cursor,
+        Some(Rgb {
+            r: 49,
+            g: 50,
+            b: 51
+        })
+    );
 
     term.vt_write(b"\x1b]104;3\x07\x1b]110\x07\x1b]111\x07\x1b]112\x07");
     assert_no_dynamic_color_overrides(&term.color_overrides());
@@ -1132,7 +1534,11 @@ fn color_overrides_are_sparse_and_resets_return_to_embedder_defaults() {
 
 #[test]
 fn color_override_authorship_survives_equal_defaults_fragmentation_and_queries() {
-    let foreground = Rgb { r: 17, g: 18, b: 19 };
+    let foreground = Rgb {
+        r: 17,
+        g: 18,
+        b: 19,
+    };
     let palette_color = Rgb { r: 1, g: 2, b: 3 };
     let mut term = Terminal::new(5, 1, 0, Callbacks::default()).unwrap();
     term.set_default_colors(Some(foreground), None, None);
@@ -1181,15 +1587,24 @@ fn theme_portable_replay_omits_terminal_color_osc_state() {
         b"\x1b]4;3;#010203\x07\x1b]10;#111213\x07\x1b]11;#212223\x07\
           \x1b]12;#313233\x07hello",
     );
-    let portable = source.vt_replay_bounded_theme_portable(1024 * 1024).unwrap();
+    let portable = source
+        .vt_replay_bounded_theme_portable(1024 * 1024)
+        .unwrap();
     let replay_text = String::from_utf8_lossy(&portable);
     for color_osc in ["\x1b]4;", "\x1b]10;", "\x1b]11;", "\x1b]12;"] {
-        assert!(!replay_text.contains(color_osc), "portable replay leaked {color_osc:?}");
+        assert!(
+            !replay_text.contains(color_osc),
+            "portable replay leaked {color_osc:?}"
+        );
     }
 
     let mut target = Terminal::new(20, 2, 100, Callbacks::default()).unwrap();
     target.set_default_colors(
-        Some(Rgb { r: 240, g: 241, b: 242 }),
+        Some(Rgb {
+            r: 240,
+            g: 241,
+            b: 242,
+        }),
         Some(Rgb { r: 4, g: 5, b: 6 }),
         Some(Rgb { r: 7, g: 8, b: 9 }),
     );
@@ -1252,7 +1667,10 @@ fn completed_kitty_overflow_blocks_later_control_string_recovery() {
                 term.discard_unreplayable_replay().is_none(),
                 "CAN cannot recover a lost completed prefix: header={header:?}, size={size}"
             );
-            assert!(matches!(term.vt_replay_bounded(2 * 1024 * 1024), Err(Error::OutOfSpace)));
+            assert!(matches!(
+                term.vt_replay_bounded(2 * 1024 * 1024),
+                Err(Error::OutOfSpace)
+            ));
         }
     }
 }

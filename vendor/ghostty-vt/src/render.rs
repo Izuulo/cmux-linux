@@ -107,7 +107,11 @@ impl Cell {
     pub fn attrs(&self) -> u16 {
         (if self.bold { ATTR_BOLD } else { 0 })
             | (if self.italic { ATTR_ITALIC } else { 0 })
-            | (if self.strikethrough { ATTR_STRIKETHROUGH } else { 0 })
+            | (if self.strikethrough {
+                ATTR_STRIKETHROUGH
+            } else {
+                0
+            })
             | (if self.inverse { ATTR_INVERSE } else { 0 })
             | (if self.faint { ATTR_FAINT } else { 0 })
             | (if self.invisible { ATTR_INVISIBLE } else { 0 })
@@ -287,8 +291,10 @@ impl RenderState {
     pub fn update(&mut self, terminal: &mut Terminal) -> Result<()> {
         check(unsafe { sys::ghostty_render_state_update(self.raw, terminal.raw()) })?;
         self.palette = terminal_palette(terminal.raw(), sys::GHOSTTY_TERMINAL_DATA_COLOR_PALETTE)?;
-        self.default_palette =
-            terminal_palette(terminal.raw(), sys::GHOSTTY_TERMINAL_DATA_COLOR_PALETTE_DEFAULT)?;
+        self.default_palette = terminal_palette(
+            terminal.raw(),
+            sys::GHOSTTY_TERMINAL_DATA_COLOR_PALETTE_DEFAULT,
+        )?;
         let terminal_instance_id = terminal.instance_id();
         if let Some(graphics) = kitty::snapshot_for_render(
             terminal,
@@ -311,7 +317,10 @@ impl RenderState {
                     &self.kitty_graphics_delta.image_generations,
                     &image_generations,
                 );
-                (image_generations.iter().map(|(id, _)| *id).collect(), removed)
+                (
+                    image_generations.iter().map(|(id, _)| *id).collect(),
+                    removed,
+                )
             };
             let image_changed = !changed_image_ids.is_empty() || !removed_image_ids.is_empty();
             let placement_changed =
@@ -348,7 +357,11 @@ impl RenderState {
         terminal: &Terminal,
         include_unplaced: bool,
     ) -> Result<Arc<KittyGraphicsSnapshot>> {
-        Ok(Arc::new(kitty::snapshot(terminal, &mut self.kitty_pixel_cache, include_unplaced)?))
+        Ok(Arc::new(kitty::snapshot(
+            terminal,
+            &mut self.kitty_pixel_cache,
+            include_unplaced,
+        )?))
     }
 
     /// Release renderer-owned Kitty pixels after the process owner lowers a
@@ -390,8 +403,12 @@ impl RenderState {
 
     /// Viewport size as (cols, rows).
     pub fn size(&self) -> (u16, u16) {
-        let cols = self.get::<u16>(sys::GHOSTTY_RENDER_STATE_DATA_COLS).unwrap_or(0);
-        let rows = self.get::<u16>(sys::GHOSTTY_RENDER_STATE_DATA_ROWS).unwrap_or(0);
+        let cols = self
+            .get::<u16>(sys::GHOSTTY_RENDER_STATE_DATA_COLS)
+            .unwrap_or(0);
+        let rows = self
+            .get::<u16>(sys::GHOSTTY_RENDER_STATE_DATA_ROWS)
+            .unwrap_or(0);
         (cols, rows)
     }
 
@@ -404,7 +421,11 @@ impl RenderState {
         let fg = self
             .get::<sys::GhosttyColorRgb>(sys::GHOSTTY_RENDER_STATE_DATA_COLOR_FOREGROUND)
             .map(Rgb::from)
-            .unwrap_or(Rgb { r: 255, g: 255, b: 255 });
+            .unwrap_or(Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            });
         (bg, fg)
     }
 
@@ -422,16 +443,28 @@ impl RenderState {
     /// Cursor state, or `None` when the cursor is invisible or outside the
     /// viewport (e.g. scrolled back).
     pub fn cursor(&self) -> Option<CursorInfo> {
-        let visible: bool = self.get(sys::GHOSTTY_RENDER_STATE_DATA_CURSOR_VISIBLE).ok()?;
-        let in_viewport: bool =
-            self.get(sys::GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_HAS_VALUE).ok()?;
+        let visible: bool = self
+            .get(sys::GHOSTTY_RENDER_STATE_DATA_CURSOR_VISIBLE)
+            .ok()?;
+        let in_viewport: bool = self
+            .get(sys::GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_HAS_VALUE)
+            .ok()?;
         if !visible || !in_viewport {
             return None;
         }
-        let x: u16 = self.get(sys::GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_X).ok()?;
-        let y: u16 = self.get(sys::GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_Y).ok()?;
+        let x: u16 = self
+            .get(sys::GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_X)
+            .ok()?;
+        let y: u16 = self
+            .get(sys::GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_Y)
+            .ok()?;
         let (shape, blinking) = self.cursor_visual().ok()?;
-        Some(CursorInfo { x, y, shape, blinking })
+        Some(CursorInfo {
+            x,
+            y,
+            shape,
+            blinking,
+        })
     }
 
     /// Current cursor shape and blink mode, even when the cursor is hidden
@@ -451,8 +484,9 @@ impl RenderState {
 
     /// Effective explicit OSC 12 cursor color, if one is set.
     pub fn cursor_color(&self) -> Option<Rgb> {
-        let has_value: bool =
-            self.get(sys::GHOSTTY_RENDER_STATE_DATA_COLOR_CURSOR_HAS_VALUE).ok()?;
+        let has_value: bool = self
+            .get(sys::GHOSTTY_RENDER_STATE_DATA_COLOR_CURSOR_HAS_VALUE)
+            .ok()?;
         if !has_value {
             return None;
         }
@@ -595,7 +629,11 @@ fn fill_cell(cells: sys::GhosttyRenderStateRowCells, cell: &mut Cell, grapheme_b
             &mut raw as *mut _ as *mut c_void,
         )
     } == sys::GHOSTTY_SUCCESS;
-    cell.width = if raw_ok { cell_width(raw) } else { CellWidth::Narrow };
+    cell.width = if raw_ok {
+        cell_width(raw)
+    } else {
+        CellWidth::Narrow
+    };
 
     let mut grapheme_len: u32 = 0;
     unsafe {
@@ -622,8 +660,10 @@ fn fill_cell(cells: sys::GhosttyRenderStateRowCells, cell: &mut Cell, grapheme_b
         }
     }
 
-    let mut style =
-        sys::GhosttyStyle { size: size_of::<sys::GhosttyStyle>(), ..Default::default() };
+    let mut style = sys::GhosttyStyle {
+        size: size_of::<sys::GhosttyStyle>(),
+        ..Default::default()
+    };
     let style_ok = unsafe {
         sys::ghostty_render_state_row_cells_get(
             cells,
@@ -660,8 +700,10 @@ pub(crate) fn read_grid_ref_cell(
     let mut raw = sys::GhosttyCell::default();
     check(unsafe { sys::ghostty_grid_ref_cell(grid_ref, &mut raw) })?;
 
-    let mut style =
-        sys::GhosttyStyle { size: size_of::<sys::GhosttyStyle>(), ..Default::default() };
+    let mut style = sys::GhosttyStyle {
+        size: size_of::<sys::GhosttyStyle>(),
+        ..Default::default()
+    };
     check(unsafe { sys::ghostty_grid_ref_style(grid_ref, &mut style) })?;
 
     let mut grapheme_len = 0usize;
@@ -671,7 +713,10 @@ pub(crate) fn read_grid_ref_cell(
         check(query)?;
     }
 
-    let mut cell = Cell { width: cell_width(raw), ..Cell::default() };
+    let mut cell = Cell {
+        width: cell_width(raw),
+        ..Cell::default()
+    };
     if grapheme_len > 0 {
         grapheme_buf.clear();
         grapheme_buf.resize(grapheme_len, 0);
@@ -745,7 +790,11 @@ fn raw_cell_bg_spec(raw: sys::GhosttyCell) -> Option<ColorSpec> {
 pub(crate) fn cell_width(raw: sys::GhosttyCell) -> CellWidth {
     let mut wide = sys::GHOSTTY_CELL_WIDE_NARROW;
     let result = unsafe {
-        sys::ghostty_cell_get(raw, sys::GHOSTTY_CELL_DATA_WIDE, &mut wide as *mut _ as *mut c_void)
+        sys::ghostty_cell_get(
+            raw,
+            sys::GHOSTTY_CELL_DATA_WIDE,
+            &mut wide as *mut _ as *mut c_void,
+        )
     };
     if result != sys::GHOSTTY_SUCCESS {
         return CellWidth::Narrow;
@@ -864,7 +913,11 @@ fn row_to_runs(row: &[Cell]) -> Vec<StyledRun> {
             attrs: cell.attrs(),
             underline: cell.underline_style,
         };
-        let text = if cell.text.is_empty() { " " } else { &cell.text };
+        let text = if cell.text.is_empty() {
+            " "
+        } else {
+            &cell.text
+        };
         let ambiguous_width = cell.width != CellWidth::Narrow;
 
         if let Some(run) = runs.last_mut().filter(|run| run.key == key) {
@@ -872,7 +925,12 @@ fn row_to_runs(row: &[Cell]) -> Vec<StyledRun> {
             run.columns = run.columns.saturating_add(1);
             run.ambiguous_width |= ambiguous_width;
         } else {
-            runs.push(RunAccumulator { key, text: text.to_string(), columns: 1, ambiguous_width });
+            runs.push(RunAccumulator {
+                key,
+                text: text.to_string(),
+                columns: 1,
+                ambiguous_width,
+            });
         }
         previous_was_wide = cell.width == CellWidth::Wide;
     }

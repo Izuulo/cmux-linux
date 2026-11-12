@@ -56,7 +56,10 @@ fn render_frame_shares_damage_and_preserves_walk_rows_path() {
             }
         })
         .unwrap();
-    assert!(dirty_after_frame.is_empty(), "frame damage was not consumed once");
+    assert!(
+        dirty_after_frame.is_empty(),
+        "frame damage was not consumed once"
+    );
 
     // The existing TUI order (set global clean, then walk rows) still sees and
     // consumes fresh per-row damage without going through RenderFrame.
@@ -109,8 +112,20 @@ fn wide_cells_emit_each_glyph_once_and_keep_blank_gaps() {
     let frame = state.build_frame().unwrap();
     let cells = frame.styled_row(0).unwrap();
 
-    assert_eq!(cells.iter().filter(|cell| cell.width == CellWidth::Wide).count(), 4);
-    assert_eq!(cells.iter().filter(|cell| cell.width == CellWidth::SpacerTail).count(), 4);
+    assert_eq!(
+        cells
+            .iter()
+            .filter(|cell| cell.width == CellWidth::Wide)
+            .count(),
+        4
+    );
+    assert_eq!(
+        cells
+            .iter()
+            .filter(|cell| cell.width == CellWidth::SpacerTail)
+            .count(),
+        4
+    );
     assert_eq!(cells[8].width, CellWidth::Narrow);
     assert!(cells[8].text.is_empty());
     assert_eq!(cells[9].width, CellWidth::Narrow);
@@ -119,7 +134,11 @@ fn wide_cells_emit_each_glyph_once_and_keep_blank_gaps() {
     let runs = frame.row_runs(0).unwrap();
     assert!(runs.iter().all(|run| !run.text.is_empty()));
     assert_eq!(runs.len(), 1, "unchanged style must form one maximal run");
-    assert!(runs[0].text.starts_with("日本語🙂  X"), "{:?}", runs[0].text);
+    assert!(
+        runs[0].text.starts_with("日本語🙂  X"),
+        "{:?}",
+        runs[0].text
+    );
     for glyph in ['日', '本', '語', '🙂'] {
         assert_eq!(runs[0].text.matches(glyph).count(), 1);
     }
@@ -153,14 +172,24 @@ fn styled_history_reads_oldest_rows_without_mutating_viewport_or_damage() {
     for (index, row) in page.iter().enumerate() {
         assert_eq!(logical_line(row), format!("line{index:03}"));
         assert!(row[0].bold);
-        assert_eq!(row[0].resolved_fg, Some(Rgb { r: 0x12, g: 0x34, b: 0x56 }));
+        assert_eq!(
+            row[0].resolved_fg,
+            Some(Rgb {
+                r: 0x12,
+                g: 0x34,
+                b: 0x56
+            })
+        );
     }
 
     assert_eq!(term.viewport_text().unwrap(), viewport_before);
     assert_eq!(term.scrollbar().unwrap(), scrollbar_before);
     assert_eq!(state.dirty(), dirty_before);
     let pending = state.build_frame().unwrap();
-    assert!(!pending.dirty_rows.is_empty(), "pending row damage was lost");
+    assert!(
+        !pending.dirty_rows.is_empty(),
+        "pending row damage was lost"
+    );
 }
 
 #[test]
@@ -202,9 +231,18 @@ fn history_eviction_is_byte_capped_and_oldest_index_advances() {
 
     let oldest = term.styled_history_rows(0, 1).unwrap();
     let newest = term.styled_history_rows(retained - 1, 1).unwrap();
-    let oldest_index: usize = logical_line(&oldest[0]).trim_start_matches("line").parse().unwrap();
-    let newest_index: usize = logical_line(&newest[0]).trim_start_matches("line").parse().unwrap();
-    assert!(oldest_index > 0, "the original oldest row should have been evicted");
+    let oldest_index: usize = logical_line(&oldest[0])
+        .trim_start_matches("line")
+        .parse()
+        .unwrap();
+    let newest_index: usize = logical_line(&newest[0])
+        .trim_start_matches("line")
+        .parse()
+        .unwrap();
+    assert!(
+        oldest_index > 0,
+        "the original oldest row should have been evicted"
+    );
     assert!(newest_index > oldest_index);
 }
 
@@ -223,7 +261,14 @@ fn rows_to_runs_uses_protocol_attrs_underlines_and_resolved_indexed_rgb() {
 
     assert_eq!(runs.len(), 9, "{runs:#?}");
     assert_eq!(runs[0].text, "AA");
-    assert_eq!(runs[0].fg, Some(Rgb { r: 0x11, g: 0x22, b: 0x33 }));
+    assert_eq!(
+        runs[0].fg,
+        Some(Rgb {
+            r: 0x11,
+            g: 0x22,
+            b: 0x33
+        })
+    );
     assert_eq!(runs[0].attrs, 0);
     assert_eq!(runs[1].text, "BB");
     assert_eq!(runs[1].attrs, ATTR_BOLD);

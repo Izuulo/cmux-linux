@@ -56,7 +56,12 @@ pub struct KittyGraphicsLimits {
 
 impl KittyGraphicsLimits {
     pub const fn disabled() -> Self {
-        Self { image_bytes: 0, inflight_bytes: 0, images: 0, placements: 0 }
+        Self {
+            image_bytes: 0,
+            inflight_bytes: 0,
+            images: 0,
+            placements: 0,
+        }
     }
 
     pub fn validate(self) -> Result<Self> {
@@ -93,7 +98,10 @@ impl KittyImageIdCursors {
     pub const DEFAULT_NEXT_IMAGE_ID: u32 = 2_147_483_647;
 
     pub const fn defaults() -> Self {
-        Self { primary: Self::DEFAULT_NEXT_IMAGE_ID, alternate: Self::DEFAULT_NEXT_IMAGE_ID }
+        Self {
+            primary: Self::DEFAULT_NEXT_IMAGE_ID,
+            alternate: Self::DEFAULT_NEXT_IMAGE_ID,
+        }
     }
 
     fn validate(self) -> Result<Self> {
@@ -200,7 +208,11 @@ pub struct Rgb {
 
 impl From<sys::GhosttyColorRgb> for Rgb {
     fn from(c: sys::GhosttyColorRgb) -> Self {
-        Rgb { r: c.r, g: c.g, b: c.b }
+        Rgb {
+            r: c.r,
+            g: c.g,
+            b: c.b,
+        }
     }
 }
 
@@ -554,7 +566,9 @@ impl ScreenModeSelection {
         };
         let index = index as u8;
         let len = usize::from(self.len);
-        if let Some(position) = self.indices[..len].iter().position(|candidate| *candidate == index)
+        if let Some(position) = self.indices[..len]
+            .iter()
+            .position(|candidate| *candidate == index)
         {
             self.indices.copy_within(position + 1..len, position);
             self.len -= 1;
@@ -564,7 +578,9 @@ impl ScreenModeSelection {
     }
 
     fn indices(&self) -> impl Iterator<Item = usize> + '_ {
-        self.indices[..usize::from(self.len)].iter().map(|index| usize::from(*index))
+        self.indices[..usize::from(self.len)]
+            .iter()
+            .map(|index| usize::from(*index))
     }
 
     fn is_empty(&self) -> bool {
@@ -709,8 +725,9 @@ impl PromptSemanticTracker {
                     b'0'..=b'9' => {
                         at_start = false;
                         has_parameter = true;
-                        parameter =
-                            parameter.saturating_mul(10).saturating_add(u16::from(byte - b'0'));
+                        parameter = parameter
+                            .saturating_mul(10)
+                            .saturating_add(u16::from(byte - b'0'));
                         PromptTrackState::Csi {
                             private,
                             at_start,
@@ -804,7 +821,11 @@ impl PromptSemanticTracker {
     }
 
     fn current_mut(&mut self) -> &mut PromptSemantic {
-        if self.alternate_active { &mut self.alternate } else { &mut self.primary }
+        if self.alternate_active {
+            &mut self.alternate
+        } else {
+            &mut self.primary
+        }
     }
 
     fn end_line(&mut self) {
@@ -1175,7 +1196,11 @@ struct EmptyKittyProbeFilter;
 impl EmptyKittyProbeFilter {
     fn write<'a>(&mut self, data: Cow<'a, [u8]>) -> Cow<'a, [u8]> {
         const EMPTY_PROBE: &[u8] = b"\x1b_G\x1b\\";
-        if !data.as_ref().windows(EMPTY_PROBE.len()).any(|window| window == EMPTY_PROBE) {
+        if !data
+            .as_ref()
+            .windows(EMPTY_PROBE.len())
+            .any(|window| window == EMPTY_PROBE)
+        {
             return data;
         }
 
@@ -1234,38 +1259,59 @@ impl ColorOverrideTracker {
                     0x20..=0x2f => ColorTrackState::EscapeIntermediate,
                     _ => ColorTrackState::Ground,
                 },
-                ColorTrackState::Osc { mut payload, mut overflowed } => {
+                ColorTrackState::Osc {
+                    mut payload,
+                    mut overflowed,
+                } => {
                     if self.consume_utf8_continuation(byte) {
                         Self::push_osc_byte(&mut payload, &mut overflowed, byte);
-                        ColorTrackState::Osc { payload, overflowed }
+                        ColorTrackState::Osc {
+                            payload,
+                            overflowed,
+                        }
                     } else {
                         match byte {
                             0x07 | 0x9c => {
                                 self.finish_osc(&payload, overflowed);
                                 ColorTrackState::Ground
                             }
-                            0x1b => ColorTrackState::OscEscape { payload, overflowed },
+                            0x1b => ColorTrackState::OscEscape {
+                                payload,
+                                overflowed,
+                            },
                             _ => {
                                 self.note_utf8_lead(byte);
                                 Self::push_osc_byte(&mut payload, &mut overflowed, byte);
-                                ColorTrackState::Osc { payload, overflowed }
+                                ColorTrackState::Osc {
+                                    payload,
+                                    overflowed,
+                                }
                             }
                         }
                     }
                 }
-                ColorTrackState::OscEscape { mut payload, mut overflowed } => match byte {
+                ColorTrackState::OscEscape {
+                    mut payload,
+                    mut overflowed,
+                } => match byte {
                     b'\\' | 0x9c => {
                         self.utf8_remaining = 0;
                         self.finish_osc(&payload, overflowed);
                         ColorTrackState::Ground
                     }
-                    0x1b => ColorTrackState::OscEscape { payload, overflowed },
+                    0x1b => ColorTrackState::OscEscape {
+                        payload,
+                        overflowed,
+                    },
                     _ => {
                         self.utf8_remaining = 0;
                         Self::push_osc_byte(&mut payload, &mut overflowed, 0x1b);
                         Self::push_osc_byte(&mut payload, &mut overflowed, byte);
                         self.note_utf8_lead(byte);
-                        ColorTrackState::Osc { payload, overflowed }
+                        ColorTrackState::Osc {
+                            payload,
+                            overflowed,
+                        }
                     }
                 },
                 ColorTrackState::String => {
@@ -1330,7 +1376,10 @@ impl ColorOverrideTracker {
 
     fn osc(&mut self) -> ColorTrackState {
         self.utf8_remaining = 0;
-        ColorTrackState::Osc { payload: Vec::new(), overflowed: false }
+        ColorTrackState::Osc {
+            payload: Vec::new(),
+            overflowed: false,
+        }
     }
 
     fn push_osc_byte(payload: &mut Vec<u8>, overflowed: &mut bool, byte: u8) {
@@ -1372,7 +1421,9 @@ impl ColorOverrideTracker {
         if overflowed {
             return;
         }
-        let Ok(payload) = std::str::from_utf8(payload) else { return };
+        let Ok(payload) = std::str::from_utf8(payload) else {
+            return;
+        };
         let mut parts = payload.split(';');
         let Some(command) = parts.next().and_then(|value| value.parse::<u16>().ok()) else {
             return;
@@ -1380,7 +1431,9 @@ impl ColorOverrideTracker {
         match command {
             4 => {
                 while let (Some(index), Some(value)) = (parts.next(), parts.next()) {
-                    let Some(index) = index.parse::<u8>().ok() else { continue };
+                    let Some(index) = index.parse::<u8>().ok() else {
+                        continue;
+                    };
                     if value != "?" && parse_color(value).is_some() {
                         self.set_palette_authored(index as usize, true);
                     }
@@ -1509,8 +1562,12 @@ impl CursorOverrideTracker {
     fn escape(&mut self, byte: u8) -> CursorTrackState {
         match byte {
             b'[' => CursorTrackState::Csi(CursorCsi::default()),
-            b']' => CursorTrackState::String { bell_terminated: true },
-            b'P' | b'X' | b'^' | b'_' => CursorTrackState::String { bell_terminated: false },
+            b']' => CursorTrackState::String {
+                bell_terminated: true,
+            },
+            b'P' | b'X' | b'^' | b'_' => CursorTrackState::String {
+                bell_terminated: false,
+            },
             b'c' => {
                 self.active = false;
                 CursorTrackState::Ground
@@ -1525,7 +1582,10 @@ impl CursorOverrideTracker {
         match byte {
             b'0'..=b'9' if !csi.space => {
                 csi.digits = true;
-                csi.value = csi.value.saturating_mul(10).saturating_add((byte - b'0') as u16);
+                csi.value = csi
+                    .value
+                    .saturating_mul(10)
+                    .saturating_add((byte - b'0') as u16);
                 CursorTrackState::Csi(std::mem::take(csi))
             }
             0x30..=0x3f => {
@@ -1592,14 +1652,22 @@ enum PaletteTrackState {
 }
 
 enum PaletteOsc {
-    Operation { bytes: [u8; 3], len: u8, invalid: bool },
+    Operation {
+        bytes: [u8; 3],
+        len: u8,
+        invalid: bool,
+    },
     Palette(Box<PaletteCommand>),
     Ignore,
 }
 
 impl Default for PaletteOsc {
     fn default() -> Self {
-        Self::Operation { bytes: [0; 3], len: 0, invalid: false }
+        Self::Operation {
+            bytes: [0; 3],
+            len: 0,
+            invalid: false,
+        }
     }
 }
 
@@ -1665,9 +1733,9 @@ impl PaletteOverrideTracker {
                     Some(state) => state,
                     None => match byte {
                         b']' => PaletteTrackState::Osc(PaletteOsc::default()),
-                        b'P' | b'X' | b'^' | b'_' => {
-                            PaletteTrackState::String { bell_terminated: false }
-                        }
+                        b'P' | b'X' | b'^' | b'_' => PaletteTrackState::String {
+                            bell_terminated: false,
+                        },
                         b'c' => {
                             // Ghostty preserves palette overrides across RIS, but
                             // attached byte frontends reset their mirror palette.
@@ -1752,7 +1820,9 @@ impl PaletteOverrideTracker {
 fn palette_c1_transition(byte: u8) -> Option<PaletteTrackState> {
     match byte {
         0x80..=0x8f | 0x91..=0x97 | 0x99 | 0x9a | 0x9c => Some(PaletteTrackState::Ground),
-        0x90 | 0x98 | 0x9e | 0x9f => Some(PaletteTrackState::String { bell_terminated: false }),
+        0x90 | 0x98 | 0x9e | 0x9f => Some(PaletteTrackState::String {
+            bell_terminated: false,
+        }),
         0x9b => Some(PaletteTrackState::Csi),
         0x9d => Some(PaletteTrackState::Osc(PaletteOsc::default())),
         _ => None,
@@ -1762,7 +1832,11 @@ fn palette_c1_transition(byte: u8) -> Option<PaletteTrackState> {
 impl PaletteOsc {
     fn feed(&mut self, byte: u8) {
         match self {
-            Self::Operation { bytes, len, invalid } => {
+            Self::Operation {
+                bytes,
+                len,
+                invalid,
+            } => {
                 if byte == b';' {
                     let mode = if *invalid {
                         None
@@ -1791,9 +1865,11 @@ impl PaletteOsc {
 
     fn commit(self, active: &mut [bool; 256]) -> bool {
         match self {
-            Self::Operation { bytes, len, invalid: false }
-                if &bytes[..usize::from(len)] == b"104" =>
-            {
+            Self::Operation {
+                bytes,
+                len,
+                invalid: false,
+            } if &bytes[..usize::from(len)] == b"104" => {
                 active.fill(false);
                 true
             }
@@ -1850,7 +1926,10 @@ impl PaletteCommand {
             }
             PaletteOscMode::SetColor(target) => {
                 if token != b"?" {
-                    let valid = std::str::from_utf8(token).ok().and_then(parse_color).is_some();
+                    let valid = std::str::from_utf8(token)
+                        .ok()
+                        .and_then(parse_color)
+                        .is_some();
                     if valid {
                         self.color_changed = true;
                         if let PaletteTarget::Palette(index) = target {
@@ -1880,7 +1959,10 @@ impl PaletteCommand {
                 PaletteOscMode::Reset
             }
             PaletteOscMode::Kitty => {
-                let separator = token.iter().position(|byte| *byte == b'=').unwrap_or(token.len());
+                let separator = token
+                    .iter()
+                    .position(|byte| *byte == b'=')
+                    .unwrap_or(token.len());
                 let key = &token[..separator];
                 let value = token.get(separator + 1..).unwrap_or_default();
                 let key = std::str::from_utf8(key).unwrap_or_default();
@@ -2015,7 +2097,11 @@ unsafe extern "C" fn write_pty_trampoline(
 ) {
     let callbacks = unsafe { &mut *(userdata as *mut Callbacks) };
     if let Some(f) = callbacks.on_pty_write.as_mut() {
-        let bytes = if len == 0 { &[] } else { unsafe { std::slice::from_raw_parts(data, len) } };
+        let bytes = if len == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(data, len) }
+        };
         f(bytes);
     }
 }
@@ -2042,8 +2128,11 @@ impl Terminal {
         kitty::install_png_decoder()?;
         let mouse_mode_probe = MouseModeProbe::new()?;
         let mut raw: sys::GhosttyTerminal = ptr::null_mut();
-        let opts =
-            sys::GhosttyTerminalOptions { cols: cols.max(1), rows: rows.max(1), max_scrollback };
+        let opts = sys::GhosttyTerminalOptions {
+            cols: cols.max(1),
+            rows: rows.max(1),
+            max_scrollback,
+        };
         check(unsafe { sys::ghostty_terminal_new(ptr::null(), &mut raw, opts) })?;
         if let Err(error) = configure_kitty_graphics(raw) {
             unsafe { sys::ghostty_terminal_free(raw) };
@@ -2244,7 +2333,9 @@ impl Terminal {
         }
         // A direct Kitty upload may exceed the generic budget; its own
         // tracker retains it up to the image limit.
-        self.kitty_inflight.has_partial_command().then_some(PendingSequenceReplay::KittyCommand)
+        self.kitty_inflight
+            .has_partial_command()
+            .then_some(PendingSequenceReplay::KittyCommand)
     }
 
     fn refresh_mouse_mode_revision(&mut self) {
@@ -2286,7 +2377,9 @@ impl Terminal {
         MOUSE_DEC_MODES
             .into_iter()
             .enumerate()
-            .fold(0, |bits, (index, mode)| bits | (u8::from(self.mode(mode, false)) << index))
+            .fold(0, |bits, (index, mode)| {
+                bits | (u8::from(self.mode(mode, false)) << index)
+            })
     }
 
     /// Whether the current cursor style/blink came from an active DECSCUSR
@@ -2322,7 +2415,11 @@ impl Terminal {
     pub fn set_default_colors(&mut self, fg: Option<Rgb>, bg: Option<Rgb>, cursor: Option<Rgb>) {
         unsafe {
             if let Some(fg) = fg {
-                let color = sys::GhosttyColorRgb { r: fg.r, g: fg.g, b: fg.b };
+                let color = sys::GhosttyColorRgb {
+                    r: fg.r,
+                    g: fg.g,
+                    b: fg.b,
+                };
                 sys::ghostty_terminal_set(
                     self.raw,
                     sys::GHOSTTY_TERMINAL_OPT_COLOR_FOREGROUND,
@@ -2330,7 +2427,11 @@ impl Terminal {
                 );
             }
             if let Some(bg) = bg {
-                let color = sys::GhosttyColorRgb { r: bg.r, g: bg.g, b: bg.b };
+                let color = sys::GhosttyColorRgb {
+                    r: bg.r,
+                    g: bg.g,
+                    b: bg.b,
+                };
                 sys::ghostty_terminal_set(
                     self.raw,
                     sys::GHOSTTY_TERMINAL_OPT_COLOR_BACKGROUND,
@@ -2338,7 +2439,11 @@ impl Terminal {
                 );
             }
             if let Some(cursor) = cursor {
-                let color = sys::GhosttyColorRgb { r: cursor.r, g: cursor.g, b: cursor.b };
+                let color = sys::GhosttyColorRgb {
+                    r: cursor.r,
+                    g: cursor.g,
+                    b: cursor.b,
+                };
                 sys::ghostty_terminal_set(
                     self.raw,
                     sys::GHOSTTY_TERMINAL_OPT_COLOR_CURSOR,
@@ -2356,10 +2461,21 @@ impl Terminal {
         bg: Option<Rgb>,
         cursor: Option<Rgb>,
     ) {
-        let fg = fg.map(|color| sys::GhosttyColorRgb { r: color.r, g: color.g, b: color.b });
-        let bg = bg.map(|color| sys::GhosttyColorRgb { r: color.r, g: color.g, b: color.b });
-        let cursor =
-            cursor.map(|color| sys::GhosttyColorRgb { r: color.r, g: color.g, b: color.b });
+        let fg = fg.map(|color| sys::GhosttyColorRgb {
+            r: color.r,
+            g: color.g,
+            b: color.b,
+        });
+        let bg = bg.map(|color| sys::GhosttyColorRgb {
+            r: color.r,
+            g: color.g,
+            b: color.b,
+        });
+        let cursor = cursor.map(|color| sys::GhosttyColorRgb {
+            r: color.r,
+            g: color.g,
+            b: color.b,
+        });
         unsafe {
             for (option, color) in [
                 (sys::GHOSTTY_TERMINAL_OPT_COLOR_FOREGROUND, fg.as_ref()),
@@ -2383,7 +2499,11 @@ impl Terminal {
         unsafe { sys::ghostty_color_palette_default(palette.as_mut_ptr()) };
         for (slot, color) in palette.iter_mut().zip(overrides) {
             if let Some(color) = color {
-                *slot = sys::GhosttyColorRgb { r: color.r, g: color.g, b: color.b };
+                *slot = sys::GhosttyColorRgb {
+                    r: color.r,
+                    g: color.g,
+                    b: color.b,
+                };
             }
         }
         unsafe {
@@ -2494,13 +2614,17 @@ impl Terminal {
     /// blink is terminal-global, and DECSCUSR and DEC mode 12 interact.
     pub fn color_overrides(&self) -> TerminalColorOverrides {
         let effective_color = |active: bool, data| {
-            active.then(|| self.get::<sys::GhosttyColorRgb>(data).ok().map(Rgb::from)).flatten()
+            active
+                .then(|| self.get::<sys::GhosttyColorRgb>(data).ok().map(Rgb::from))
+                .flatten()
         };
         let palette = self
             .get_palette(sys::GHOSTTY_TERMINAL_DATA_COLOR_PALETTE)
             .map(|effective| {
                 std::array::from_fn(|index| {
-                    self.color_overrides.palette_authored(index).then(|| effective[index].into())
+                    self.color_overrides
+                        .palette_authored(index)
+                        .then(|| effective[index].into())
                 })
             })
             .unwrap_or([None; 256]);
@@ -2564,8 +2688,9 @@ impl Terminal {
         };
         let prompt_semantic = self.prompt_semantic.semantic(Screen::Primary);
         let cursor_is_at_prompt = self.cursor_is_at_prompt();
-        let prompt_start_y =
-            cursor_is_at_prompt.then(|| self.active_prompt_start_row(cursor_y)).flatten();
+        let prompt_start_y = cursor_is_at_prompt
+            .then(|| self.active_prompt_start_row(cursor_y))
+            .flatten();
         let preserve_from_y = if cursor_is_at_prompt {
             prompt_start_y.or_else(|| self.active_logical_line_start_row(cursor_y))
         } else if prompt_semantic == PromptSemantic::Unknown {
@@ -2611,14 +2736,20 @@ impl Terminal {
             clear.extend_from_slice(format!("\x1b[{};1H\x1b[2K", u32::from(row) + 1).as_bytes());
         }
         clear.extend_from_slice(
-            format!("\x1b[{};{}H", u32::from(cursor_y) + 1, u32::from(cursor_x) + 1).as_bytes(),
+            format!(
+                "\x1b[{};{}H",
+                u32::from(cursor_y) + 1,
+                u32::from(cursor_x) + 1
+            )
+            .as_bytes(),
         );
         self.vt_write(&clear);
         ClearHistoryOutcome::Cleared(clear)
     }
 
     fn cursor_pending_wrap(&self) -> bool {
-        self.get::<bool>(sys::GHOSTTY_TERMINAL_DATA_CURSOR_PENDING_WRAP).unwrap_or(true)
+        self.get::<bool>(sys::GHOSTTY_TERMINAL_DATA_CURSOR_PENDING_WRAP)
+            .unwrap_or(true)
     }
 
     fn active_prompt_start_row(&self, cursor_y: u16) -> Option<u16> {
@@ -2748,7 +2879,11 @@ impl Terminal {
 
     /// Apply one complete replay sidecar and byte stream to this terminal.
     pub fn apply_vt_replay(&mut self, replay: &VtReplay) -> Result<()> {
-        self.apply_vt_replay_parts(&replay.bytes, &replay.kitty_image_aliases, replay.kitty_state)?;
+        self.apply_vt_replay_parts(
+            &replay.bytes,
+            &replay.kitty_image_aliases,
+            replay.kitty_state,
+        )?;
         self.vt_write(&replay.pending_sequence);
         Ok(())
     }
@@ -2827,7 +2962,10 @@ impl Terminal {
         let generation = self.kitty_graphics_generation()?;
         self.set_kitty_inflight_storage_limit(limits.inflight_bytes);
         self.set_kitty_image_count_limit(limits.images)?;
-        if self.set_kitty_placement_count_limit(limits.placements).is_err() {
+        if self
+            .set_kitty_placement_count_limit(limits.placements)
+            .is_err()
+        {
             // Placement reductions preserve visible state by default. Under
             // pressure, release the old scene before installing the bound.
             self.set_kitty_image_storage_limit(0)?;
@@ -2933,11 +3071,13 @@ impl Terminal {
     }
 
     pub fn cols(&self) -> u16 {
-        self.get::<u16>(sys::GHOSTTY_TERMINAL_DATA_COLS).unwrap_or(0)
+        self.get::<u16>(sys::GHOSTTY_TERMINAL_DATA_COLS)
+            .unwrap_or(0)
     }
 
     pub fn rows(&self) -> u16 {
-        self.get::<u16>(sys::GHOSTTY_TERMINAL_DATA_ROWS).unwrap_or(0)
+        self.get::<u16>(sys::GHOSTTY_TERMINAL_DATA_ROWS)
+            .unwrap_or(0)
     }
 
     pub fn active_screen(&self) -> Screen {
@@ -3014,7 +3154,8 @@ impl Terminal {
 
     /// Whether any mouse tracking mode is enabled by the application.
     pub fn mouse_tracking(&self) -> bool {
-        self.get::<bool>(sys::GHOSTTY_TERMINAL_DATA_MOUSE_TRACKING).unwrap_or(false)
+        self.get::<bool>(sys::GHOSTTY_TERMINAL_DATA_MOUSE_TRACKING)
+            .unwrap_or(false)
     }
 
     pub fn pointer_semantic_snapshot(&self) -> TerminalPointerSemanticSnapshot {
@@ -3031,7 +3172,8 @@ impl Terminal {
 
     /// Number of scrollback rows above the viewport.
     pub fn scrollback_rows(&self) -> usize {
-        self.get::<usize>(sys::GHOSTTY_TERMINAL_DATA_SCROLLBACK_ROWS).unwrap_or(0)
+        self.get::<usize>(sys::GHOSTTY_TERMINAL_DATA_SCROLLBACK_ROWS)
+            .unwrap_or(0)
     }
 
     /// Number of retained history rows, saturated to the protocol's `u32`.
@@ -3133,7 +3275,11 @@ impl Terminal {
         if raw.total == 0 || raw.len == 0 {
             return None;
         }
-        Some(Scrollbar { total: raw.total, offset: raw.offset, len: raw.len })
+        Some(Scrollbar {
+            total: raw.total,
+            offset: raw.offset,
+            len: raw.len,
+        })
     }
 
     /// Track one cell in full-screen coordinates. The anchor continues to
@@ -3141,14 +3287,19 @@ impl Terminal {
     pub fn track_screen_point(&mut self, x: u16, y: u32) -> Result<TrackedScreenPoint> {
         let point = sys::GhosttyPoint {
             tag: sys::GHOSTTY_POINT_TAG_SCREEN,
-            value: sys::GhosttyPointValue { coordinate: sys::GhosttyPointCoordinate { x, y } },
+            value: sys::GhosttyPointValue {
+                coordinate: sys::GhosttyPointCoordinate { x, y },
+            },
         };
         let mut raw: sys::GhosttyTrackedGridRef = ptr::null_mut();
         check(unsafe { sys::ghostty_terminal_grid_ref_track(self.raw, point, &mut raw) })?;
         if raw.is_null() {
             return Err(Error::NoValue);
         }
-        Ok(TrackedScreenPoint { raw, terminal_instance_id: self.instance_id })
+        Ok(TrackedScreenPoint {
+            raw,
+            terminal_instance_id: self.instance_id,
+        })
     }
 
     /// Resolve an anchor into the current full-screen coordinate space.
@@ -3180,7 +3331,9 @@ impl Terminal {
         }
         let point = sys::GhosttyPoint {
             tag: sys::GHOSTTY_POINT_TAG_SCREEN,
-            value: sys::GhosttyPointValue { coordinate: sys::GhosttyPointCoordinate { x, y } },
+            value: sys::GhosttyPointValue {
+                coordinate: sys::GhosttyPointCoordinate { x, y },
+            },
         };
         check(unsafe { sys::ghostty_tracked_grid_ref_set(tracked.raw, self.raw, point) })
     }
@@ -3197,11 +3350,17 @@ impl Terminal {
         let width = self.cell_width_screen(point)?;
         match width {
             CellWidth::SpacerTail if point.column > 0 => {
-                let leading = SelectionPoint { column: point.column - 1, ..point };
+                let leading = SelectionPoint {
+                    column: point.column - 1,
+                    ..point
+                };
                 (self.cell_width_screen(leading) == Some(CellWidth::Wide)).then_some(leading)
             }
             CellWidth::SpacerHead => {
-                let leading = SelectionPoint { column: 0, row: point.row.checked_add(1)? };
+                let leading = SelectionPoint {
+                    column: 0,
+                    row: point.row.checked_add(1)?,
+                };
                 (self.cell_width_screen(leading) == Some(CellWidth::Wide)).then_some(leading)
             }
             _ => Some(point),
@@ -3209,8 +3368,11 @@ impl Terminal {
     }
 
     fn cell_width_screen(&self, point: SelectionPoint) -> Option<CellWidth> {
-        let grid_ref =
-            self.grid_ref(sys::GHOSTTY_POINT_TAG_SCREEN, point.column, u64::from(point.row))?;
+        let grid_ref = self.grid_ref(
+            sys::GHOSTTY_POINT_TAG_SCREEN,
+            point.column,
+            u64::from(point.row),
+        )?;
         let mut raw = sys::GhosttyCell::default();
         check(unsafe { sys::ghostty_grid_ref_cell(&grid_ref, &mut raw) }).ok()?;
         Some(crate::render::cell_width(raw))
@@ -3220,7 +3382,11 @@ impl Terminal {
     /// Ghostty's configured word-boundary rules.
     pub fn select_word_screen(&self, point: SelectionPoint) -> Result<Option<SelectionRange>> {
         let grid_ref = self
-            .grid_ref(sys::GHOSTTY_POINT_TAG_SCREEN, point.column, u64::from(point.row))
+            .grid_ref(
+                sys::GHOSTTY_POINT_TAG_SCREEN,
+                point.column,
+                u64::from(point.row),
+            )
             .ok_or(Error::InvalidValue)?;
         let options = sys::GhosttyTerminalSelectWordOptions {
             size: size_of::<sys::GhosttyTerminalSelectWordOptions>(),
@@ -3250,10 +3416,18 @@ impl Terminal {
         end: SelectionPoint,
     ) -> Result<Option<SelectionRange>> {
         let start_ref = self
-            .grid_ref(sys::GHOSTTY_POINT_TAG_SCREEN, start.column, u64::from(start.row))
+            .grid_ref(
+                sys::GHOSTTY_POINT_TAG_SCREEN,
+                start.column,
+                u64::from(start.row),
+            )
             .ok_or(Error::InvalidValue)?;
         let end_ref = self
-            .grid_ref(sys::GHOSTTY_POINT_TAG_SCREEN, end.column, u64::from(end.row))
+            .grid_ref(
+                sys::GHOSTTY_POINT_TAG_SCREEN,
+                end.column,
+                u64::from(end.row),
+            )
             .ok_or(Error::InvalidValue)?;
         let options = sys::GhosttyTerminalSelectWordBetweenOptions {
             size: size_of::<sys::GhosttyTerminalSelectWordBetweenOptions>(),
@@ -3297,10 +3471,18 @@ impl Terminal {
 
         // Ghostty still returns no value when every cell lacks text. The
         // validated blank row remains a selectable line for a line-wise drag.
-        let Some(last_column) = self.cols().checked_sub(1) else { return Ok(None) };
+        let Some(last_column) = self.cols().checked_sub(1) else {
+            return Ok(None);
+        };
         Ok(Some(SelectionRange {
-            start: SelectionPoint { column: 0, row: point.row },
-            end: SelectionPoint { column: last_column, row: point.row },
+            start: SelectionPoint {
+                column: 0,
+                row: point.row,
+            },
+            end: SelectionPoint {
+                column: last_column,
+                row: point.row,
+            },
         }))
     }
 
@@ -3311,7 +3493,11 @@ impl Terminal {
         whitespace_len: usize,
     ) -> Result<Option<SelectionRange>> {
         let grid_ref = self
-            .grid_ref(sys::GHOSTTY_POINT_TAG_SCREEN, point.column, u64::from(point.row))
+            .grid_ref(
+                sys::GHOSTTY_POINT_TAG_SCREEN,
+                point.column,
+                u64::from(point.row),
+            )
             .ok_or(Error::InvalidValue)?;
         let options = sys::GhosttyTerminalSelectLineOptions {
             size: size_of::<sys::GhosttyTerminalSelectLineOptions>(),
@@ -3350,7 +3536,10 @@ impl Terminal {
                 &mut coordinate,
             )
         })?;
-        Ok(SelectionPoint { column: coordinate.x, row: coordinate.y })
+        Ok(SelectionPoint {
+            column: coordinate.x,
+            row: coordinate.y,
+        })
     }
 
     /// Plain text of a selection range given in viewport coordinates
@@ -3501,8 +3690,9 @@ impl Terminal {
     fn replay_inflight_and_pending(&self, max_bytes: usize) -> Result<(Vec<u8>, Vec<u8>)> {
         // Always ask the Kitty tracker, so its per-surface upload budget
         // applies whichever tracker supplies the partial command.
-        let (inflight, kitty_partial) =
-            self.kitty_inflight.replay_prefix_and_partial_checked(max_bytes)?;
+        let (inflight, kitty_partial) = self
+            .kitty_inflight
+            .replay_prefix_and_partial_checked(max_bytes)?;
         let pending = match self.pending_sequence_replay() {
             Some(PendingSequenceReplay::Bytes(pending)) => pending.to_vec(),
             Some(PendingSequenceReplay::KittyCommand) => kitty_partial,
@@ -3564,7 +3754,10 @@ impl Terminal {
         let Some(title) = self.title() else {
             return Vec::new();
         };
-        let title: String = title.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+        let title: String = title
+            .chars()
+            .map(|c| if c.is_control() { ' ' } else { c })
+            .collect();
         format!("\x1b]2;{title}\x1b\\").into_bytes()
     }
 
@@ -3585,12 +3778,16 @@ impl Terminal {
             (1016, MouseWireFormat::SgrPixels),
         ];
         let active = self.active_mouse_format;
-        let set_modes: Vec<(u16, MouseWireFormat)> =
-            FORMAT_MODES.into_iter().filter(|(mode, _)| self.mode(*mode, false)).collect();
+        let set_modes: Vec<(u16, MouseWireFormat)> = FORMAT_MODES
+            .into_iter()
+            .filter(|(mode, _)| self.mode(*mode, false))
+            .collect();
         // What a numeric-order flag dump would leave active: the highest
         // numbered set format flag.
-        let dump_would_activate =
-            set_modes.last().map(|(_, format)| *format).unwrap_or(MouseWireFormat::X10);
+        let dump_would_activate = set_modes
+            .last()
+            .map(|(_, format)| *format)
+            .unwrap_or(MouseWireFormat::X10);
         if set_modes.len() <= 1 && dump_would_activate == active {
             return Vec::new();
         }
@@ -3636,8 +3833,10 @@ impl Terminal {
             active_start,
             include_palette,
         )?;
-        let visible_cost =
-            active_text.range.map(|range| catalog.visible_cost(range, remaining)).unwrap_or(0);
+        let visible_cost = active_text
+            .range
+            .map(|range| catalog.visible_cost(range, remaining))
+            .unwrap_or(0);
 
         let text_budget = remaining.saturating_sub(visible_cost);
         let text = self.vt_replay_text_layout_bounded(
@@ -3649,7 +3848,9 @@ impl Terminal {
         let graphics_budget = remaining.saturating_sub(text.bytes.len());
         let graphics = catalog.plan(text.range, graphics_budget, false);
         let reset_before_images = text.range.is_none();
-        let interleaved = text.interleave(&graphics.placements).ok_or(Error::OutOfSpace)?;
+        let interleaved = text
+            .interleave(&graphics.placements)
+            .ok_or(Error::OutOfSpace)?;
 
         let total = graphics
             .image_bytes
@@ -3685,7 +3886,9 @@ impl Terminal {
 
     /// Bounded byte-only compatibility replay. This discards Kitty aliases.
     pub fn vt_replay_bounded_bytes(&mut self, max_bytes: usize) -> Result<Vec<u8>> {
-        Ok(self.vt_replay_bounded(max_bytes)?.into_self_contained_bytes())
+        Ok(self
+            .vt_replay_bounded(max_bytes)?
+            .into_self_contained_bytes())
     }
 
     fn vt_replay_text_layout_bounded(
@@ -3706,7 +3909,10 @@ impl Terminal {
         let minimum_start = minimum_start
             .unwrap_or_else(|| scrollbar.total.saturating_sub(screen_rows))
             .min(scrollbar.total - 1);
-        let minimum_rows = scrollbar.total.saturating_sub(minimum_start).max(screen_rows);
+        let minimum_rows = scrollbar
+            .total
+            .saturating_sub(minimum_start)
+            .max(screen_rows);
         let mut tail_rows =
             vt_replay_row_window(scrollbar.total, screen_rows, self.cols(), max_bytes)
                 .max(minimum_rows)
@@ -3788,7 +3994,10 @@ impl Terminal {
         let mut high = candidates.len();
         while low < high {
             let middle = low + (high - low) / 2;
-            let range = ReplayRowRange { start: candidates[middle], end: best_range.end };
+            let range = ReplayRowRange {
+                start: candidates[middle],
+                end: best_range.end,
+            };
             if let Some(replay) = self.vt_replay_text_range_bounded(
                 range,
                 placement_rows,
@@ -3821,10 +4030,16 @@ impl Terminal {
             return Ok(None);
         };
         let insert_at_start = placement_rows.overlaps(range.start);
-        let has_placement_anchor =
-            placement_rows.anchors.range(range.start..=range.end).next().is_some();
-        let mut segment_ends =
-            placement_rows.anchors.range(range.start..=range.end).copied().collect::<BTreeSet<_>>();
+        let has_placement_anchor = placement_rows
+            .anchors
+            .range(range.start..=range.end)
+            .next()
+            .is_some();
+        let mut segment_ends = placement_rows
+            .anchors
+            .range(range.start..=range.end)
+            .copied()
+            .collect::<BTreeSet<_>>();
         if insert_at_start {
             segment_ends.insert(range.start);
         }
@@ -3910,7 +4125,11 @@ impl Terminal {
         if let Some(suffix) = suffix {
             bytes.extend_from_slice(&suffix);
         }
-        Ok(Some(ReplayText { bytes, range: Some(range), insertion_offsets }))
+        Ok(Some(ReplayText {
+            bytes,
+            range: Some(range),
+            insertion_offsets,
+        }))
     }
 
     fn screen_selection(&self, start_row: u64, end_row: u64) -> Result<sys::GhosttySelection> {
@@ -3924,16 +4143,25 @@ impl Terminal {
                 .grid_ref(sys::GHOSTTY_POINT_TAG_SCREEN, 0, start_row)
                 .ok_or(Error::InvalidValue)?,
             end: self
-                .grid_ref(sys::GHOSTTY_POINT_TAG_SCREEN, cols.saturating_sub(1), end_row)
+                .grid_ref(
+                    sys::GHOSTTY_POINT_TAG_SCREEN,
+                    cols.saturating_sub(1),
+                    end_row,
+                )
                 .ok_or(Error::InvalidValue)?,
             rectangle: false,
         })
     }
 
     fn cursor_position_escape(&mut self) -> Result<Option<Vec<u8>>> {
-        let Some((x, y)) = self.cursor_position() else { return Ok(None) };
+        let Some((x, y)) = self.cursor_position() else {
+            return Ok(None);
+        };
         let origin_mode = self.mode(6, false);
-        if !self.get::<bool>(sys::GHOSTTY_TERMINAL_DATA_CURSOR_PENDING_WRAP).unwrap_or(false) {
+        if !self
+            .get::<bool>(sys::GHOSTTY_TERMINAL_DATA_CURSOR_PENDING_WRAP)
+            .unwrap_or(false)
+        {
             // The formatter already emits the cursor. An appended CUP would
             // reinterpret active-area coordinates relative to the scrolling
             // region while DECOM is enabled.
@@ -4069,8 +4297,12 @@ impl Terminal {
     fn cell_pixel_size(&self) -> (u32, u32) {
         let cols = u32::from(self.cols().max(1));
         let rows = u32::from(self.rows().max(1));
-        let width = self.get::<u32>(sys::GHOSTTY_TERMINAL_DATA_WIDTH_PX).unwrap_or(cols);
-        let height = self.get::<u32>(sys::GHOSTTY_TERMINAL_DATA_HEIGHT_PX).unwrap_or(rows);
+        let width = self
+            .get::<u32>(sys::GHOSTTY_TERMINAL_DATA_WIDTH_PX)
+            .unwrap_or(cols);
+        let height = self
+            .get::<u32>(sys::GHOSTTY_TERMINAL_DATA_HEIGHT_PX)
+            .unwrap_or(rows);
         ((width / cols).max(1), (height / rows).max(1))
     }
 
@@ -4078,10 +4310,14 @@ impl Terminal {
         let y = u32::try_from(y).ok()?;
         let point = sys::GhosttyPoint {
             tag,
-            value: sys::GhosttyPointValue { coordinate: sys::GhosttyPointCoordinate { x, y } },
+            value: sys::GhosttyPointValue {
+                coordinate: sys::GhosttyPointCoordinate { x, y },
+            },
         };
-        let mut out =
-            sys::GhosttyGridRef { size: size_of::<sys::GhosttyGridRef>(), ..Default::default() };
+        let mut out = sys::GhosttyGridRef {
+            size: size_of::<sys::GhosttyGridRef>(),
+            ..Default::default()
+        };
         let result = unsafe { sys::ghostty_terminal_grid_ref(self.raw, point, &mut out) };
         (result == sys::GHOSTTY_SUCCESS).then_some(out)
     }
@@ -4156,8 +4392,14 @@ impl Terminal {
 
 fn configure_kitty_graphics(raw: sys::GhosttyTerminal) -> Result<()> {
     for (option, limit) in [
-        (sys::GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_STORAGE_LIMIT, &DEFAULT_KITTY_IMAGE_STORAGE_LIMIT),
-        (sys::GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_COUNT_LIMIT, &DEFAULT_KITTY_IMAGE_COUNT_LIMIT),
+        (
+            sys::GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_STORAGE_LIMIT,
+            &DEFAULT_KITTY_IMAGE_STORAGE_LIMIT,
+        ),
+        (
+            sys::GHOSTTY_TERMINAL_OPT_KITTY_IMAGE_COUNT_LIMIT,
+            &DEFAULT_KITTY_IMAGE_COUNT_LIMIT,
+        ),
         (
             sys::GHOSTTY_TERMINAL_OPT_KITTY_PLACEMENT_COUNT_LIMIT,
             &DEFAULT_KITTY_PLACEMENT_COUNT_LIMIT,
@@ -4180,7 +4422,11 @@ fn configure_kitty_graphics(raw: sys::GhosttyTerminal) -> Result<()> {
 
 fn minimal_vt_replay(max_bytes: usize) -> Vec<u8> {
     const RESET: &[u8] = b"\x1bc";
-    if max_bytes >= RESET.len() { RESET.to_vec() } else { Vec::new() }
+    if max_bytes >= RESET.len() {
+        RESET.to_vec()
+    } else {
+        Vec::new()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4207,7 +4453,8 @@ impl KittyReplayRowIndex {
     }
 
     fn finish(mut self) -> Self {
-        self.occupied_spans.sort_by_key(|span| (span.start, span.end));
+        self.occupied_spans
+            .sort_by_key(|span| (span.start, span.end));
         let mut merged = Vec::<ReplayRowRange>::with_capacity(self.occupied_spans.len());
         for span in self.occupied_spans.drain(..) {
             if let Some(previous) = merged.last_mut()
@@ -4223,7 +4470,9 @@ impl KittyReplayRowIndex {
     }
 
     fn overlaps(&self, row: u64) -> bool {
-        let insertion = self.occupied_spans.partition_point(|span| span.start <= row);
+        let insertion = self
+            .occupied_spans
+            .partition_point(|span| span.start <= row);
         insertion > 0 && self.occupied_spans[insertion - 1].end >= row
     }
 }
@@ -4369,7 +4618,8 @@ impl<'a> KittyReplayCatalog<'a> {
     }
 
     fn visible_cost(&self, range: ReplayRowRange, max_bytes: usize) -> usize {
-        self.plan_internal(Some(range), max_bytes, true, false).total_len
+        self.plan_internal(Some(range), max_bytes, true, false)
+            .total_len
     }
 
     fn plan(
@@ -4413,14 +4663,20 @@ impl<'a> KittyReplayCatalog<'a> {
                     placements.push((row.max(range.start), command));
                 }
             }
-            let Some(cost) =
-                placements.iter().try_fold(image.transmission_len, |total, (_, command)| {
+            let Some(cost) = placements
+                .iter()
+                .try_fold(image.transmission_len, |total, (_, command)| {
                     total.checked_add(command.len())
                 })
             else {
                 continue;
             };
-            candidates.push(KittyReplayCandidate { image_index, visible, cost, placements });
+            candidates.push(KittyReplayCandidate {
+                image_index,
+                visible,
+                cost,
+                placements,
+            });
         }
 
         let mut admitted = vec![false; candidates.len()];
@@ -4447,13 +4703,19 @@ impl<'a> KittyReplayCatalog<'a> {
         let mut numbered_history_counts = HashMap::<u32, (usize, usize)>::new();
         for image in &self.images {
             if image.image.number != 0 {
-                numbered_history_counts.entry(image.image.number).or_default().0 += 1;
+                numbered_history_counts
+                    .entry(image.image.number)
+                    .or_default()
+                    .0 += 1;
             }
         }
         for (candidate, is_admitted) in candidates.iter().zip(&admitted) {
             let image = &self.images[candidate.image_index];
             if *is_admitted && image.image.number != 0 {
-                numbered_history_counts.entry(image.image.number).or_default().1 += 1;
+                numbered_history_counts
+                    .entry(image.image.number)
+                    .or_default()
+                    .1 += 1;
             }
         }
 
@@ -4482,7 +4744,12 @@ impl<'a> KittyReplayCatalog<'a> {
                 });
             }
         }
-        KittyReplayPlan { image_bytes, placements, aliases, total_len }
+        KittyReplayPlan {
+            image_bytes,
+            placements,
+            aliases,
+            total_len,
+        }
     }
 }
 
@@ -4490,7 +4757,12 @@ fn kitty_replay_image_len(image: &KittyImage) -> Option<usize> {
     if image.data.is_empty() {
         return Some(0);
     }
-    let encoded_len = image.data.len().checked_add(2)?.checked_div(3)?.checked_mul(4)?;
+    let encoded_len = image
+        .data
+        .len()
+        .checked_add(2)?
+        .checked_div(3)?
+        .checked_mul(4)?;
     let chunks = image.data.len().div_ceil(KITTY_REPLAY_RAW_CHUNK);
     let first_header = format!(
         "\x1b_Ga=t,t=d,f={},i={},s={},v={},q=2,m=0;",
@@ -4561,7 +4833,11 @@ fn kitty_replay_placement_at(
             .min(u64::from(terminal_rows.saturating_sub(1)))
             .saturating_add(1);
         let col = u32::from(anchor.col).saturating_add(1);
-        let placement_id = if placement.is_internal { 0 } else { placement.placement_id };
+        let placement_id = if placement.is_internal {
+            0
+        } else {
+            placement.placement_id
+        };
         let mut command = format!(
             "\x1b[{row};{col}H\x1b_Ga=p,i={},p={},x={},y={},w={},h={},X={},Y={}",
             placement.image_id,
@@ -4582,7 +4858,9 @@ fn kitty_replay_placement_at(
         command.push_str(&format!(",z={},C=1,q=2;\x1b\\", placement.z));
         return Some(command.into_bytes());
     }
-    let relative_row = i64::try_from(replay_start_row - anchor_row).ok()?.checked_neg()?;
+    let relative_row = i64::try_from(replay_start_row - anchor_row)
+        .ok()?
+        .checked_neg()?;
     kitty_replay_placement_from_origin(placement, i64::from(anchor.col), relative_row, cell_pixels)
 }
 
@@ -4644,8 +4922,12 @@ fn kitty_replay_placement_from_origin(
     );
     let source_right = replay_proportional_boundary(
         placement.source_width,
-        u32::try_from(visible_left.saturating_add(visible_width).saturating_sub(image_left))
-            .ok()?,
+        u32::try_from(
+            visible_left
+                .saturating_add(visible_width)
+                .saturating_sub(image_left),
+        )
+        .ok()?,
         placement.pixel_width,
     );
     let source_top = replay_proportional_boundary(
@@ -4655,7 +4937,12 @@ fn kitty_replay_placement_from_origin(
     );
     let source_bottom = replay_proportional_boundary(
         placement.source_height,
-        u32::try_from(visible_top.saturating_add(visible_height).saturating_sub(image_top)).ok()?,
+        u32::try_from(
+            visible_top
+                .saturating_add(visible_height)
+                .saturating_sub(image_top),
+        )
+        .ok()?,
         placement.pixel_height,
     );
     let source_x = placement.source_x.saturating_add(source_left);
@@ -4672,7 +4959,11 @@ fn kitty_replay_placement_from_origin(
         None
     };
     let rows = if placement.rows > 0 {
-        Some(u32::try_from(visible_height).ok()?.checked_div(cell_height)?)
+        Some(
+            u32::try_from(visible_height)
+                .ok()?
+                .checked_div(cell_height)?,
+        )
     } else {
         None
     };
@@ -4701,11 +4992,21 @@ fn kitty_replay_placement_from_origin(
         return None;
     }
 
-    let col = u32::try_from(visible_left).ok()?.checked_div(cell_width)?.saturating_add(1);
-    let row = u32::try_from(visible_top).ok()?.checked_div(cell_height)?.saturating_add(1);
+    let col = u32::try_from(visible_left)
+        .ok()?
+        .checked_div(cell_width)?
+        .saturating_add(1);
+    let row = u32::try_from(visible_top)
+        .ok()?
+        .checked_div(cell_height)?
+        .saturating_add(1);
     let x_offset = u32::try_from(visible_left).ok()? % cell_width;
     let y_offset = u32::try_from(visible_top).ok()? % cell_height;
-    let placement_id = if placement.is_internal { 0 } else { placement.placement_id };
+    let placement_id = if placement.is_internal {
+        0
+    } else {
+        placement.placement_id
+    };
     let mut command = format!(
         "\x1b[{row};{col}H\x1b_Ga=p,i={},p={},x={source_x},y={source_y},w={source_width},h={source_height},X={x_offset},Y={y_offset}",
         placement.image_id, placement_id
@@ -4815,7 +5116,11 @@ mod tests {
         offset: (u32, u32),
     ) -> KittyPlacement {
         KittyPlacement {
-            key: KittyPlacementKey { image_id: 1, placement_id: 2, ordinal: 0 },
+            key: KittyPlacementKey {
+                image_id: 1,
+                placement_id: 2,
+                ordinal: 0,
+            },
             image_id: 1,
             placement_id: 2,
             is_internal: false,
@@ -4973,7 +5278,10 @@ mod tests {
             )
             .unwrap();
         encoders
-            .encode(input(MouseAction::Press, Some(MouseButton::WheelUp), false), &mut wheel)
+            .encode(
+                input(MouseAction::Press, Some(MouseButton::WheelUp), false),
+                &mut wheel,
+            )
             .unwrap();
         (press, release, wheel)
     }
@@ -4996,8 +5304,14 @@ mod tests {
         let mirror = replayed_mirror(b"\x1b[?1002h\x1b[?1015h\x1b[?1006h");
         let (press, release, wheel) = synced_mouse_bytes(&mirror);
         assert_eq!(press, b"\x1b[<0;37;21M", "press must stay SGR after replay");
-        assert_eq!(release, b"\x1b[<0;37;21m", "release must stay SGR after replay");
-        assert_eq!(wheel, b"\x1b[<64;37;21M", "wheel must stay SGR after replay");
+        assert_eq!(
+            release, b"\x1b[<0;37;21m",
+            "release must stay SGR after replay"
+        );
+        assert_eq!(
+            wheel, b"\x1b[<64;37;21M",
+            "wheel must stay SGR after replay"
+        );
     }
 
     /// The mirror case: an application that deliberately sets urxvt last must
@@ -5006,9 +5320,18 @@ mod tests {
     fn replay_preserves_urxvt_mouse_encoding_when_urxvt_is_set_last() {
         let mirror = replayed_mirror(b"\x1b[?1002h\x1b[?1006h\x1b[?1015h");
         let (press, release, wheel) = synced_mouse_bytes(&mirror);
-        assert_eq!(press, b"\x1b[32;37;21M", "press must stay urxvt after replay");
-        assert_eq!(release, b"\x1b[35;37;21M", "release must stay urxvt after replay");
-        assert_eq!(wheel, b"\x1b[96;37;21M", "wheel must stay urxvt after replay");
+        assert_eq!(
+            press, b"\x1b[32;37;21M",
+            "press must stay urxvt after replay"
+        );
+        assert_eq!(
+            release, b"\x1b[35;37;21M",
+            "release must stay urxvt after replay"
+        );
+        assert_eq!(
+            wheel, b"\x1b[96;37;21M",
+            "wheel must stay urxvt after replay"
+        );
     }
 
     /// The active wire format is a single last-set-wins selector; resetting
@@ -5026,7 +5349,10 @@ mod tests {
         assert_eq!(terminal.active_mouse_format(), MouseWireFormat::Urxvt);
         terminal.vt_write(b"\x1b[?1006h");
         assert_eq!(terminal.active_mouse_format(), MouseWireFormat::Sgr);
-        assert_eq!(terminal.pointer_semantic_snapshot().active_mouse_format, MouseWireFormat::Sgr);
+        assert_eq!(
+            terminal.pointer_semantic_snapshot().active_mouse_format,
+            MouseWireFormat::Sgr
+        );
         terminal.vt_write(b"\x1b[?1016h");
         assert_eq!(terminal.active_mouse_format(), MouseWireFormat::SgrPixels);
         terminal.vt_write(b"\x1b[?1016l");
@@ -5042,8 +5368,15 @@ mod tests {
         assert!(host.mouse_format_replay_suffix().is_empty());
         let replay = host.vt_replay_bytes().unwrap();
         let text = String::from_utf8_lossy(&replay);
-        assert!(!text.contains("[?1006l"), "suffix must not reset the only format");
-        assert_eq!(text.matches("[?1006h").count(), 1, "active selector emitted once");
+        assert!(
+            !text.contains("[?1006l"),
+            "suffix must not reset the only format"
+        );
+        assert_eq!(
+            text.matches("[?1006h").count(),
+            1,
+            "active selector emitted once"
+        );
     }
 
     #[test]
@@ -5056,7 +5389,11 @@ mod tests {
 
         let mut theme_portable = Terminal::new(80, 24, 0, Callbacks::default()).unwrap();
         theme_portable
-            .apply_vt_replay(&host.vt_replay_bounded_theme_portable_with_aliases(1 << 20).unwrap())
+            .apply_vt_replay(
+                &host
+                    .vt_replay_bounded_theme_portable_with_aliases(1 << 20)
+                    .unwrap(),
+            )
             .unwrap();
         assert_eq!(theme_portable.title(), mirror.title());
     }
@@ -5077,7 +5414,11 @@ mod tests {
         let suffix_len = terminal.replay_state_suffix().len();
         assert!(suffix_len > 0);
         assert!(terminal.preflight_vt_replay_bounded(suffix_len).is_ok());
-        assert!(terminal.preflight_vt_replay_bounded(suffix_len - 1).is_err());
+        assert!(
+            terminal
+                .preflight_vt_replay_bounded(suffix_len - 1)
+                .is_err()
+        );
     }
 
     #[test]
@@ -5087,7 +5428,11 @@ mod tests {
         let suffix_len = terminal.mouse_format_replay_suffix().len();
         assert!(suffix_len > 0);
         assert!(terminal.preflight_vt_replay_bounded(suffix_len).is_ok());
-        assert!(terminal.preflight_vt_replay_bounded(suffix_len - 1).is_err());
+        assert!(
+            terminal
+                .preflight_vt_replay_bounded(suffix_len - 1)
+                .is_err()
+        );
     }
 
     #[test]
@@ -5097,8 +5442,14 @@ mod tests {
         assert!(!detector.write(b"\x1b\x07[?100"));
         assert!(detector.write(b"6\x7fh"));
         assert!(!detector.write(&[0xc4]));
-        assert!(!detector.write(&[0x9b, b'h']), "UTF-8 continuation must not open CSI");
-        assert!(detector.write(b"\x1b\x07c"), "C0 controls must not hide a hard reset");
+        assert!(
+            !detector.write(&[0x9b, b'h']),
+            "UTF-8 continuation must not open CSI"
+        );
+        assert!(
+            detector.write(b"\x1b\x07c"),
+            "C0 controls must not hide a hard reset"
+        );
     }
 
     #[test]
@@ -5390,7 +5741,11 @@ mod tests {
                     ClearHistoryOutcome::Blocked,
                     "{name} split at byte {split}"
                 );
-                assert_eq!(terminal.history_rows(), history_before, "{name} split at byte {split}");
+                assert_eq!(
+                    terminal.history_rows(),
+                    history_before,
+                    "{name} split at byte {split}"
+                );
                 assert_eq!(
                     terminal.plain_text().unwrap(),
                     contents_before,
@@ -5431,7 +5786,10 @@ mod tests {
         for introducer in *b"PX^_" {
             let mut tracker = PromptSemanticTracker::default();
             tracker.feed(b"\x1b]133;I\x07");
-            assert_eq!(tracker.semantic(Screen::Primary), PromptSemantic::InputUntilEndOfLine);
+            assert_eq!(
+                tracker.semantic(Screen::Primary),
+                PromptSemantic::InputUntilEndOfLine
+            );
 
             tracker.feed(&[0x1b, introducer, b'q', b'\n', 0x1b, b'\\']);
             assert_eq!(
@@ -5490,7 +5848,12 @@ mod tests {
 
         let mut restored = Terminal::new(80, 24, 0, Callbacks::default()).unwrap();
         restored.vt_write(&bounded);
-        assert!(restored.viewport_text().unwrap().contains("LATEST-VISIBLE-CONTENT"));
+        assert!(
+            restored
+                .viewport_text()
+                .unwrap()
+                .contains("LATEST-VISIBLE-CONTENT")
+        );
     }
 
     #[test]
@@ -5503,7 +5866,10 @@ mod tests {
 
         let full = source.vt_replay_bytes().unwrap();
         assert!(full.len() < 8 * 1024 * 1024);
-        assert_eq!(source.vt_replay_bounded_bytes(8 * 1024 * 1024).unwrap(), full);
+        assert_eq!(
+            source.vt_replay_bounded_bytes(8 * 1024 * 1024).unwrap(),
+            full
+        );
     }
 
     #[test]
@@ -5540,7 +5906,10 @@ mod tests {
         let update = b"\x1b[5;3HInput\x1b[6;1HDONE\x1b[5;8H";
         source.vt_write(update);
         restored.vt_write(update);
-        assert_eq!(restored.viewport_text().unwrap(), source.viewport_text().unwrap());
+        assert_eq!(
+            restored.viewport_text().unwrap(),
+            source.viewport_text().unwrap()
+        );
     }
 
     #[test]
@@ -5564,7 +5933,10 @@ mod tests {
         let update = b"\x1b[4;1H\x1b[2K> NEW PROMPT\x1b[5;1HDONE\x1b[4;3H";
         source.vt_write(update);
         restored.vt_write(update);
-        assert_eq!(restored.viewport_text().unwrap(), source.viewport_text().unwrap());
+        assert_eq!(
+            restored.viewport_text().unwrap(),
+            source.viewport_text().unwrap()
+        );
     }
 
     #[test]
@@ -5573,17 +5945,27 @@ mod tests {
         source.vt_write(b"\x1b_Ga=T,t=d,f=24,I=77,p=0,s=1,v=1,c=1,r=1,q=2;/wAA\x1b\\");
         let image_id = source.kitty_graphics_snapshot().unwrap().images[0].id;
 
-        let replay = source.vt_replay_bounded_theme_portable_with_aliases(1024 * 1024).unwrap();
+        let replay = source
+            .vt_replay_bounded_theme_portable_with_aliases(1024 * 1024)
+            .unwrap();
         assert_eq!(
             replay.kitty_image_aliases,
-            vec![KittyImageAlias { image_id, image_number: 77 }]
+            vec![KittyImageAlias {
+                image_id,
+                image_number: 77
+            }]
         );
 
         let mut target = Terminal::new(20, 4, 100, Callbacks::default()).unwrap();
         target.vt_write(&replay.bytes);
-        target.restore_kitty_image_aliases(&replay.kitty_image_aliases).unwrap();
+        target
+            .restore_kitty_image_aliases(&replay.kitty_image_aliases)
+            .unwrap();
         target.vt_write(b"\x1b_Ga=p,I=77,p=5,c=1,r=1,q=2;\x1b\\");
-        assert_eq!(target.kitty_graphics_snapshot().unwrap().placements[0].image_id, image_id);
+        assert_eq!(
+            target.kitty_graphics_snapshot().unwrap().placements[0].image_id,
+            image_id
+        );
     }
 
     #[test]
@@ -5601,12 +5983,19 @@ mod tests {
             source_graphics.placements[0]
         );
 
-        let replay = source.vt_replay_bounded_theme_portable_with_aliases(1024 * 1024).unwrap();
+        let replay = source
+            .vt_replay_bounded_theme_portable_with_aliases(1024 * 1024)
+            .unwrap();
         let mut target = Terminal::new(20, 8, 100, Callbacks::default()).unwrap();
         target.resize(20, 8, 10, 20).unwrap();
         target.vt_write(&replay.bytes);
-        assert_eq!(target.kitty_graphics_snapshot().unwrap().placements.len(), 1);
-        target.restore_kitty_image_aliases(&replay.kitty_image_aliases).unwrap();
+        assert_eq!(
+            target.kitty_graphics_snapshot().unwrap().placements.len(),
+            1
+        );
+        target
+            .restore_kitty_image_aliases(&replay.kitty_image_aliases)
+            .unwrap();
         target.vt_write(b"\x1b[8;20H\x1b8");
 
         assert_eq!(
@@ -5632,12 +6021,20 @@ mod tests {
                 false,
             )
             .unwrap();
-        assert_eq!(text.range, None, "fixture did not reach the minimal reset fallback");
+        assert_eq!(
+            text.range, None,
+            "fixture did not reach the minimal reset fallback"
+        );
 
-        let replay = source.vt_replay_bounded_theme_portable_with_aliases(max_bytes).unwrap();
+        let replay = source
+            .vt_replay_bounded_theme_portable_with_aliases(max_bytes)
+            .unwrap();
         assert_eq!(
             replay.kitty_image_aliases,
-            vec![KittyImageAlias { image_id: image.id, image_number: 77 }]
+            vec![KittyImageAlias {
+                image_id: image.id,
+                image_number: 77
+            }]
         );
         assert!(
             replay.bytes.starts_with(b"\x1bc\x1b_G"),
@@ -5647,9 +6044,14 @@ mod tests {
 
         let mut target = Terminal::new(256, 1, 0, Callbacks::default()).unwrap();
         target.vt_write(&replay.bytes);
-        target.restore_kitty_image_aliases(&replay.kitty_image_aliases).unwrap();
+        target
+            .restore_kitty_image_aliases(&replay.kitty_image_aliases)
+            .unwrap();
         target.vt_write(b"\x1b_Ga=p,I=77,p=5,c=1,r=1,q=2;\x1b\\");
-        assert_eq!(target.kitty_graphics_snapshot().unwrap().placements[0].image_id, image.id);
+        assert_eq!(
+            target.kitty_graphics_snapshot().unwrap().placements[0].image_id,
+            image.id
+        );
     }
 
     #[test]
@@ -5669,15 +6071,20 @@ mod tests {
         let scrollbar = source.scrollbar().unwrap();
         let anchor_row = scrollbar.total - 12;
         let placement_rows = [anchor_row].into_iter().collect();
-        let anchor_range = super::ReplayRowRange { start: anchor_row, end: scrollbar.total - 1 };
+        let anchor_range = super::ReplayRowRange {
+            start: anchor_row,
+            end: scrollbar.total - 1,
+        };
         let anchor_bytes = source
             .vt_replay_text_range_bounded(anchor_range, &placement_rows, usize::MAX, true)
             .unwrap()
             .unwrap()
             .bytes
             .len();
-        let older_range =
-            super::ReplayRowRange { start: scrollbar.total - 16, end: scrollbar.total - 1 };
+        let older_range = super::ReplayRowRange {
+            start: scrollbar.total - 16,
+            end: scrollbar.total - 1,
+        };
         assert!(
             source
                 .vt_replay_text_range_bounded(older_range, &placement_rows, anchor_bytes, true)
@@ -5725,17 +6132,30 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(row, placement)| {
-                (placement.key, KittyPlacementAnchor { col: 0, row: u32::try_from(row).unwrap() })
+                (
+                    placement.key,
+                    KittyPlacementAnchor {
+                        col: 0,
+                        row: u32::try_from(row).unwrap(),
+                    },
+                )
             })
             .collect();
         let snapshot = KittyReplaySnapshot {
-            graphics: KittyGraphicsSnapshot { generation: 1, images, placements },
+            graphics: KittyGraphicsSnapshot {
+                generation: 1,
+                images,
+                placements,
+            },
             anchors,
         };
 
         let catalog = KittyReplayCatalog::new(&snapshot, (1, 1), 24);
 
-        assert_eq!(catalog.placement_grouping_visits, snapshot.graphics.placements.len());
+        assert_eq!(
+            catalog.placement_grouping_visits,
+            snapshot.graphics.placements.len()
+        );
     }
 
     #[test]
@@ -5778,8 +6198,14 @@ mod tests {
         }
         source.vt_write(b"tail");
         let end = source.scrollbar().unwrap().total - 1;
-        let range = super::ReplayRowRange { start: end - 5, end };
-        let anchor = KittyPlacementAnchor { col: 0, row: u32::try_from(range.start - 1).unwrap() };
+        let range = super::ReplayRowRange {
+            start: end - 5,
+            end,
+        };
+        let anchor = KittyPlacementAnchor {
+            col: 0,
+            row: u32::try_from(range.start - 1).unwrap(),
+        };
         let placement =
             replay_placement_fixture((10, 60), (1, 3), (10, 60), (1, 3), (0, 0), (0, 0));
         let snapshot = KittyReplaySnapshot {
@@ -5811,8 +6237,10 @@ mod tests {
         restored.resize(12, 4, 10, 20).unwrap();
         restored.vt_write(&replay);
         let restored_graphics = restored.kitty_graphics_snapshot().unwrap();
-        let restored_placement =
-            restored_graphics.placements.first().expect("overlapping placement");
+        let restored_placement = restored_graphics
+            .placements
+            .first()
+            .expect("overlapping placement");
 
         assert_eq!(restored_placement.source_y, 20);
         assert_eq!(restored_placement.source_height, 40);
@@ -5835,7 +6263,11 @@ mod tests {
     #[test]
     fn empty_kitty_probe_does_not_poison_replay_state() {
         let mut terminal = Terminal::new(20, 4, 100, Callbacks::default()).unwrap();
-        assert!(terminal.vt_write_with_normalized(b"ready\x1b_G\x1b\\").ends_with(b"ready"));
+        assert!(
+            terminal
+                .vt_write_with_normalized(b"ready\x1b_G\x1b\\")
+                .ends_with(b"ready")
+        );
         assert!(terminal.vt_stream_is_ground());
         assert!(terminal.vt_replay_bounded(1024 * 1024).is_ok());
 
@@ -5856,7 +6288,10 @@ mod tests {
     #[test]
     fn c1_control_string_normalization_handles_split_sequences_and_st() {
         let mut normalizer = C1Normalizer::default();
-        assert_eq!(normalizer.normalize(b"\x90payload"), b"\x1bPpayload".as_slice());
+        assert_eq!(
+            normalizer.normalize(b"\x90payload"),
+            b"\x1bPpayload".as_slice()
+        );
         assert_eq!(normalizer.normalize(b"\x9c"), b"\x1b\\".as_slice());
 
         assert_eq!(normalizer.normalize(b"\x98part"), b"\x1bXpart".as_slice());
@@ -5898,7 +6333,10 @@ mod tests {
             (0, 15),
         ));
 
-        assert!(command.contains("x=0,y=5,w=20,h=5,X=0,Y=0,c=2"), "{command:?}");
+        assert!(
+            command.contains("x=0,y=5,w=20,h=5,X=0,Y=0,c=2"),
+            "{command:?}"
+        );
         assert!(!command.contains(",r="), "{command:?}");
     }
 
@@ -5913,7 +6351,10 @@ mod tests {
             (5, 0),
         ));
 
-        assert!(command.contains("x=5,y=0,w=5,h=40,X=0,Y=0,r=2"), "{command:?}");
+        assert!(
+            command.contains("x=5,y=0,w=5,h=40,X=0,Y=0,r=2"),
+            "{command:?}"
+        );
         assert!(!command.contains(",c="), "{command:?}");
     }
 }

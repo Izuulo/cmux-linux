@@ -43,7 +43,9 @@ fn kitty_png(image_id: u32, encoded: &[u8]) -> Vec<u8> {
 
 fn assert_image(terminal: &Terminal, image_id: u32, size: (u32, u32), expected_rgba: &[u8]) {
     let snapshot = terminal.kitty_graphics_snapshot().unwrap();
-    let image = snapshot.image(image_id).unwrap_or_else(|| panic!("missing image {image_id}"));
+    let image = snapshot
+        .image(image_id)
+        .unwrap_or_else(|| panic!("missing image {image_id}"));
     assert_eq!(image.format, KittyImageFormat::Rgba, "image {image_id}");
     assert_eq!((image.width, image.height), size, "image {image_id}");
     assert_eq!(&*image.data, expected_rgba, "image {image_id}");
@@ -67,10 +69,24 @@ fn chunk_offsets(encoded: &[u8], expected_kind: &[u8; 4]) -> (usize, usize) {
 
 #[test]
 fn eight_bit_rgb_grayscale_and_grayscale_alpha_decode_to_rgba() {
-    let rgb =
-        encode_png(2, 1, ColorType::Rgb, BitDepth::Eight, &[1, 2, 3, 250, 251, 252], None, None);
-    let grayscale =
-        encode_png(3, 1, ColorType::Grayscale, BitDepth::Eight, &[0, 127, 255], None, None);
+    let rgb = encode_png(
+        2,
+        1,
+        ColorType::Rgb,
+        BitDepth::Eight,
+        &[1, 2, 3, 250, 251, 252],
+        None,
+        None,
+    );
+    let grayscale = encode_png(
+        3,
+        1,
+        ColorType::Grayscale,
+        BitDepth::Eight,
+        &[0, 127, 255],
+        None,
+        None,
+    );
     let grayscale_alpha = encode_png(
         2,
         1,
@@ -87,7 +103,12 @@ fn eight_bit_rgb_grayscale_and_grayscale_alpha_decode_to_rgba() {
     terminal.vt_write(&kitty_png(3, &grayscale_alpha));
 
     assert_image(&terminal, 1, (2, 1), &[1, 2, 3, 255, 250, 251, 252, 255]);
-    assert_image(&terminal, 2, (3, 1), &[0, 0, 0, 255, 127, 127, 127, 255, 255, 255, 255, 255]);
+    assert_image(
+        &terminal,
+        2,
+        (3, 1),
+        &[0, 0, 0, 255, 127, 127, 127, 255, 255, 255, 255, 255],
+    );
     assert_image(&terminal, 3, (2, 1), &[32, 32, 32, 64, 200, 200, 200, 128]);
 }
 
@@ -116,7 +137,12 @@ fn indexed_palette_and_transparency_expand_to_rgba() {
     terminal.vt_write(&kitty_png(10, &indexed));
     terminal.vt_write(&kitty_png(11, &transparent_rgb));
 
-    assert_image(&terminal, 10, (3, 1), &[255, 0, 0, 255, 0, 255, 0, 0, 0, 0, 255, 128]);
+    assert_image(
+        &terminal,
+        10,
+        (3, 1),
+        &[255, 0, 0, 255, 0, 255, 0, 0, 0, 0, 255, 128],
+    );
     assert_image(&terminal, 11, (2, 1), &[255, 0, 0, 0, 0, 0, 255, 255]);
 }
 
@@ -140,7 +166,15 @@ fn sixteen_bit_samples_are_stripped_to_eight_bit_rgba() {
 
 #[test]
 fn truncated_idat_and_bad_checksum_are_rejected_before_parser_recovery() {
-    let valid = encode_png(2, 1, ColorType::Rgb, BitDepth::Eight, &[9, 8, 7, 6, 5, 4], None, None);
+    let valid = encode_png(
+        2,
+        1,
+        ColorType::Rgb,
+        BitDepth::Eight,
+        &[9, 8, 7, 6, 5, 4],
+        None,
+        None,
+    );
     let (data_start, data_end) = chunk_offsets(&valid, b"IDAT");
     let mut truncated = valid.clone();
     truncated.truncate(data_start + (data_end - data_start).div_ceil(2));
@@ -152,8 +186,14 @@ fn truncated_idat_and_bad_checksum_are_rejected_before_parser_recovery() {
     terminal.vt_write(&kitty_png(31, &bad_checksum));
 
     let rejected = terminal.kitty_graphics_snapshot().unwrap();
-    assert!(rejected.image(30).is_none(), "truncated IDAT must be rejected");
-    assert!(rejected.image(31).is_none(), "bad IDAT checksum must be rejected");
+    assert!(
+        rejected.image(30).is_none(),
+        "truncated IDAT must be rejected"
+    );
+    assert!(
+        rejected.image(31).is_none(),
+        "bad IDAT checksum must be rejected"
+    );
 
     terminal.vt_write(&kitty_png(32, &valid));
     assert_image(&terminal, 32, (2, 1), &[9, 8, 7, 255, 6, 5, 4, 255]);
@@ -176,12 +216,24 @@ fn valid_png_with_oversized_decoded_rgba_is_rejected_and_parser_recovers() {
         oversized.len() < 100_000,
         "fixture must be rejected for decoded size, not encoded payload size"
     );
-    let valid = encode_png(1, 1, ColorType::Rgb, BitDepth::Eight, &[4, 5, 6], None, None);
+    let valid = encode_png(
+        1,
+        1,
+        ColorType::Rgb,
+        BitDepth::Eight,
+        &[4, 5, 6],
+        None,
+        None,
+    );
     let mut terminal = terminal();
 
     terminal.vt_write(&kitty_png(40, &oversized));
     assert!(
-        terminal.kitty_graphics_snapshot().unwrap().image(40).is_none(),
+        terminal
+            .kitty_graphics_snapshot()
+            .unwrap()
+            .image(40)
+            .is_none(),
         "decoded RGBA above the decoder limit must be rejected"
     );
 

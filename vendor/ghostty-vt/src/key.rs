@@ -110,7 +110,11 @@ pub fn key_input_from_chord(chord: &str) -> Option<KeyInput> {
         }
     }
     let key_name = key_name?;
-    let mut input = KeyInput { mods, action: Some(KeyAction::Press), ..Default::default() };
+    let mut input = KeyInput {
+        mods,
+        action: Some(KeyAction::Press),
+        ..Default::default()
+    };
     match key_name {
         "enter" | "return" => input.key = sys::GHOSTTY_KEY_ENTER,
         "tab" => input.key = sys::GHOSTTY_KEY_TAB,
@@ -317,11 +321,16 @@ fn append_encoded_key(input: &KeyInput, encoded: &[u8], out: &mut Vec<u8>) {
         out.extend_from_slice(encoded);
         return;
     }
-    let key_field_end = encoded.iter().position(|byte| *byte == b';').unwrap_or(encoded.len() - 1);
+    let key_field_end = encoded
+        .iter()
+        .position(|byte| *byte == b';')
+        .unwrap_or(encoded.len() - 1);
     let key_field = &encoded[2..key_field_end];
     let colon_count = key_field.iter().filter(|byte| **byte == b':').count();
     if !(1..=2).contains(&colon_count)
-        || !key_field.iter().all(|byte| byte.is_ascii_digit() || *byte == b':')
+        || !key_field
+            .iter()
+            .all(|byte| byte.is_ascii_digit() || *byte == b':')
     {
         out.extend_from_slice(encoded);
         return;
@@ -394,15 +403,21 @@ mod tests {
         encoder.sync_from_terminal(&term);
 
         let mut out = Vec::new();
-        encoder.encode(&key_input_from_chord("ctrl+c").unwrap(), &mut out).unwrap();
+        encoder
+            .encode(&key_input_from_chord("ctrl+c").unwrap(), &mut out)
+            .unwrap();
         assert_eq!(out, vec![0x03]);
 
         out.clear();
-        encoder.encode(&key_input_from_chord("enter").unwrap(), &mut out).unwrap();
+        encoder
+            .encode(&key_input_from_chord("enter").unwrap(), &mut out)
+            .unwrap();
         assert_eq!(out, b"\r");
 
         out.clear();
-        encoder.encode(&key_input_from_chord("up").unwrap(), &mut out).unwrap();
+        encoder
+            .encode(&key_input_from_chord("up").unwrap(), &mut out)
+            .unwrap();
         assert!(!out.is_empty());
 
         assert!(key_input_from_chord("not-a-key").is_none());
@@ -431,7 +446,10 @@ mod tests {
         // the terminal, syncing makes it ESC O A.
         let mut term = Terminal::new(80, 24, 0, Callbacks::default()).unwrap();
         let mut enc = KeyEncoder::new().unwrap();
-        let up = KeyInput { key: sys::GHOSTTY_KEY_ARROW_UP, ..Default::default() };
+        let up = KeyInput {
+            key: sys::GHOSTTY_KEY_ARROW_UP,
+            ..Default::default()
+        };
 
         let mut out = Vec::new();
         enc.sync_from_terminal(&term);
