@@ -86,9 +86,10 @@ impl WindowView {
 
     fn reload_ghostty(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(env) = &self.config.env else { return };
+        let before = self.config.ghostty.restamp();
         let loaded = ghostty::load(env);
         log(&loaded.warnings);
-        self.config.ghostty = Watched::new(loaded.files);
+        self.config.ghostty = Watched::new_since(loaded.files, &before);
         let style = Rc::new(TermStyle::new(&loaded.config, &installed_families(cx)));
         self.set_style(style, window, cx);
     }

@@ -28,6 +28,23 @@ impl Watched {
         )
     }
 
+    /// Like `new`, but files `before` also lists keep its stamps: take `before` ahead of a
+    /// load, so a write landing during the load still shows as a change.
+    pub fn new_since(files: Vec<PathBuf>, before: &Watched) -> Self {
+        let mut w = Self::new(files);
+        for (p, s) in &mut w.0 {
+            if let Some((_, b)) = before.0.iter().find(|(q, _)| q == p) {
+                *s = *b;
+            }
+        }
+        w
+    }
+
+    /// The same files, stamped now.
+    pub fn restamp(&self) -> Self {
+        Self::new(self.0.iter().map(|(p, _)| p.clone()).collect())
+    }
+
     /// True when any file was created, removed or rewritten since `new`.
     pub fn changed(&self) -> bool {
         self.0.iter().any(|(p, s)| stamp(p) != *s)
@@ -63,6 +80,11 @@ mod tests {
         let w = Watched::new(vec![a.clone(), b.clone()]);
         std::fs::remove_file(&a).unwrap();
         assert!(w.changed(), "removed");
+        // A write between `restamp` and the load's end stays visible.
+        let before = Watched::new(vec![b.clone()]).restamp();
+        std::fs::write(&b, "z").unwrap();
+        assert!(Watched::new_since(vec![b.clone()], &before).changed());
+        assert!(!Watched::new(vec![b.clone()]).changed());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

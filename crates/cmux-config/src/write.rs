@@ -131,33 +131,45 @@ pub fn set_auto_naming(path: &Path, enabled: bool, command: Option<&str>) -> io:
     })
 }
 
+/// The table's trimmed `id`; `None` for an unfinished entry (no id, or a blank one).
+fn agent_id(t: &Table) -> Option<&str> {
+    t.get("id")
+        .and_then(Item::as_str)
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+}
+
 /// Makes `[[vault.agents]]` hold `agents`: entries are matched by `id` and updated in place
 /// (other keys and comments kept), new ones appended, and ones whose `id` is gone removed.
+/// The k-th agent with an id matches the k-th entry with that id, so duplicates stay apart.
 /// Entries without an `id` are the user's unfinished ones and are left alone.
 pub fn set_agents(path: &Path, agents: &[Registration]) -> io::Result<()> {
     edit_toml(path, |doc| {
-        if agents.is_empty() {
-            if let Some(vault) = doc.get_mut("vault").and_then(Item::as_table_like_mut) {
-                vault.remove("agents");
-            }
-            return Ok(());
-        }
         if !doc.contains_key("vault") {
             let mut vault = Table::new();
             vault.set_implicit(true);
             doc.insert("vault", Item::Table(vault));
         }
-        let list = table(doc, "vault")?
+        let vault = table(doc, "vault")?;
+        let list = vault
             .entry("agents")
             .or_insert(Item::ArrayOfTables(ArrayOfTables::new()))
             .as_array_of_tables_mut()
             .ok_or_else(|| invalid("config.toml: `vault.agents` is not [[vault.agents]]".into()))?;
-        fn id_of(t: &Table) -> Option<&str> {
-            t.get("id").and_then(Item::as_str).map(str::trim)
-        }
-        list.retain(|t| id_of(t).is_none_or(|id| agents.iter().any(|a| a.id == id)));
-        for a in agents {
-            let found = list.iter().position(|t| id_of(t) == Some(a.id.as_str()));
+        let wanted = |id: &str| agents.iter().filter(|a| a.id == id).count();
+        let mut seen = std::collections::HashMap::<String, usize>::new();
+        list.retain(|t| {
+            agent_id(t).is_none_or(|id| {
+                let k = seen.entry(id.to_string()).or_default();
+                *k += 1;
+                *k <= wanted(id)
+            })
+        });
+        for (n, a) in agents.iter().enumerate() {
+            let k = agents[..n].iter().filter(|b| b.id == a.id).count();
+            let found = (0..list.len())
+                .filter(|&i| agent_id(list.get(i).expect("in range")) == Some(a.id.as_str()))
+                .nth(k);
             let i = match found {
                 Some(i) => i,
                 None => {
@@ -176,12 +188,16 @@ pub fn set_agents(path: &Path, agents: &[Registration]) -> io::Result<()> {
             put(t, "argv_option", value(&a.argv_option));
             put(t, "resume_command", value(&a.resume_command));
         }
+        if list.is_empty() {
+            vault.remove("agents");
+        }
         Ok(())
     })
 }
 
 /// Renames agent `old` to `new` in place, keeping its other keys and comments (`set_agents`
-/// would replace the table). Fails when `old` is missing or `new` is taken.
+/// would replace the table). Fails when `old` is missing or duplicated (which one is meant is
+/// unclear), or `new` is taken.
 pub fn rename_agent(path: &Path, old: &str, new: &str) -> io::Result<()> {
     edit_toml(path, |doc| {
         let list = doc
@@ -189,15 +205,18 @@ pub fn rename_agent(path: &Path, old: &str, new: &str) -> io::Result<()> {
             .and_then(|v| v.get_mut("agents"))
             .and_then(Item::as_array_of_tables_mut)
             .ok_or_else(|| invalid("config.toml: no [[vault.agents]]".into()))?;
-        let id_is =
-            |t: &Table, id: &str| t.get("id").and_then(Item::as_str).map(str::trim) == Some(id);
-        if list.iter().any(|t| id_is(t, new)) {
+        if list.iter().any(|t| agent_id(t) == Some(new)) {
             return Err(invalid(format!("config.toml: agent `{new}` exists")));
         }
-        let t = list
-            .iter_mut()
-            .find(|t| id_is(t, old))
+        let mut found = list.iter_mut().filter(|t| agent_id(t) == Some(old));
+        let t = found
+            .next()
             .ok_or_else(|| invalid(format!("config.toml: no agent `{old}`")))?;
+        if found.next().is_some() {
+            return Err(invalid(format!(
+                "config.toml: agent `{old}` is listed twice"
+            )));
+        }
         put(t, "id", value(new));
         Ok(())
     })
@@ -377,6 +396,56 @@ mod tests {
         assert!(out.contains("[other]\nkeep = true\n"), "{out}");
         let (regs, _) = crate::vault::registrations(&out);
         assert_eq!(regs, vec![codex, new]);
+    }
+
+    #[test]
+    fn agents_keep_duplicates_apart_and_drafts_untouched() {
+        let text = "[[vault.agents]]\n\
+            # first dup\n\
+            id = \"dup\"\n\
+            process_name = \"one\" # first\n\
+            argv_option = \"-a\"\n\
+            resume_command = \"one {{sessionId}}\"\n\
+            mine = 1\n\
+            \n\
+            [[vault.agents]]\n\
+            # draft, no id\n\
+            name = \"wip\"\n\
+            \n\
+            [[vault.agents]]\n\
+            id = \"dup\" # second dup\n\
+            process_name = \"two\"\n\
+            argv_option = \"-b\"\n\
+            resume_command = \"two {{sessionId}}\"\n\
+            \n\
+            [[vault.agents]]\n\
+            id = \"\" # blank draft\n\
+            process_name = \"x\"\n";
+        let reg = |p: &str, o: &str| Registration {
+            id: "dup".into(),
+            name: "dup".into(),
+            process_name: p.into(),
+            argv_option: o.into(),
+            resume_command: format!("{p} {{{{sessionId}}}}"),
+        };
+        // Edit the second dup: the first and both drafts stay as written.
+        let edited = run("agents-dup", text, |p| {
+            set_agents(p, &[reg("one", "-a"), reg("two", "-c")]).unwrap();
+            assert!(rename_agent(p, "dup", "x").is_err());
+        });
+        assert_eq!(edited, text.replace("\"-b\"", "\"-c\""));
+        // Remove both: the drafts keep the list alive (the first keeps its blank line above).
+        let cleared = run("agents-dup-clear", &edited, |p| set_agents(p, &[]).unwrap());
+        assert_eq!(
+            cleared,
+            "\n[[vault.agents]]\n\
+             # draft, no id\n\
+             name = \"wip\"\n\
+             \n\
+             [[vault.agents]]\n\
+             id = \"\" # blank draft\n\
+             process_name = \"x\"\n"
+        );
     }
 
     #[test]
