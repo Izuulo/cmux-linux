@@ -1,6 +1,7 @@
 //! Client-side window decorations: our own close/minimize/zoom buttons, window move and
 //! edge resize, so the compositor draws no title bar or border around the window.
-//! The buttons sit top-left like cmux's traffic lights; the sidebar band keeps that corner free.
+//! The buttons sit top-right (owner's choice; cmux has them top-left) and the top-right strip
+//! indents for them. The window's corners are rounded by whatever is drawn in each corner.
 
 use std::cell::Cell;
 
@@ -19,6 +20,7 @@ const DOT_TOP: f32 = 8.0;
 const MOVE_SLOP: f32 = 4.0;
 const EDGE: f32 = 5.0;
 const CORNER: f32 = 12.0;
+const RADIUS: f32 = 10.0;
 
 thread_local! {
     /// Where the left button went down on a draggable strip, until released or moved away.
@@ -29,7 +31,7 @@ fn client_decorated(window: &Window) -> bool {
     matches!(window.window_decorations(), Decorations::Client { .. })
 }
 
-/// Width the window buttons take from the top-left corner (0 when the compositor decorates).
+/// Width the window buttons take from the top-right corner (0 when the compositor decorates).
 pub fn controls_width(window: &Window) -> f32 {
     match client_decorated(window) && !window.is_fullscreen() {
         true => 2.0 * DOT_INSET + 3.0 * DOT + 2.0 * DOT_GAP,
@@ -37,13 +39,31 @@ pub fn controls_width(window: &Window) -> f32 {
     }
 }
 
-/// How far a top strip starting at window x `strip_x` must indent to clear the buttons.
-pub fn lead(controls_width: f32, strip_x: f32, strip_y: f32) -> f32 {
+/// How far a top strip must indent on one side to clear `reserved` px in that window corner,
+/// when the strip's end is `edge_gap` px from that window edge.
+pub fn inset(reserved: f32, edge_gap: f32, strip_y: f32) -> f32 {
     match strip_y == 0.0 {
-        true => (controls_width - strip_x).max(0.0),
+        true => (reserved - edge_gap).max(0.0),
         false => 0.0,
     }
 }
+
+/// Radius of the window's own corners: none when the compositor decorates, or when the window
+/// is maximized, fullscreen or tiled.
+pub fn corner_radius(window: &Window) -> f32 {
+    let Decorations::Client { tiling } = window.window_decorations() else {
+        return 0.0;
+    };
+    let tiled = tiling.top || tiling.bottom || tiling.left || tiling.right;
+    match tiled || window.is_maximized() || window.is_fullscreen() {
+        true => 0.0,
+        false => RADIUS,
+    }
+}
+
+/// What the top-left strip clears while the sidebar is hidden: the reopen button that
+/// `sidebar.rs` draws there (its 20 px button with the band's 6 px inset either side).
+pub const REOPEN_LEAD: f32 = 32.0;
 
 /// Makes empty top-bar space move the window when dragged; `zoom` adds double-click to
 /// maximize. Does nothing under server-side decorations.
@@ -93,13 +113,14 @@ pub fn controls(window: &Window) -> Option<AnyElement> {
         div()
             .absolute()
             .top(px(DOT_TOP))
-            .left(px(DOT_INSET))
+            .right(px(DOT_INSET))
             .flex()
             .flex_row()
             .gap(px(DOT_GAP))
-            .child(dot("window-close", 0xff5f57, |w| w.remove_window()))
+            // Close sits in the corner, as on other Linux windows.
             .child(dot("window-minimize", 0xfebc2e, |w| w.minimize_window()))
             .child(dot("window-zoom", 0x28c840, |w| w.zoom_window()))
+            .child(dot("window-close", 0xff5f57, |w| w.remove_window()))
             .into_any_element(),
     )
 }
@@ -189,10 +210,10 @@ pub fn resize_grips(window: &Window) -> Vec<AnyElement> {
 
 #[cfg(test)]
 mod tests {
-    use super::lead;
+    use super::inset as lead;
 
     #[test]
-    fn only_a_top_left_strip_indents() {
+    fn only_a_top_corner_strip_indents() {
         assert_eq!(lead(72.0, 0.0, 0.0), 72.0);
         assert_eq!(lead(72.0, 50.0, 0.0), 22.0);
         assert_eq!(lead(72.0, 240.0, 0.0), 0.0, "past the sidebar");

@@ -52,6 +52,7 @@ package() {
   ln -s /usr/lib/cmux-linux/cmux-linux "$pkgdir/usr/bin/cmux-linux"
   ln -s /usr/lib/cmux-linux/cmux "$pkgdir/usr/bin/cmux"
   install -Dm644 packaging/cmux-linux.desktop "$pkgdir/usr/share/applications/cmux-linux.desktop"
+  install -Dm644 packaging/cmux-linux.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/cmux-linux.png"
   local l="$pkgdir/usr/share/licenses/cmux-linux"
   install -Dm644 NOTICE "$l/NOTICE"
   install -Dm644 LICENSE "$l/LICENSE"

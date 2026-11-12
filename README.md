@@ -181,9 +181,11 @@ focusDown = "ctrl+alt+shift+down"
 ## Window buttons
 
 On Linux the window has no system title bar or border. Close, minimize and maximize are the
-three dots in the top-left corner (as in cmux); drag the empty part of the sidebar band or of
-a tab strip to move the window, double-click the band to maximize, and drag an edge or corner
-to resize. The window is square-cornered and has no shadow.
+three dots in the top-right corner (cmux has them top-left), with close outermost; drag the
+empty part of the sidebar band or of a tab strip to move the window, double-click the band to
+maximize, and drag an edge or corner to resize. The window has rounded corners (square when
+maximized or tiled) and no shadow. While the sidebar is hidden, the button in the top-left
+corner (or Super+B) brings it back.
 
 ## Notifications
 

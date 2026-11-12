@@ -543,8 +543,13 @@ impl Render for WindowView {
             v.update(cx, |v, _| v.set_insets(width.unwrap_or(0.), right));
         }
         self.place_dock(window, cx);
+        let radius = crate::csd::corner_radius(window);
         div()
             .relative()
+            // Fills hairline gaps between children; a translucent window must not be painted twice.
+            .when(self.style.cfg.background_opacity >= 1.0, |d| {
+                d.bg(self.style.window_background()).rounded(px(radius))
+            })
             .flex()
             .flex_row()
             .size_full()
@@ -627,7 +632,7 @@ impl Render for WindowView {
                 let id = this.workspaces.selected();
                 this.start_rename(id, w, cx);
             }))
-            .when_some(width, |d, w| d.child(self.render_sidebar(w, cx)))
+            .when_some(width, |d, w| d.child(self.render_sidebar(w, radius, cx)))
             .child(div().flex_1().min_w(px(0.)).h_full().children(selected))
             .when(self.right_sidebar_open, |d| {
                 d.child(self.render_right_sidebar(window, cx))
@@ -638,6 +643,7 @@ impl Render for WindowView {
             })
             .children(self.render_panel(window, cx))
             .children(self.render_menu(cx))
+            .when(width.is_none(), |d| d.child(self.render_reopen(cx)))
             .children(crate::csd::controls(window))
             .children(crate::csd::resize_grips(window))
     }

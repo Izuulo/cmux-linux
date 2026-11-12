@@ -331,6 +331,7 @@ impl WindowView {
         let p = self.palette();
         let c = FeedColors::new(p);
         let width = self.right_sidebar_px(window);
+        let radius = crate::csd::corner_radius(window);
         let tab = |id: &'static str, icon: &'static str, label: &'static str, mode: RightMode| {
             let selected = self.right_mode == mode;
             let fg = |a: f32| with_alpha(c.secondary, c.secondary.a * a);
@@ -411,6 +412,8 @@ impl WindowView {
             .w(px(width))
             .h_full()
             .bg(p.bg)
+            .rounded_tr(px(radius))
+            .rounded_br(px(radius))
             .border_l_1()
             .border_color(p.border)
             .child(bar)

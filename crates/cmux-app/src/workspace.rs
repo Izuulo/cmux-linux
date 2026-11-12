@@ -547,7 +547,7 @@ impl WorkspaceView {
         pane: PaneId,
         r: Rect,
         dim: Option<Rgba>,
-        controls_width: f32,
+        chrome: PaneChrome,
         cx: &Context<Self>,
     ) -> impl IntoElement + use<> {
         let pane = self.layout.pane(pane).expect("rects come from the layout");
@@ -577,13 +577,7 @@ impl WorkspaceView {
             .overflow_hidden()
             .key_context("Pane")
             // Tab bounds are window-space; the content area starts at left_inset.
-            .child(self.render_tab_strip(
-                pane,
-                focused,
-                self.left_inset + r.x,
-                crate::csd::lead(controls_width, self.left_inset + r.x, self.top_inset + r.y),
-                cx,
-            ))
+            .child(self.render_tab_strip(pane, focused, self.left_inset + r.x, chrome, cx))
             .child(
                 div()
                     .relative()
@@ -591,7 +585,14 @@ impl WorkspaceView {
                     .min_h(px(0.))
                     .children(terminal)
                     // No mouse handlers, so no hitbox: clicks go through to the terminal.
-                    .children(dim.map(|c| div().absolute().inset_0().bg(c)))
+                    .children(dim.map(|c| {
+                        div()
+                            .absolute()
+                            .inset_0()
+                            .bg(c)
+                            .rounded_bl(px(chrome.bl))
+                            .rounded_br(px(chrome.br))
+                    }))
                     .children(ring)
                     .children(flash),
             )
@@ -660,6 +661,18 @@ impl Focusable for WorkspaceView {
     }
 }
 
+/// How a pane gives way to window chrome: its strip's indents for the reopen button and the
+/// window buttons, and the radius of each rounded window corner it sits in (else 0).
+#[derive(Clone, Copy)]
+pub(crate) struct PaneChrome {
+    pub lead: f32,
+    pub trail: f32,
+    pub tl: f32,
+    pub tr: f32,
+    pub bl: f32,
+    pub br: f32,
+}
+
 impl Render for WorkspaceView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.update_window_title(window, cx);
@@ -671,12 +684,47 @@ impl Render for WorkspaceView {
         let rects = self.layout.rects(w, h, scale);
         let focused = self.layout.focused();
         let controls = crate::csd::controls_width(window);
+        // No sidebar left of us: the window draws its reopen button in our top-left corner.
+        let reopen = match self.left_inset == 0.0 {
+            true => crate::csd::REOPEN_LEAD,
+            false => 0.0,
+        };
+        let radius = crate::csd::corner_radius(window);
+        let (left, top, right) = (self.left_inset, self.top_inset, self.right_inset);
+        let chrome_of = move |r: Rect| {
+            let (x, y) = (left + r.x, top + r.y);
+            let (right_gap, bottom_gap) = (right + w - r.x - r.w, h - r.y - r.h);
+            let at = |a: f32, b: f32| match a.abs() < 1.0 && b.abs() < 1.0 {
+                true => radius,
+                false => 0.0,
+            };
+            PaneChrome {
+                lead: crate::csd::inset(reopen, x, y),
+                trail: crate::csd::inset(controls, right_gap, y),
+                tl: at(x, y),
+                tr: at(right_gap, y),
+                bl: at(x, bottom_gap),
+                br: at(right_gap, bottom_gap),
+            }
+        };
+        for (p, r) in &rects.panes {
+            let c = chrome_of(*r);
+            let view = self
+                .layout
+                .pane(*p)
+                .and_then(|p| self.surfaces.get(&p.selected_surface()));
+            if let Some(s) = view {
+                s.view.update(cx, |v, _| v.corners = (c.bl, c.br));
+            }
+        }
         let dim = chrome::dim_overlay(&self.style.cfg).filter(|_| self.layout.pane_count() > 1);
         let divider = chrome::divider(&self.style.cfg);
         let panes: Vec<_> = rects
             .panes
             .iter()
-            .map(|(p, r)| self.render_pane(*p, *r, dim.filter(|_| *p != focused), controls, cx))
+            .map(|(p, r)| {
+                self.render_pane(*p, *r, dim.filter(|_| *p != focused), chrome_of(*r), cx)
+            })
             .collect();
         let dividers: Vec<_> = rects
             .dividers

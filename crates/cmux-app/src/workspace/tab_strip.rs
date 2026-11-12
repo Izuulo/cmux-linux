@@ -102,8 +102,7 @@ impl WorkspaceView {
         pane: &Pane,
         focused: bool,
         strip_x: f32,
-        // Indent that clears our own window buttons (csd.rs) in the window's top-left pane.
-        lead: f32,
+        chrome: super::PaneChrome,
         cx: &Context<Self>,
     ) -> impl IntoElement + use<> {
         let p = self.palette(focused);
@@ -155,7 +154,10 @@ impl WorkspaceView {
             .flex_none()
             .w_full()
             .h(px(TAB_BAR_HEIGHT))
-            .pl(px(lead))
+            .pl(px(chrome.lead))
+            .pr(px(chrome.trail))
+            .rounded_tl(px(chrome.tl))
+            .rounded_tr(px(chrome.tr))
             .bg(p.bar)
             .on_drag_move(
                 cx.listener(move |this, ev: &DragMoveEvent<DraggedTab>, _, cx| {

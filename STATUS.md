@@ -4,8 +4,8 @@
      current version to docs/status-archive.md. -->
 
 **Updated:** 2026-11-11
-**Current milestone:** M9 agent-coordination on branch `m9-agent-coordination` (stacked on `m8-groups-dock`, which is stacked on `m6-desktop-checks`): all four parts built (agent messages, auto-naming, automations, Claude Teams), PR #11. None of it has run under a real Claude Code yet.
-**Next action:** agent: M10 persistence (write its plan first), on a branch stacked on `m9-agent-coordination`. Owner, when convenient: (a) review and merge the stack in order: #9, #10, #11; (b) done 2026-11-11 with Claude Code 2.1.322 (M9 journal): messages, default auto-naming, automations and a two-teammate `cmux claude-teams` run pass, the last only after adding `respawn-pane`; still open: M7 Task 9 Step 2 (a permission prompt in the Feed) and the `Stop` continue path; (c) the mouse and typing checks no script can do: M8's group header click, `+`, chevron, menus, rename field, Delete prompt, drags, sidebar edge drag, Dock "New Terminal"; older: divider/tab/row drag, Feed buttons, clicking a bubble, IME, `CMUX_TRACE_LATENCY=1` (M1 exit 3), blur by eye; (d) `makepkg -si` and a launcher start.
+**Current milestone:** none open. M6 desktop checks, M8, M9 and the client-side window buttons are merged to `master` (PRs #9–#12, 2026-11-11); their branches are deleted. PR #13 (2026-11-11): a button in the window's top-left corner that reopens a hidden sidebar; window buttons moved top-right; rounded window corners (window is now always Transparent on Linux); an app icon (`packaging/cmux-linux.png`). All seen drawn on KDE; nothing clicked.
+**Next action:** agent: M10 persistence (write its plan first), on a branch from `master`. Owner, when convenient: (a) click-test PR #13's reopen button and window buttons; (b) done 2026-11-11 with Claude Code 2.1.322 (M9 journal): messages, default auto-naming, automations and a two-teammate `cmux claude-teams` run pass, the last only after adding `respawn-pane`; still open: M7 Task 9 Step 2 (a permission prompt in the Feed) and the `Stop` continue path; (c) the mouse and typing checks no script can do: M8's group header click, `+`, chevron, menus, rename field, Delete prompt, drags, sidebar edge drag, Dock "New Terminal"; older: divider/tab/row drag, Feed buttons, clicking a bubble, IME, `CMUX_TRACE_LATENCY=1` (M1 exit 3), blur by eye; (d) `makepkg -si` and a launcher start.
 
 ## Where things are
 - Project design and milestone table: `docs/design.md`
@@ -24,8 +24,8 @@
 | M5 cli-socket | merged (PR #6); criterion 1 = `cmux notify` hooks (owner's ruling), automated by `hook_commands_work_unchanged`; KDE desktop check pending |
 | M6 parity-release | merged (PR #7); KDE run done by script (journal 2026-11-11): perf pass, UI draws, D-Bus notification OK; owner-only checks left (install with sudo, mouse/typing, blur by eye) |
 | M7 feed | merged (PR #8); Feed seen drawn on KDE (permission, question, empty state); buttons unclicked; real Claude Code run (Task 9 Step 2) pending |
-| M8 groups-dock | built, PR #10; both exit criteria checked on KDE by script and screenshot; mouse paths unverified |
-| M9 agent-coordination | built, PR #11; each exit criterion checked against the app on KDE with hand-run hooks, a fake naming command and a fake `claude`; real Claude run pending |
+| M8 groups-dock | merged (PR #10); both exit criteria checked on KDE by script and screenshot; mouse paths unverified |
+| M9 agent-coordination | merged (PR #11); each exit criterion checked against the app on KDE with hand-run hooks, a fake naming command and a fake `claude`; real Claude run pending |
 | M10 persistence | not started (post-v1) |
 | M11 productivity | not started (post-v1) |
 

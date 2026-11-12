@@ -173,8 +173,6 @@ impl WindowView {
             .then(|| clamp_width(self.sidebar_width, window_w))
     }
 
-    // shortcut: once hidden there is no mouse way back (Super+B only); add an edge button if
-    // users get stuck.
     pub(super) fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
         self.sidebar_visible = !self.sidebar_visible;
         cx.notify();
@@ -344,23 +342,24 @@ impl WindowView {
             .on_drag(SidebarDrag, |_, _, _, cx| cx.new(|_| EmptyView))
     }
 
+    /// The way back with the mouse while the sidebar is hidden: the same toggle, in the
+    /// window's top-left corner (the tab strip there indents by `csd::REOPEN_LEAD`).
+    pub(super) fn render_reopen(&self, cx: &Context<Self>) -> impl IntoElement {
+        band_button("sidebar-reopen", "icons/panel-left.svg", self.palette())
+            .absolute()
+            .top(px((BAND_H - BUTTON) / 2.0))
+            .left(px(BAND_INSET))
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_sidebar(cx)))
+    }
+
     pub(crate) fn render_sidebar(
         &self,
         width: f32,
+        radius: f32,
         cx: &Context<Self>,
     ) -> impl IntoElement + use<> {
         let p = self.palette();
-        let button = |id: &'static str, icon: &'static str| {
-            div()
-                .id(id)
-                .group(id)
-                .flex()
-                .items_center()
-                .justify_center()
-                .size(px(BUTTON))
-                .rounded(px(RADIUS))
-                .child(band_icon(id, icon, p))
-        };
+        let button = |id, icon| band_button(id, icon, p);
         let band = crate::csd::window_drag(div(), true)
             .flex()
             .flex_row()
@@ -413,6 +412,8 @@ impl WindowView {
             .w(px(width))
             .h_full()
             .bg(p.bg)
+            .rounded_tl(px(radius))
+            .rounded_bl(px(radius))
             .border_r_1()
             .border_color(p.border)
             .child(band)
@@ -903,6 +904,22 @@ impl WindowView {
 }
 
 /// A band button's glyph: secondary at 0.86, brighter while hovered (`HeaderChromeIconStyle`).
+fn band_button(
+    id: &'static str,
+    icon: &'static str,
+    p: SidebarPalette,
+) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .group(id)
+        .flex()
+        .items_center()
+        .justify_center()
+        .size(px(BUTTON))
+        .rounded(px(RADIUS))
+        .child(band_icon(id, icon, p))
+}
+
 fn band_icon(group: &'static str, icon: &'static str, p: SidebarPalette) -> impl IntoElement {
     let tint = |a: f32| Rgba {
         a: p.detail.a * a,
