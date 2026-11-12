@@ -1,7 +1,7 @@
 //! Writing `config.toml` (M12 plan W4) with `toml_edit`, so comments, key order and other
 //! tables survive. Each call reads the file, changes one thing and replaces the file.
 
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use toml_edit::{Array, ArrayOfTables, DocumentMut, Item, Table, TableLike, value};
@@ -18,12 +18,17 @@ pub(crate) fn replace_file(path: &Path, text: &str) -> io::Result<()> {
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".cmux-tmp");
     let tmp = PathBuf::from(tmp);
-    std::fs::write(&tmp, text)?;
-    let result = match std::fs::metadata(&path) {
-        Ok(m) => std::fs::set_permissions(&tmp, m.permissions()),
-        Err(_) => Ok(()),
-    }
-    .and_then(|()| std::fs::rename(&tmp, &path));
+    let result = (|| {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(text.as_bytes())?;
+        if let Ok(m) = std::fs::metadata(&path) {
+            f.set_permissions(m.permissions())?;
+        }
+        // Without this a crash after the rename can leave an empty file on some filesystems.
+        f.sync_all()?;
+        drop(f);
+        std::fs::rename(&tmp, &path)
+    })();
     if result.is_err() {
         let _ = std::fs::remove_file(&tmp);
     }
@@ -75,6 +80,12 @@ fn put(t: &mut dyn TableLike, key: &str, new: Item) {
 
 /// `ui_scale`, rounded to two decimals so an f32 doesn't write `1.100000023841858`.
 pub fn set_ui_scale(path: &Path, scale: f32) -> io::Result<()> {
+    if !scale.is_finite() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("ui_scale must be a finite number, got {scale}"),
+        ));
+    }
     let scale = (scale as f64 * 100.0).round() / 100.0;
     edit_toml(path, |doc| {
         put(doc.as_table_mut(), "ui_scale", value(scale));
@@ -120,32 +131,51 @@ pub fn set_auto_naming(path: &Path, enabled: bool, command: Option<&str>) -> io:
     })
 }
 
-/// Replaces every `[[vault.agents]]` entry with `agents`; empty removes them.
+/// Makes `[[vault.agents]]` hold `agents`: entries are matched by `id` and updated in place
+/// (other keys and comments kept), new ones appended, and ones whose `id` is gone removed.
+/// Entries without an `id` are the user's unfinished ones and are left alone.
 pub fn set_agents(path: &Path, agents: &[Registration]) -> io::Result<()> {
     edit_toml(path, |doc| {
+        if agents.is_empty() {
+            if let Some(vault) = doc.get_mut("vault").and_then(Item::as_table_like_mut) {
+                vault.remove("agents");
+            }
+            return Ok(());
+        }
         if !doc.contains_key("vault") {
             let mut vault = Table::new();
             vault.set_implicit(true);
             doc.insert("vault", Item::Table(vault));
         }
-        let vault = table(doc, "vault")?;
-        if agents.is_empty() {
-            vault.remove("agents");
-            return Ok(());
+        let list = table(doc, "vault")?
+            .entry("agents")
+            .or_insert(Item::ArrayOfTables(ArrayOfTables::new()))
+            .as_array_of_tables_mut()
+            .ok_or_else(|| invalid("config.toml: `vault.agents` is not [[vault.agents]]".into()))?;
+        fn id_of(t: &Table) -> Option<&str> {
+            t.get("id").and_then(Item::as_str).map(str::trim)
         }
-        let mut list = ArrayOfTables::new();
+        list.retain(|t| id_of(t).is_none_or(|id| agents.iter().any(|a| a.id == id)));
         for a in agents {
-            let mut t = Table::new();
-            t.insert("id", value(&a.id));
+            let found = list.iter().position(|t| id_of(t) == Some(a.id.as_str()));
+            let i = match found {
+                Some(i) => i,
+                None => {
+                    list.push(Table::new());
+                    list.len() - 1
+                }
+            };
+            let t = list.get_mut(i).expect("index from position or push");
+            put(t, "id", value(&a.id));
             if a.name != a.id {
-                t.insert("name", value(&a.name));
+                put(t, "name", value(&a.name));
+            } else {
+                t.remove("name");
             }
-            t.insert("process_name", value(&a.process_name));
-            t.insert("argv_option", value(&a.argv_option));
-            t.insert("resume_command", value(&a.resume_command));
-            list.push(t);
+            put(t, "process_name", value(&a.process_name));
+            put(t, "argv_option", value(&a.argv_option));
+            put(t, "resume_command", value(&a.resume_command));
         }
-        vault.insert("agents", Item::ArrayOfTables(list));
         Ok(())
     })
 }
@@ -259,6 +289,70 @@ mod tests {
         let cleared = run("agents-clear", &out, |p| set_agents(p, &[]).unwrap());
         assert_eq!(crate::vault::registrations(&cleared).0, vec![]);
         assert!(cleared.starts_with(FIXTURE));
+    }
+
+    #[test]
+    fn agents_update_in_place_keeping_comments_and_unknown_keys() {
+        let text = "[[vault.agents]]\n\
+            # my codex\n\
+            id = \"codex\"\n\
+            process_name = \"codex\" # binary\n\
+            argv_option = \"--session\"\n\
+            resume_command = \"codex resume {{sessionId}}\"\n\
+            future_key = 1\n\
+            \n\
+            [[vault.agents]]\n\
+            id = \"gone\"\n\
+            process_name = \"g\"\n\
+            argv_option = \"-s\"\n\
+            resume_command = \"g {{sessionId}}\"\n\
+            \n\
+            [[vault.agents]]\n\
+            name = \"half-written, no id\"\n\
+            \n\
+            [other]\n\
+            keep = true\n";
+        let codex = Registration {
+            id: "codex".into(),
+            name: "codex".into(),
+            process_name: "codex-cli".into(),
+            argv_option: "--session".into(),
+            resume_command: "codex resume {{sessionId}}".into(),
+        };
+        let new = Registration {
+            id: "new".into(),
+            name: "New".into(),
+            process_name: "n".into(),
+            argv_option: "-s".into(),
+            resume_command: "n {{sessionId}}".into(),
+        };
+        let out = run("agents-in-place", text, |p| {
+            set_agents(p, &[codex.clone(), new.clone()]).unwrap()
+        });
+        assert!(
+            out.starts_with(
+                "[[vault.agents]]\n# my codex\nid = \"codex\"\nprocess_name = \"codex-cli\" # binary\n\
+                 argv_option = \"--session\"\nresume_command = \"codex resume {{sessionId}}\"\n\
+                 future_key = 1\n"
+            ),
+            "{out}"
+        );
+        assert!(!out.contains("gone"), "{out}");
+        assert!(out.contains("name = \"half-written, no id\""), "{out}");
+        assert!(out.contains("[other]\nkeep = true\n"), "{out}");
+        let (regs, _) = crate::vault::registrations(&out);
+        assert_eq!(regs, vec![codex, new]);
+    }
+
+    #[test]
+    fn ui_scale_rejects_non_finite() {
+        let out = run("scale-nan", FIXTURE, |p| {
+            for bad in [f32::NAN, f32::INFINITY] {
+                let e = set_ui_scale(p, bad).unwrap_err();
+                assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
+            }
+        });
+        assert_eq!(out, FIXTURE);
     }
 
     #[test]

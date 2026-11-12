@@ -181,12 +181,30 @@ mod tests {
     }
 
     #[test]
-    fn unchanged_keys_and_no_changes_are_identity() {
+    fn no_changes_is_identity_and_rewrite_normalizes_spacing() {
         assert_eq!(edit(FIXTURE, &[]), FIXTURE);
         assert_eq!(
             edit(FIXTURE, &[("font-size", "13")]).len(),
             FIXTURE.len() + 2
         );
+    }
+
+    #[test]
+    fn same_value_on_a_normalized_line_writes_nothing() {
+        let dir = std::env::temp_dir().join(format!("cmux-ghostty-noop-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.ghostty");
+        let text = "# keep\r\nfont-size = 13\r\n";
+        assert_eq!(edit(text, &[("font-size", "13")]), text);
+        std::fs::write(&path, text).unwrap();
+        set(&path, "font-size", "13").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        assert!(
+            !dir.join("config.ghostty.cmux-bak").exists(),
+            "no write, no backup"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
