@@ -302,6 +302,30 @@ mod tests {
         );
     }
 
+    /// What a live reload of config.toml binds (M12 plan A4): the new chord, not the default.
+    #[test]
+    fn a_rebound_table_resolves_the_new_chord() {
+        let k = keybindings(Some("[keybindings]\nsplitDown = \"ctrl+alt+j\"\n"), "test");
+        let b = k.bindings.iter().find(|b| b.action == "splitDown").unwrap();
+        let rebound = key_binding(b, &DummyKeyboardMapper).unwrap();
+        assert_eq!(
+            rebound.match_keystrokes(&[Keystroke {
+                modifiers: Modifiers {
+                    control: true,
+                    alt: true,
+                    ..Default::default()
+                },
+                key: "j".into(),
+                key_char: None,
+            }]),
+            Some(false)
+        );
+        assert_eq!(
+            rebound.match_keystrokes(&[typed(true, false, true, "d", Some("D"))]),
+            None
+        );
+    }
+
     #[test]
     fn the_default_table_parses_in_gpui() {
         for b in &keybindings(None, "test").bindings {

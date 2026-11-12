@@ -7,7 +7,7 @@ use gpui::Pixels;
 
 static SCALE: AtomicU32 = AtomicU32::new(0x3f80_0000); // 1.0f32
 
-/// Set at startup and whenever config.toml changes (`WindowView::scale_loop`).
+/// Set at startup and whenever config.toml changes (`window_view/config_ctl.rs`).
 pub fn set_scale(v: f32) {
     SCALE.store(v.to_bits(), Ordering::Relaxed);
 }

@@ -7,8 +7,7 @@ use cmux_app::window_view::WindowView;
 use cmux_config::ghostty::{Env, load};
 use cmux_config::keybindings;
 use gpui::{
-    App, AppContext, Application, Bounds, WindowAppearance, WindowBackgroundAppearance,
-    WindowBounds, WindowOptions, px, size,
+    App, AppContext, Application, Bounds, WindowAppearance, WindowBounds, WindowOptions, px, size,
 };
 
 fn main() {
@@ -42,17 +41,7 @@ fn main() {
         load_bundled_fonts(cx);
         let installed = installed_families(cx);
         let style = Rc::new(TermStyle::new(&loaded.config, &installed));
-        // Translucent only when asked. Blurred on macOS (NSVisualEffectView); on Linux KWin blur
-        // comes from our own shim (blur.rs), so Transparent there.
-        // Linux is always Transparent: the rounded window corners (csd.rs) must show through.
-        let window_background =
-            if cfg!(target_os = "macos") && loaded.config.background_opacity >= 1.0 {
-                WindowBackgroundAppearance::Opaque
-            } else if cfg!(target_os = "macos") && loaded.config.background_blur {
-                WindowBackgroundAppearance::Blurred
-            } else {
-                WindowBackgroundAppearance::Transparent
-            };
+        let window_background = style.background_appearance();
         let saved = cmux_app::window_view::session::load();
         let (w, h, maximized) = saved.as_ref().map_or((1100., 700., false), |s| {
             (s.width.max(300.), s.height.max(400.), s.maximized)
@@ -73,7 +62,7 @@ fn main() {
                     .then_some(gpui::WindowDecorations::Client),
                 ..Default::default()
             },
-            |window, cx| cx.new(|cx| WindowView::new(style, saved, window, cx)),
+            |window, cx| cx.new(|cx| WindowView::new(style, env, loaded.files, saved, window, cx)),
         )
         .expect("open window");
         cx.activate(true);

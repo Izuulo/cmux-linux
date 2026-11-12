@@ -5,7 +5,9 @@ use std::borrow::Cow;
 use cmux_config::ghostty::{Config, CursorStyle, DynColor, MetricModifier};
 use cmux_term::Term;
 use cmux_term::ghostty_vt::CursorShape;
-use gpui::{App, Font, FontFallbacks, FontFeatures, FontStyle, FontWeight, Hsla};
+use gpui::{
+    App, Font, FontFallbacks, FontFeatures, FontStyle, FontWeight, Hsla, WindowBackgroundAppearance,
+};
 
 use crate::colors::{hsla, to_vt};
 
@@ -50,6 +52,19 @@ impl TermStyle {
             cfg: cfg.clone(),
             font,
             font_px: cfg.font_size * POINTS_TO_PX,
+        }
+    }
+
+    /// Translucent only when asked. Blurred on macOS (NSVisualEffectView); on Linux KWin blur
+    /// comes from our own shim (blur.rs), and the window is always Transparent there: the rounded
+    /// window corners (csd.rs) must show through.
+    pub fn background_appearance(&self) -> WindowBackgroundAppearance {
+        if cfg!(target_os = "macos") && self.cfg.background_opacity >= 1.0 {
+            WindowBackgroundAppearance::Opaque
+        } else if cfg!(target_os = "macos") && self.cfg.background_blur {
+            WindowBackgroundAppearance::Blurred
+        } else {
+            WindowBackgroundAppearance::Transparent
         }
     }
 

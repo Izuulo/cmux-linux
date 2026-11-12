@@ -234,6 +234,14 @@ impl TerminalView {
         }
     }
 
+    /// A new Ghostty config (M12 plan A2): colours, palette and cursor now; the font on the
+    /// next layout (`measure` reads the style each frame).
+    pub fn set_style(&mut self, style: Rc<TermStyle>, cx: &mut Context<Self>) {
+        style.apply_to(&mut self.session.term.lock().unwrap());
+        self.style = style;
+        cx.notify();
+    }
+
     fn on_pty_events(&mut self, events: Vec<PtyEvent>, cx: &mut Context<Self>) {
         for event in events {
             match event {

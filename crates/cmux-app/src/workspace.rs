@@ -384,6 +384,15 @@ impl WorkspaceView {
         self.surfaces.get(&surface).map(|s| &s.view)
     }
 
+    /// Hands a new Ghostty style to this workspace and every terminal in it (M12 plan A2).
+    pub fn set_style(&mut self, style: Rc<TermStyle>, cx: &mut Context<Self>) {
+        for s in self.surfaces.values() {
+            s.view.update(cx, |v, cx| v.set_style(style.clone(), cx));
+        }
+        self.style = style;
+        cx.notify();
+    }
+
     /// Focuses `pane` (the socket's `pane.focus`). False if it is gone.
     pub fn focus_pane(
         &mut self,
