@@ -343,13 +343,27 @@ impl WindowView {
         {
             return Err(RpcError::new("invalid_params", "cwd must be a string"));
         }
+        let remote = match params.get("remote") {
+            None | Some(Value::Null) => None,
+            Some(Value::Array(a)) if !a.is_empty() && a.iter().all(Value::is_string) => Some(
+                a.iter()
+                    .filter_map(|v| Some(v.as_str()?.to_string()))
+                    .collect(),
+            ),
+            Some(_) => {
+                return Err(RpcError::new(
+                    "invalid_params",
+                    "remote must be a non-empty array of strings",
+                ));
+            }
+        };
         let focus = flag(params, "focus");
         let old = self.workspaces.selected();
         let cwd = text("cwd")
             .map(str::to_string)
             .or_else(|| self.views.get(&old).and_then(|v| v.read(cx).active_cwd(cx)));
         let id = self.workspaces.add_after_selected();
-        if !self.make_view(id, cwd, window, cx) {
+        if !self.make_view(id, cwd, remote, window, cx) {
             self.workspaces.close(id);
             self.workspaces.select(old);
             return Err(RpcError::new(

@@ -263,6 +263,7 @@ impl WindowView {
                 terms,
                 inputs,
                 BAR_H,
+                None,
                 window,
                 cx,
             )

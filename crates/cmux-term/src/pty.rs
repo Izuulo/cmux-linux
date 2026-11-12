@@ -94,7 +94,17 @@ fn inherited_cmux_keys(names: impl IntoIterator<Item = OsString>) -> Vec<OsStrin
 impl Session {
     /// The user's login shell (`$SHELL`, else the passwd entry) in `$HOME`.
     pub fn shell_command() -> CommandBuilder {
-        let mut cmd = CommandBuilder::new_default_prog();
+        Self::prepare(CommandBuilder::new_default_prog())
+    }
+
+    /// `argv` (a remote workspace's ssh, M11 plan S2) with the shell's environment rules.
+    pub fn argv_command(argv: &[String]) -> CommandBuilder {
+        Self::prepare(CommandBuilder::from_argv(
+            argv.iter().map(Into::into).collect(),
+        ))
+    }
+
+    fn prepare(mut cmd: CommandBuilder) -> CommandBuilder {
         // shortcut: xterm-256color, not xterm-ghostty, since that terminfo may be missing; kitty
         // keyboard is negotiated by escape sequence either way. Ship terminfo in M6.
         cmd.env("TERM", "xterm-256color");

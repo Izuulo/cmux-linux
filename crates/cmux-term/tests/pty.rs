@@ -66,6 +66,16 @@ fn terminal_replies_are_written_back_to_the_child() {
 
 #[test]
 fn shell_command_sets_term_and_colorterm() {
+    let argv = vec!["ssh".to_string(), "-tt".into(), "h".into()];
+    let remote = Session::argv_command(&argv);
+    assert_eq!(
+        remote.get_argv(),
+        &["ssh", "-tt", "h"].map(std::ffi::OsString::from)
+    );
+    assert_eq!(
+        remote.get_env("TERM").and_then(|v| v.to_str()),
+        Some("xterm-256color")
+    );
     let cmd = Session::shell_command();
     assert_eq!(
         cmd.get_env("TERM").and_then(|v| v.to_str()),

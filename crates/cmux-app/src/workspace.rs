@@ -77,6 +77,8 @@ pub struct WorkspaceView {
     /// Running flashes: token (animation id) and start.
     flashes: HashMap<SurfaceId, (u64, Instant)>,
     flash_seq: u64,
+    /// A `cmux ssh` workspace's argv: every terminal here runs it instead of the shell.
+    remote: Option<Vec<String>>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -115,6 +117,7 @@ impl WorkspaceView {
         shell: Rc<ShellEnv>,
         style: Rc<TermStyle>,
         cwd: Option<String>,
+        remote: Option<Vec<String>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -125,6 +128,7 @@ impl WorkspaceView {
             style,
             Layout::new(),
             vec![(cwd, Vec::new())],
+            remote,
             window,
             cx,
         )
@@ -144,12 +148,13 @@ impl WorkspaceView {
         terms: Vec<SavedTerm>,
         inputs: Vec<Option<String>>,
         top_inset: f32,
+        remote: Option<Vec<String>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let ids = layout.surfaces();
         let starts = terms.iter().map(|t| (t.cwd.clone(), Vec::new())).collect();
-        let mut this = Self::build(id, dock, shell, style, layout, starts, window, cx);
+        let mut this = Self::build(id, dock, shell, style, layout, starts, remote, window, cx);
         this.top_inset = top_inset;
         for ((id, term), input) in ids.iter().zip(terms).zip(inputs) {
             let Some(s) = this.surfaces.get_mut(id) else {
@@ -178,7 +183,7 @@ impl WorkspaceView {
         cx: &mut Context<Self>,
     ) -> Self {
         let ids = layout.surfaces();
-        let this = Self::build(id, false, shell, style, layout, starts, window, cx);
+        let this = Self::build(id, false, shell, style, layout, starts, None, window, cx);
         for (id, input) in ids.iter().zip(inputs) {
             if let (Some(s), Some(line)) = (this.surfaces.get(id), input) {
                 let bytes = format!("{line}\n").into_bytes();
@@ -249,6 +254,7 @@ impl WorkspaceView {
             style,
             Layout::new(),
             vec![(cwd, Vec::new())],
+            None,
             window,
             cx,
         );
@@ -264,6 +270,7 @@ impl WorkspaceView {
         style: Rc<TermStyle>,
         layout: Layout,
         starts: Vec<Start>,
+        remote: Option<Vec<String>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -293,6 +300,7 @@ impl WorkspaceView {
             attention: HashSet::new(),
             flashes: HashMap::new(),
             flash_seq: 0,
+            remote,
             _subscriptions: vec![lost],
         };
         let mut starts = starts.into_iter();
@@ -308,6 +316,11 @@ impl WorkspaceView {
         }
         this.focus_active(window, cx);
         this
+    }
+
+    /// The `cmux ssh` argv, for a remote workspace.
+    pub(crate) fn remote(&self) -> Option<&[String]> {
+        self.remote.as_deref()
     }
 
     /// False if the first shell failed to start.
@@ -457,7 +470,8 @@ impl WorkspaceView {
         } else {
             self.shell.for_surface(self.id, surface)
         });
-        let started = match TerminalView::start(&self.style, cwd.as_deref(), &env) {
+        let remote = self.remote.as_deref();
+        let started = match TerminalView::start(&self.style, cwd.as_deref(), &env, remote) {
             Ok(started) => started,
             Err(e) => {
                 eprintln!("cmux-linux: could not start a shell: {e}");
@@ -465,7 +479,8 @@ impl WorkspaceView {
             }
         };
         let style = self.style.clone();
-        let view = cx.new(|cx| TerminalView::new(style, cwd, started, window, cx));
+        let remote = self.remote.clone();
+        let view = cx.new(|cx| TerminalView::new(style, cwd, started, remote, window, cx));
         let events = cx.subscribe_in(&view, window, move |this, _, ev, window, cx| match ev {
             TerminalEvent::Exited => this.close_surface(surface, window, cx),
             TerminalEvent::TitleChanged => {

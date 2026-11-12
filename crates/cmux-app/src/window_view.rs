@@ -142,6 +142,7 @@ pub struct WindowView {
 const META_EVERY: Duration = Duration::from_millis(1500);
 const PR_EVERY: Duration = Duration::from_millis(2000);
 const SCALE_EVERY: Duration = Duration::from_millis(1000);
+const REMOTE_EVERY: Duration = Duration::from_secs(5);
 const PR_FETCHES_PER_TICK: usize = 3;
 const GH_DEADLINE: Duration = Duration::from_secs(15);
 
@@ -224,7 +225,12 @@ impl WindowView {
             _session_subs: Vec::new(),
             vault_agents: vault_ctl::load(),
         };
-        this._tasks = vec![Self::meta_loop(cx), Self::pr_loop(cx), Self::scale_loop(cx)];
+        this._tasks = vec![
+            Self::meta_loop(cx),
+            Self::pr_loop(cx),
+            Self::scale_loop(cx),
+            Self::remote_loop(cx),
+        ];
         if let Some(mut requests) = requests {
             this._tasks.push(cx.spawn_in(window, async move |this, cx| {
                 use futures::StreamExt;
@@ -258,7 +264,7 @@ impl WindowView {
         if !saved.is_some_and(|s| this.restore(s, window, cx)) {
             this.workspaces = Workspaces::new();
             let id = this.workspaces.selected();
-            if !this.make_view(id, None, window, cx) {
+            if !this.make_view(id, None, None, window, cx) {
                 cx.quit();
             }
         }
@@ -280,9 +286,10 @@ impl WindowView {
             let (style, shell) = (self.style.clone(), self.shell.clone());
             let (layout, terms) = (ws.layout.layout(), ws.layout.terms.clone());
             let inputs = ws.layout.inputs(&self.vault_agents);
+            let remote = ws.remote.clone();
             let view = cx.new(|cx| {
                 WorkspaceView::restore(
-                    *id, false, shell, style, layout, terms, inputs, 0., window, cx,
+                    *id, false, shell, style, layout, terms, inputs, 0., remote, window, cx,
                 )
             });
             if !self.register_view(*id, view, window, cx) && self.workspaces.len() > 1 {
@@ -319,11 +326,12 @@ impl WindowView {
         &mut self,
         id: WorkspaceId,
         cwd: Option<String>,
+        remote: Option<Vec<String>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
         let (style, shell) = (self.style.clone(), self.shell.clone());
-        let view = cx.new(|cx| WorkspaceView::new(id, shell, style, cwd, window, cx));
+        let view = cx.new(|cx| WorkspaceView::new(id, shell, style, cwd, remote, window, cx));
         self.register_view(id, view, window, cx)
     }
 
@@ -500,8 +508,17 @@ impl WindowView {
                         cmux_meta::collect(&inputs, Path::new("/proc"), home.as_deref())
                     })
                     .await;
-                let new: HashMap<_, _> = ids.into_iter().zip(metas).collect();
+                let mut new: HashMap<_, _> = ids.into_iter().zip(metas).collect();
                 let applied = this.update(cx, |s, cx| {
+                    // Remote workspaces' entries are the remote loop's.
+                    for (id, m) in &s.meta {
+                        if s.views
+                            .get(id)
+                            .is_some_and(|v| v.read(cx).remote().is_some())
+                        {
+                            new.insert(*id, m.clone());
+                        }
+                    }
                     if s.meta != new {
                         s.meta = new;
                         cx.notify();
@@ -520,10 +537,61 @@ impl WindowView {
             .list()
             .iter()
             .filter_map(|w| {
-                let panels = self.views.get(&w.id)?.read(cx).panels(cx);
+                let view = self.views.get(&w.id)?.read(cx);
+                // No /proc reads for ssh terminals: what runs there is remote (plan S3).
+                if view.remote().is_some() {
+                    return None;
+                }
+                let panels = view.panels(cx);
                 Some((w.id, WorkspaceInput { panels }))
             })
             .unzip()
+    }
+
+    /// The sidebar of `cmux ssh` workspaces (plan S3): one probe each through its master, every
+    /// `REMOTE_EVERY`, the remote cwd from OSC 7 when the remote shell sends one.
+    fn remote_loop(cx: &mut Context<Self>) -> Task<()> {
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(REMOTE_EVERY).await;
+                let Ok(jobs) = this.read_with(cx, |s, cx| {
+                    s.views
+                        .iter()
+                        .filter_map(|(id, v)| {
+                            let v = v.read(cx);
+                            let cwd = v.panels(cx).into_iter().find_map(|p| p.cwd);
+                            Some((*id, v.remote()?.to_vec(), cwd))
+                        })
+                        .collect::<Vec<_>>()
+                }) else {
+                    break;
+                };
+                if jobs.is_empty() {
+                    continue;
+                }
+                let metas = cx
+                    .background_executor()
+                    .spawn(async move {
+                        jobs.into_iter()
+                            .map(|(id, argv, cwd)| {
+                                (id, cmux_meta::remote::poll(&argv, cwd.as_deref()))
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .await;
+                let applied = this.update(cx, |s, cx| {
+                    for (id, m) in metas {
+                        if s.views.contains_key(&id) && s.meta.get(&id) != Some(&m) {
+                            s.meta.insert(id, m);
+                            cx.notify();
+                        }
+                    }
+                });
+                if applied.is_err() {
+                    break;
+                }
+            }
+        })
     }
 
     /// Re-reads `ui_scale` from config.toml, so a change shows without a restart.

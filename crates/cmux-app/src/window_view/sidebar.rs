@@ -117,7 +117,7 @@ pub(crate) fn row_model(title: &str, meta: &WorkspaceMeta, prs: &[(Pr, bool)]) -
         .map(|d| {
             (
                 d.branch.clone(),
-                Some(d.display.clone()).filter(|s| s != title),
+                Some(d.display.clone()).filter(|s| s != title && !s.is_empty()),
             )
         })
         .filter(|(b, d)| b.is_some() || d.is_some())

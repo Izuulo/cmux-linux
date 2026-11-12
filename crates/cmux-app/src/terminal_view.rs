@@ -7,6 +7,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use cmux_meta::remote;
 use cmux_term::TermEvent;
 use cmux_term::ghostty_vt::{KeyAction, KeyEncoder, MouseEncoders};
 use cmux_term::input::{encode_focus, encode_paste, paste_needs_confirmation};
@@ -15,9 +16,9 @@ use cmux_term::selection::Selection;
 use futures::StreamExt;
 use futures::channel::mpsc;
 use gpui::{
-    App, ClipboardItem, Context, EventEmitter, FocusHandle, Focusable, IntoElement, KeyDownEvent,
-    KeyUpEvent, Keystroke, MouseButton, ParentElement, Pixels, Point, PromptLevel, Render, Styled,
-    Subscription, Task, Window, div, prelude::*, px,
+    App, ClipboardItem, Context, EventEmitter, ExternalPaths, FocusHandle, Focusable, IntoElement,
+    KeyDownEvent, KeyUpEvent, Keystroke, MouseButton, ParentElement, Pixels, Point, PromptLevel,
+    Render, Styled, Subscription, Task, Window, div, prelude::*, px,
 };
 
 use crate::actions::{Copy, Paste};
@@ -112,6 +113,8 @@ pub struct TerminalView {
     cwd: Option<String>,
     /// Where the shell was started; the last resort when neither OSC 7 nor the OS knows.
     start_cwd: Option<String>,
+    /// The workspace's `cmux ssh` argv: dropped images are uploaded there (M11 plan S4).
+    remote: Option<Vec<String>>,
     /// `CMUX_TRACE_LATENCY=1`: key press time, waiting for its echo.
     trace_latency: bool,
     key_at: Option<Instant>,
@@ -121,16 +124,17 @@ pub struct TerminalView {
 }
 
 impl TerminalView {
-    /// Starts the user's shell, in `cwd` when it is an existing directory (else `$HOME`), with
-    /// `env` added (the `CMUX_*` variables, M5 plan D8).
+    /// Starts the user's shell (or `argv`, a remote workspace's ssh), in `cwd` when it is an
+    /// existing directory (else `$HOME`), with `env` added (the `CMUX_*` variables, M5 plan D8).
     /// Fallible so the caller can survive a failed spawn; pass the result to [`Self::new`].
     pub fn start(
         style: &TermStyle,
         cwd: Option<&str>,
         env: &[(String, String)],
+        argv: Option<&[String]>,
     ) -> std::io::Result<(Session, mpsc::UnboundedReceiver<PtyEvent>)> {
         let (tx, rx) = mpsc::unbounded::<PtyEvent>();
-        let mut cmd = Session::shell_command();
+        let mut cmd = argv.map_or_else(Session::shell_command, Session::argv_command);
         for (k, v) in env {
             cmd.env(k, v);
         }
@@ -153,6 +157,7 @@ impl TerminalView {
         style: Rc<TermStyle>,
         cwd: Option<String>,
         (session, mut rx): (Session, mpsc::UnboundedReceiver<PtyEvent>),
+        remote: Option<Vec<String>>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -220,6 +225,7 @@ impl TerminalView {
             title: None,
             cwd: None,
             start_cwd: cwd,
+            remote,
             trace_latency: std::env::var_os("CMUX_TRACE_LATENCY").is_some(),
             key_at: None,
             echo_at: None,
@@ -333,6 +339,54 @@ impl TerminalView {
     pub(crate) fn paste_scripted(&mut self, text: &str, cx: &mut Context<Self>) {
         let bracketed = self.session.term.lock().unwrap().vt().mode(2004, false);
         self.send_scripted(encode_paste(text, bracketed), cx);
+    }
+
+    /// Dropped files: their paths typed, shell-quoted and space-joined (Ghostty). In a remote
+    /// workspace images are first uploaded and their remote paths typed (M11 plan S4).
+    fn file_drop(&mut self, paths: &ExternalPaths, _: &mut Window, cx: &mut Context<Self>) {
+        let paths = paths.paths().to_vec();
+        let local = |p: &std::path::Path| remote::quote(&p.to_string_lossy());
+        let Some(argv) = self
+            .remote
+            .clone()
+            .filter(|_| paths.iter().any(|p| remote::is_image(p)))
+        else {
+            let text = paths.iter().map(|p| local(p)).collect::<Vec<_>>().join(" ");
+            return self.send_input(text.into_bytes(), cx);
+        };
+        cx.spawn(async move |this, cx| {
+            let images: Vec<_> = paths
+                .iter()
+                .filter(|p| remote::is_image(p))
+                .cloned()
+                .collect();
+            let uploaded = cx
+                .background_executor()
+                .spawn(async move {
+                    let files: Vec<_> = images.iter().map(|p| p.as_path()).collect();
+                    remote::upload(&argv, &files)
+                })
+                .await;
+            let _ = this.update(cx, |view, cx| match uploaded {
+                Ok(mut remote_paths) => {
+                    remote_paths.reverse();
+                    let text = paths
+                        .iter()
+                        .map(|p| match remote::is_image(p) {
+                            true => remote::quote(&remote_paths.pop().unwrap_or_default()),
+                            false => local(p),
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    view.send_input(text.into_bytes(), cx);
+                }
+                Err(e) => cx.emit(TerminalEvent::Notify {
+                    title: "Upload failed".into(),
+                    body: e,
+                }),
+            });
+        })
+        .detach();
     }
 
     fn focus_changed(&mut self, focused: bool, cx: &mut Context<Self>) {
@@ -514,6 +568,7 @@ impl Render for TerminalView {
             .on_mouse_up(MouseButton::Right, cx.listener(Self::mouse_up))
             .on_mouse_move(cx.listener(Self::mouse_move))
             .on_scroll_wheel(cx.listener(Self::scroll_wheel))
+            .on_drop(cx.listener(Self::file_drop))
             .child(TerminalElement::new(cx.entity()))
     }
 }
