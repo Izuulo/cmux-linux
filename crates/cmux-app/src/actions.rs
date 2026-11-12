@@ -176,13 +176,6 @@ pub const PALETTE: &[(&str, &str)] = &[
     ("goToWorkspace", "Go to Workspace…"),
 ];
 
-const NOT_IN_PALETTE: &[&str] = &[
-    "selectSurfaceByNumber",
-    "selectWorkspaceByNumber",
-    "commandPaletteNext",
-    "commandPalettePrevious",
-];
-
 /// Each action's first bound chord as a hint (`Super+Shift+P`), for the palette.
 pub struct Hints(pub HashMap<&'static str, String>);
 
@@ -240,6 +233,12 @@ mod tests {
         }
     }
 
+    const NOT_IN_PALETTE: &[&str] = &[
+        "selectSurfaceByNumber",
+        "selectWorkspaceByNumber",
+        "commandPaletteNext",
+        "commandPalettePrevious",
+    ];
     #[test]
     fn the_palette_lists_every_config_action() {
         for (name, _) in DEFAULTS {

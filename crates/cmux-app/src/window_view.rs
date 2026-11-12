@@ -35,6 +35,7 @@ mod groups;
 mod menu;
 mod message_ctl;
 mod notify;
+mod palette;
 mod panel;
 mod rename;
 pub mod session;
@@ -61,6 +62,8 @@ pub struct WindowView {
     rename_group: Option<GroupId>,
     /// The sidebar's context menu, while open.
     menu: Option<menu::Menu>,
+    /// The command palette, while open (M11).
+    palette: Option<palette::Palette>,
     /// Workspaces something was typed into (the "untouched anchor" rule, plan D5).
     typed: HashSet<WorkspaceId>,
     /// Row bounds in list order, from the last paint (drop-gap maths).
@@ -171,6 +174,7 @@ impl WindowView {
             rename: None,
             rename_group: None,
             menu: None,
+            palette: None,
             typed: HashSet::new(),
             row_bounds: Rc::default(),
             drop_gap: None,
@@ -722,11 +726,17 @@ impl Render for WindowView {
                 cx.notify();
             }))
             // The terminal keeps focus while the panel is up, so Escape is caught here first.
-            .capture_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, _, cx| {
+            .on_action(
+                cx.listener(|this, _: &CommandPalette, w, cx| this.toggle_palette(true, w, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &GoToWorkspace, w, cx| this.toggle_palette(false, w, cx)),
+            )
+            .capture_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, w, cx| {
                 if ev.keystroke.key != "escape" {
                     return;
                 }
-                if this.close_menu(cx) {
+                if this.close_palette(w, cx) || this.close_menu(cx) {
                     cx.stop_propagation();
                 } else if this.panel_open {
                     this.close_panel(cx);
@@ -755,6 +765,7 @@ impl Render for WindowView {
             })
             .children(self.render_panel(window, cx))
             .children(self.render_menu(cx))
+            .children(self.render_palette(window, cx))
             .when(width.is_none(), |d| d.child(self.render_reopen(cx)))
             .children(crate::csd::controls(window))
             .children(crate::csd::resize_grips(window))

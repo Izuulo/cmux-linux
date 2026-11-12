@@ -173,8 +173,8 @@ selectSurfaceByNumber = "alt+1"       # binds alt+1 … alt+9 (9 = last tab)
 
 **KDE Plasma.** KWin handles some Super shortcuts before any app sees them. In a default
 Plasma 6 setup these include Super+D (show desktop), Super+W (overview), Super+T (edit
-tiles) and Super+Alt+Arrows (switch window). That blocks `splitRight`, `closeTab`,
-`newSurface` and `focusLeft/Right/Up/Down`. Either free them in System Settings →
+tiles), Super+Alt+Arrows (switch window) and Super+P (switch display). That blocks
+`splitRight`, `closeTab`, `newSurface`, `focusLeft/Right/Up/Down` and `goToWorkspace`. Either free them in System Settings →
 Keyboard → Shortcuts, or remap them here, for example:
 
 ```toml
@@ -186,7 +186,16 @@ focusLeft = "ctrl+alt+shift+left"
 focusRight = "ctrl+alt+shift+right"
 focusUp = "ctrl+alt+shift+up"
 focusDown = "ctrl+alt+shift+down"
+goToWorkspace = "super+shift+o"
 ```
+
+## Command palette
+
+Super+Shift+P (`commandPalette`) lists every command with its shortcut; Super+P
+(`goToWorkspace`) searches workspaces and the current workspace's tabs. Typing `>` switches
+to commands, deleting it back to workspaces. Up/Down or Ctrl+N/Ctrl+P
+(`commandPaletteNext`/`commandPalettePrevious`, only inside the palette) move, Enter runs,
+Escape or a click outside closes. Pressing the same shortcut again closes it.
 
 ## Window buttons
 
