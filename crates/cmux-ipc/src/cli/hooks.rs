@@ -382,7 +382,7 @@ fn session_hook(cmd: &mut Cmd) -> Result<String, CliError> {
     let surf = cmd.env("CMUX_SURFACE_ID").filter(|s| linux && is_uuid(s));
     if let (true, Some(surf)) = (claude, surf) {
         let stdin = stdin_json(cmd);
-        if let Some(p) = session_params(&stdin, &surf) {
+        if let Some(p) = session_params(&stdin, surf) {
             let _ = call(cmd, "surface.agent_session", &p, Duration::from_secs(5));
         }
     }
