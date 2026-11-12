@@ -20,15 +20,9 @@ const KITTY_INFLIGHT_REPLAY_FRAMING_MAX_BYTES: u64 = 256 * 1024;
 /// share of the bounded command-framing headroom.
 pub const fn kitty_inflight_replay_limit_for_image_bytes(image_bytes: u64) -> u64 {
     let maximum = MAX_KITTY_IMAGE_BYTES as u64;
-    let bounded = if image_bytes < maximum {
-        image_bytes
-    } else {
-        maximum
-    };
+    let bounded = if image_bytes < maximum { image_bytes } else { maximum };
     let encoded = bounded.div_ceil(3).saturating_mul(4);
-    let framing = bounded
-        .saturating_mul(KITTY_INFLIGHT_REPLAY_FRAMING_MAX_BYTES)
-        .div_ceil(maximum);
+    let framing = bounded.saturating_mul(KITTY_INFLIGHT_REPLAY_FRAMING_MAX_BYTES).div_ceil(maximum);
     encoded.saturating_add(framing)
 }
 
@@ -127,11 +121,8 @@ impl KittyInFlightTracker {
                 },
                 KittyStreamScan::ApcType(introducer) => match byte {
                     b'G' => {
-                        let prefix_bytes = if self.loading && !self.overflowed {
-                            self.prefix.len()
-                        } else {
-                            0
-                        };
+                        let prefix_bytes =
+                            if self.loading && !self.overflowed { self.prefix.len() } else { 0 };
                         KittyStreamScan::Kitty(KittyCommand::new(
                             introducer,
                             self.max_bytes.saturating_sub(prefix_bytes),
@@ -163,9 +154,7 @@ impl KittyInFlightTracker {
                     {
                         KittyStreamScan::Ground
                     } else {
-                        KittyStreamScan::OtherApc {
-                            saw_escape: byte == 0x1b,
-                        }
+                        KittyStreamScan::OtherApc { saw_escape: byte == 0x1b }
                     }
                 }
             };
@@ -190,16 +179,8 @@ impl KittyInFlightTracker {
             KittyStreamScan::Kitty(command) if !command.overflowed => &command.bytes,
             _ => &[],
         };
-        let prefix = if self.loading {
-            self.prefix.as_slice()
-        } else {
-            &[]
-        };
-        if prefix
-            .len()
-            .checked_add(partial.len())
-            .is_none_or(|total| total > self.max_bytes)
-        {
+        let prefix = if self.loading { self.prefix.as_slice() } else { &[] };
+        if prefix.len().checked_add(partial.len()).is_none_or(|total| total > self.max_bytes) {
             return Err(Error::OutOfSpace);
         }
         Ok((prefix, partial))
@@ -244,10 +225,7 @@ impl KittyInFlightTracker {
         max_bytes: usize,
     ) -> Result<(Vec<u8>, Vec<u8>)> {
         let (prefix, partial) = self.replay_prefix_parts()?;
-        let total = prefix
-            .len()
-            .checked_add(partial.len())
-            .ok_or(Error::OutOfSpace)?;
+        let total = prefix.len().checked_add(partial.len()).ok_or(Error::OutOfSpace)?;
         if total > max_bytes {
             return Err(Error::OutOfSpace);
         }
@@ -257,10 +235,7 @@ impl KittyInFlightTracker {
     #[cfg(test)]
     pub(crate) fn replay_prefix_checked(&self, max_bytes: usize) -> Result<Vec<u8>> {
         let (prefix, partial) = self.replay_prefix_parts()?;
-        let total = prefix
-            .len()
-            .checked_add(partial.len())
-            .ok_or(Error::OutOfSpace)?;
+        let total = prefix.len().checked_add(partial.len()).ok_or(Error::OutOfSpace)?;
         if total > max_bytes {
             return Err(Error::OutOfSpace);
         }
@@ -325,22 +300,14 @@ impl KittyInFlightTracker {
 
     pub(crate) fn set_max_bytes(&mut self, max_bytes: usize) {
         self.max_bytes = max_bytes.min(KITTY_INFLIGHT_REPLAY_MAX_BYTES);
-        let prefix_bytes = if self.loading && !self.overflowed {
-            self.prefix.len()
-        } else {
-            0
-        };
+        let prefix_bytes = if self.loading && !self.overflowed { self.prefix.len() } else { 0 };
         if prefix_bytes > self.max_bytes {
             self.prefix = Vec::new();
             self.overflowed = true;
         } else {
             self.prefix.shrink_to_fit();
         }
-        let retained_prefix = if self.loading && !self.overflowed {
-            self.prefix.len()
-        } else {
-            0
-        };
+        let retained_prefix = if self.loading && !self.overflowed { self.prefix.len() } else { 0 };
         if let KittyStreamScan::Kitty(command) = &mut self.scan {
             command.set_max_bytes(self.max_bytes.saturating_sub(retained_prefix));
         }
@@ -379,11 +346,7 @@ impl KittyStreamScan {
     }
 
     fn utf8(remaining: u8, next_min: u8, next_max: u8) -> Self {
-        Self::Utf8(Utf8Continuation {
-            remaining,
-            next_min,
-            next_max,
-        })
+        Self::Utf8(Utf8Continuation { remaining, next_min, next_max })
     }
 }
 
@@ -414,12 +377,7 @@ impl KittyCommand {
         let retained = introducer.len().min(max_bytes);
         let mut bytes = Vec::with_capacity(retained);
         bytes.extend_from_slice(&introducer[..retained]);
-        Self {
-            bytes,
-            saw_escape: false,
-            overflowed: retained != introducer.len(),
-            max_bytes,
-        }
+        Self { bytes, saw_escape: false, overflowed: retained != introducer.len(), max_bytes }
     }
 
     fn push(&mut self, byte: u8) {
@@ -469,10 +427,8 @@ fn kitty_transmission_state(command: &[u8]) -> KittyTransmissionState {
     } else {
         return KittyTransmissionState::Unknown;
     };
-    let Some(header_end) = command[header_start..]
-        .iter()
-        .position(|byte| *byte == b';')
-        .map(|end| end + header_start)
+    let Some(header_end) =
+        command[header_start..].iter().position(|byte| *byte == b';').map(|end| end + header_start)
     else {
         return KittyTransmissionState::Unknown;
     };
@@ -862,17 +818,10 @@ fn snapshot_impl(
                 &mut anchor,
             )
         })?;
-        let anchor = KittyPlacementAnchor {
-            col: anchor.x,
-            row: anchor.y,
-        };
+        let anchor = KittyPlacementAnchor { col: anchor.x, row: anchor.y };
 
         placements.push(KittyPlacement {
-            key: KittyPlacementKey {
-                image_id,
-                placement_id,
-                ordinal: 0,
-            },
+            key: KittyPlacementKey { image_id, placement_id, ordinal: 0 },
             image_id,
             placement_id,
             is_internal: placement_value(
@@ -912,19 +861,14 @@ fn snapshot_impl(
     let mut ordinals = BTreeMap::<(u32, u32), u32>::new();
     let mut anchors = BTreeMap::new();
     for placement in &mut placements {
-        let ordinal = ordinals
-            .entry((placement.image_id, placement.placement_id))
-            .or_default();
+        let ordinal = ordinals.entry((placement.image_id, placement.placement_id)).or_default();
         placement.key.ordinal = *ordinal;
         *ordinal = ordinal.saturating_add(1);
         if let Some(anchor) = placement.anchor {
             anchors.insert(placement.key, anchor);
         }
     }
-    let current_generations = images
-        .values()
-        .map(|image| image.generation)
-        .collect::<HashSet<_>>();
+    let current_generations = images.values().map(|image| image.generation).collect::<HashSet<_>>();
     pixel_cache.retain(|image_generation, _| {
         #[cfg(test)]
         record_pixel_cache_generation_lookup();
@@ -1042,26 +986,14 @@ fn copy_image(
     let data: Arc<[u8]> = Arc::from(bytes);
     let expected = usize::try_from(width)
         .ok()
-        .and_then(|width| {
-            usize::try_from(height)
-                .ok()
-                .and_then(|height| width.checked_mul(height))
-        })
+        .and_then(|width| usize::try_from(height).ok().and_then(|height| width.checked_mul(height)))
         .and_then(|pixels| pixels.checked_mul(format.bytes_per_pixel()))
         .ok_or(Error::InvalidValue)?;
     if data.len() != expected {
         return Err(Error::InvalidValue);
     }
     pixel_cache.insert(generation, data.clone());
-    Ok(KittyImage {
-        id,
-        number,
-        generation,
-        width,
-        height,
-        format,
-        data,
-    })
+    Ok(KittyImage { id, number, generation, width, height, format, data })
 }
 
 pub(crate) fn install_png_decoder() -> Result<()> {
@@ -1090,9 +1022,7 @@ unsafe extern "C" fn decode_png(
             return false;
         }
         let mut decoder = png::Decoder::new(Cursor::new(encoded));
-        decoder.set_limits(png::Limits {
-            bytes: MAX_KITTY_IMAGE_BYTES,
-        });
+        decoder.set_limits(png::Limits { bytes: MAX_KITTY_IMAGE_BYTES });
         decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
         let mut reader = match decoder.read_info() {
             Ok(reader) => reader,
@@ -1108,9 +1038,7 @@ unsafe extern "C" fn decode_png(
             Err(_) => return false,
         };
         let pixel_count = match usize::try_from(info.width).ok().and_then(|width| {
-            usize::try_from(info.height)
-                .ok()
-                .and_then(|height| width.checked_mul(height))
+            usize::try_from(info.height).ok().and_then(|height| width.checked_mul(height))
         }) {
             Some(count) => count,
             None => return false,
@@ -1202,9 +1130,7 @@ fn png_header_within_limits(encoded: &[u8]) -> bool {
         && usize::try_from(width)
             .ok()
             .and_then(|width| {
-                usize::try_from(height)
-                    .ok()
-                    .and_then(|height| width.checked_mul(height))
+                usize::try_from(height).ok().and_then(|height| width.checked_mul(height))
             })
             .and_then(|pixels| pixels.checked_mul(4))
             .is_some_and(|bytes| bytes <= MAX_KITTY_IMAGE_BYTES)
@@ -1224,14 +1150,10 @@ mod tests {
 
     #[test]
     fn snapshot_format_rejects_unreachable_grayscale_storage() {
-        for raw in [
-            sys::GHOSTTY_KITTY_IMAGE_FORMAT_GRAY,
-            sys::GHOSTTY_KITTY_IMAGE_FORMAT_GRAY_ALPHA,
-        ] {
-            assert!(matches!(
-                snapshot_image_format(raw),
-                Err(Error::InvalidValue)
-            ));
+        for raw in
+            [sys::GHOSTTY_KITTY_IMAGE_FORMAT_GRAY, sys::GHOSTTY_KITTY_IMAGE_FORMAT_GRAY_ALPHA]
+        {
+            assert!(matches!(snapshot_image_format(raw), Err(Error::InvalidValue)));
         }
     }
 
@@ -1405,14 +1327,7 @@ mod tests {
 
         assert_eq!(graphics.images.len(), 65);
         assert_eq!(counter(&SNAPSHOT_IMAGE_VISITS), graphics.images.len());
-        assert_eq!(
-            graphics
-                .images
-                .iter()
-                .filter(|image| image.number == 0)
-                .count(),
-            1
-        );
+        assert_eq!(graphics.images.iter().filter(|image| image.number == 0).count(), 1);
     }
 
     #[test]
@@ -1431,10 +1346,7 @@ mod tests {
         let refreshed = snapshot(&terminal, &mut pixel_cache, true).unwrap();
 
         assert_eq!(refreshed.images.len(), graphics.images.len());
-        assert_eq!(
-            counter(&PIXEL_CACHE_GENERATION_LOOKUPS),
-            graphics.images.len()
-        );
+        assert_eq!(counter(&PIXEL_CACHE_GENERATION_LOOKUPS), graphics.images.len());
     }
 
     #[test]
@@ -1466,9 +1378,7 @@ mod tests {
         reset_counter(&SNAPSHOT_PLACEMENT_VISITS);
         terminal.vt_write(b"text");
         assert!(
-            snapshot_for_render(&terminal, &mut pixel_cache, false)
-                .unwrap()
-                .is_none(),
+            snapshot_for_render(&terminal, &mut pixel_cache, false).unwrap().is_none(),
             "ordinary text output rebuilt an unchanged Kitty scene"
         );
         assert_eq!(counter(&SNAPSHOT_PLACEMENT_VISITS), 0);
@@ -1498,10 +1408,7 @@ mod tests {
             .expect("forced empty terminal snapshot");
 
         assert!(rebound.is_empty());
-        assert!(
-            pixel_cache.is_empty(),
-            "rebound render state retained stale image pixels"
-        );
+        assert!(pixel_cache.is_empty(), "rebound render state retained stale image pixels");
     }
 
     #[test]

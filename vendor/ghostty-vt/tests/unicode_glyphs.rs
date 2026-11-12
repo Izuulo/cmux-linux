@@ -28,10 +28,7 @@ const UNICODE_CORPUS: &[CorpusCase] = &[
         width: WidthExpectation::Narrow,
     },
     CorpusCase {
-        id: "latin-nfc",
-        category: "nfc-nfd",
-        text: "é",
-        width: WidthExpectation::Narrow,
+        id: "latin-nfc", category: "nfc-nfd", text: "é", width: WidthExpectation::Narrow
     },
     CorpusCase {
         id: "latin-nfd",
@@ -45,12 +42,7 @@ const UNICODE_CORPUS: &[CorpusCase] = &[
         text: "한",
         width: WidthExpectation::Wide,
     },
-    CorpusCase {
-        id: "cjk-han",
-        category: "cjk",
-        text: "界",
-        width: WidthExpectation::Wide,
-    },
+    CorpusCase { id: "cjk-han", category: "cjk", text: "界", width: WidthExpectation::Wide },
     CorpusCase {
         id: "emoji-presentation",
         category: "emoji-presentation",
@@ -93,18 +85,8 @@ const UNICODE_CORPUS: &[CorpusCase] = &[
         text: "क्ष",
         width: WidthExpectation::Wide,
     },
-    CorpusCase {
-        id: "thai",
-        category: "thai",
-        text: "ก",
-        width: WidthExpectation::Narrow,
-    },
-    CorpusCase {
-        id: "arabic",
-        category: "arabic",
-        text: "م",
-        width: WidthExpectation::Narrow,
-    },
+    CorpusCase { id: "thai", category: "thai", text: "ก", width: WidthExpectation::Narrow },
+    CorpusCase { id: "arabic", category: "arabic", text: "م", width: WidthExpectation::Narrow },
     CorpusCase {
         id: "box-drawing",
         category: "box-drawing",
@@ -128,16 +110,11 @@ fn cell_columns(cell: &Cell) -> u16 {
 }
 
 fn row_text(row: &[Cell]) -> String {
-    row.iter()
-        .filter(|cell| !cell.text.is_empty())
-        .map(|cell| cell.text.as_str())
-        .collect()
+    row.iter().filter(|cell| !cell.text.is_empty()).map(|cell| cell.text.as_str()).collect()
 }
 
 fn row_signature(row: &[Cell]) -> Vec<(String, CellWidth)> {
-    row.iter()
-        .map(|cell| (cell.text.clone(), cell.width))
-        .collect()
+    row.iter().map(|cell| (cell.text.clone(), cell.width)).collect()
 }
 
 fn corpus_case_frame(case: CorpusCase, cols: u16) -> ghostty_vt::RenderFrame {
@@ -153,12 +130,7 @@ fn frame_for(input: &str, cols: u16) -> ghostty_vt::RenderFrame {
 }
 
 fn styled_row_cells(frame: &ghostty_vt::RenderFrame) -> Vec<(String, CellWidth)> {
-    frame
-        .styled_row(0)
-        .unwrap()
-        .iter()
-        .map(|cell| (cell.text.clone(), cell.width))
-        .collect()
+    frame.styled_row(0).unwrap().iter().map(|cell| (cell.text.clone(), cell.width)).collect()
 }
 
 fn assert_grapheme_cells(input: &str, expected: &[(&str, CellWidth)]) {
@@ -168,25 +140,15 @@ fn assert_grapheme_cells(input: &str, expected: &[(&str, CellWidth)]) {
     // cluster with a Wide lead and a SpacerTail.
     let frame = frame_for(&format!("\x1b[?2027h{input}"), TEST_COLUMNS);
     let row = frame.styled_row(0).unwrap();
-    assert_eq!(
-        row.len(),
-        usize::from(TEST_COLUMNS),
-        "unexpected viewport width for {input:?}"
-    );
+    assert_eq!(row.len(), usize::from(TEST_COLUMNS), "unexpected viewport width for {input:?}");
 
     let mut column = 0;
     for &(expected_text, expected_width) in expected {
         let cell = row
             .get(column)
             .unwrap_or_else(|| panic!("missing lead cell at column {column} for {input:?}"));
-        assert_eq!(
-            cell.text, expected_text,
-            "cluster text at column {column} for {input:?}"
-        );
-        assert_eq!(
-            cell.width, expected_width,
-            "cluster width at column {column} for {input:?}"
-        );
+        assert_eq!(cell.text, expected_text, "cluster text at column {column} for {input:?}");
+        assert_eq!(cell.width, expected_width, "cluster width at column {column} for {input:?}");
 
         match expected_width {
             CellWidth::Narrow => column += 1,
@@ -205,9 +167,7 @@ fn assert_grapheme_cells(input: &str, expected: &[(&str, CellWidth)]) {
     }
 
     assert!(
-        row[column..]
-            .iter()
-            .all(|cell| cell.width == CellWidth::Narrow && cell.text.is_empty()),
+        row[column..].iter().all(|cell| cell.width == CellWidth::Narrow && cell.text.is_empty()),
         "unexpected occupied cells after column {column} for {input:?}"
     );
 }
@@ -217,11 +177,7 @@ fn unicode_conformance_preserves_grapheme_clusters_and_cell_roles() {
     assert_grapheme_cells("e\u{301}", &[("e\u{301}", CellWidth::Narrow)]);
     assert_grapheme_cells(
         "日本語",
-        &[
-            ("日", CellWidth::Wide),
-            ("本", CellWidth::Wide),
-            ("語", CellWidth::Wide),
-        ],
+        &[("日", CellWidth::Wide), ("本", CellWidth::Wide), ("語", CellWidth::Wide)],
     );
     assert_grapheme_cells("क्ष", &[("क्ष", CellWidth::Wide)]);
 }
@@ -231,11 +187,7 @@ fn unicode_conformance_rows_to_runs_preserve_terminal_columns() {
     let frame = frame_for("\x1b[?2027he\u{301} 日本語", TEST_COLUMNS);
     let row = frame.styled_row(0).unwrap();
     let runs = rows_to_runs(frame.styled_rows());
-    assert!(
-        runs.iter()
-            .flat_map(|row| row.iter())
-            .all(|run| !run.text.is_empty())
-    );
+    assert!(runs.iter().flat_map(|row| row.iter()).all(|run| !run.text.is_empty()));
 
     let source_columns: u16 = row
         .iter()
@@ -248,11 +200,7 @@ fn unicode_conformance_rows_to_runs_preserve_terminal_columns() {
     assert_eq!(source_columns, TEST_COLUMNS);
     assert_eq!(frame.size.0, TEST_COLUMNS);
 
-    assert_eq!(
-        runs[0].len(),
-        1,
-        "default styling should form one maximal run"
-    );
+    assert_eq!(runs[0].len(), 1, "default styling should form one maximal run");
     assert_eq!(runs[0][0].width_hint, Some(TEST_COLUMNS));
 }
 
@@ -305,31 +253,13 @@ fn unicode_corpus_preserves_text_and_cell_geometry() {
     }
 
     for &case in UNICODE_CORPUS {
-        assert!(
-            !case.text.contains('\u{FFFD}'),
-            "corpus case {} contains U+FFFD",
-            case.id
-        );
+        assert!(!case.text.contains('\u{FFFD}'), "corpus case {} contains U+FFFD", case.id);
         let frame = corpus_case_frame(case, TEST_COLUMNS);
         let row = frame.styled_row(0).unwrap();
-        assert_eq!(
-            row.len(),
-            usize::from(TEST_COLUMNS),
-            "case {} changed viewport width",
-            case.id
-        );
+        assert_eq!(row.len(), usize::from(TEST_COLUMNS), "case {} changed viewport width", case.id);
         let occupied: Vec<&Cell> = row.iter().filter(|cell| !cell.text.is_empty()).collect();
-        assert_eq!(
-            occupied.len(),
-            1,
-            "case {} split grapheme text across cells",
-            case.id
-        );
-        assert_eq!(
-            occupied[0].text, case.text,
-            "case {} changed grapheme text",
-            case.id
-        );
+        assert_eq!(occupied.len(), 1, "case {} split grapheme text across cells", case.id);
+        assert_eq!(occupied[0].text, case.text, "case {} changed grapheme text", case.id);
         assert!(
             row.iter().all(|cell| !cell.text.contains('\u{FFFD}')),
             "case {} introduced U+FFFD in rendered cells",
@@ -367,11 +297,7 @@ fn unicode_corpus_preserves_text_and_cell_geometry() {
                 .get(lead_index + 1)
                 .unwrap_or_else(|| panic!("case {} wide lead has no spacer tail", case.id));
             assert_eq!(tail.width, CellWidth::SpacerTail, "case {}", case.id);
-            assert!(
-                tail.text.is_empty(),
-                "case {} spacer tail contains text",
-                case.id
-            );
+            assert!(tail.text.is_empty(), "case {} spacer tail contains text", case.id);
         }
     }
 }
@@ -388,12 +314,7 @@ fn unicode_corpus_resize_and_replay_preserve_cells() {
         let mut source_state = RenderState::new().unwrap();
         source_state.update(&mut source).unwrap();
         let source_frame = source_state.build_frame().unwrap();
-        assert_eq!(
-            row_text(source_frame.styled_row(0).unwrap()),
-            case.text,
-            "case {}",
-            case.id
-        );
+        assert_eq!(row_text(source_frame.styled_row(0).unwrap()), case.text, "case {}", case.id);
 
         let replay = source.vt_replay().unwrap();
         let mut restored = Terminal::new(20, 4, 0, Callbacks::default()).unwrap();
@@ -409,11 +330,8 @@ fn unicode_corpus_resize_and_replay_preserve_cells() {
             "case {} row count",
             case.id
         );
-        for (row_index, (source_row, restored_row)) in source_frame
-            .styled_rows()
-            .iter()
-            .zip(restored_frame.styled_rows())
-            .enumerate()
+        for (row_index, (source_row, restored_row)) in
+            source_frame.styled_rows().iter().zip(restored_frame.styled_rows()).enumerate()
         {
             assert_eq!(
                 row_signature(restored_row),

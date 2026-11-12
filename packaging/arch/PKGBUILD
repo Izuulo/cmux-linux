@@ -1,6 +1,6 @@
 # Maintainer: cmux-linux contributors
 pkgname=cmux-linux-git
-pkgver=r306.7bd2ddf
+pkgver=0
 pkgrel=1
 pkgdesc='Terminal workspace for coding agents (Rust port of cmux for KDE Wayland)'
 arch=('x86_64')

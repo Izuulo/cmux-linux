@@ -114,12 +114,7 @@ pub(crate) struct MouseModeSignature {
 
 impl Default for MouseModeSignature {
     fn default() -> Self {
-        Self {
-            bytes: [0; 192],
-            stored_len: 0,
-            total_len: 0,
-            overflow_hash: 0xcbf2_9ce4_8422_2325,
-        }
+        Self { bytes: [0; 192], stored_len: 0, total_len: 0, overflow_hash: 0xcbf2_9ce4_8422_2325 }
     }
 }
 
@@ -141,10 +136,7 @@ impl Extend<u8> for MouseModeSignature {
 
 impl MouseEncoders {
     pub fn new() -> Result<Self> {
-        Ok(Self {
-            primary: MouseEncoder::new()?,
-            release: MouseEncoder::new()?,
-        })
+        Ok(Self { primary: MouseEncoder::new()?, release: MouseEncoder::new()? })
     }
 
     pub fn sync_from_terminal(&mut self, terminal: &Terminal) {
@@ -316,17 +308,11 @@ fn classify_probe_press(bytes: &[u8]) -> Option<MouseWireFormat> {
         [0x1b, b'[', b'<', rest @ ..] => {
             let text = std::str::from_utf8(rest).ok()?;
             let x: u32 = text.split(';').nth(1)?.parse().ok()?;
-            Some(if x >= 600 {
-                MouseWireFormat::SgrPixels
-            } else {
-                MouseWireFormat::Sgr
-            })
+            Some(if x >= 600 { MouseWireFormat::SgrPixels } else { MouseWireFormat::Sgr })
         }
-        [0x1b, b'[', b'M', ..] => Some(if bytes.len() == 6 {
-            MouseWireFormat::X10
-        } else {
-            MouseWireFormat::Utf8
-        }),
+        [0x1b, b'[', b'M', ..] => {
+            Some(if bytes.len() == 6 { MouseWireFormat::X10 } else { MouseWireFormat::Utf8 })
+        }
         [0x1b, b'[', digit, ..] if digit.is_ascii_digit() => Some(MouseWireFormat::Urxvt),
         _ => None,
     }
@@ -350,12 +336,7 @@ impl MouseEncoder {
                 &track_last_cell as *const _ as *const c_void,
             );
         }
-        Ok(Self {
-            encoder,
-            event,
-            terminal_state: None,
-            size: None,
-        })
+        Ok(Self { encoder, event, terminal_state: None, size: None })
     }
 
     pub fn sync_from_terminal(&mut self, terminal: &Terminal) {
@@ -407,10 +388,7 @@ impl MouseEncoder {
             sys::ghostty_mouse_event_set_mods(self.event, input.mods.0);
             sys::ghostty_mouse_event_set_position(
                 self.event,
-                sys::GhosttyMousePosition {
-                    x: input.position.0,
-                    y: input.position.1,
-                },
+                sys::GhosttyMousePosition { x: input.position.0, y: input.position.1 },
             );
 
             let cell_size = (input.cell_size.0.max(1), input.cell_size.1.max(1));
@@ -518,45 +496,23 @@ mod tests {
         encoder.sync_from_terminal(&terminal);
 
         let mut out = Vec::new();
-        encoder
-            .encode(input(MouseAction::Press, Some(MouseButton::Left)), &mut out)
-            .unwrap();
+        encoder.encode(input(MouseAction::Press, Some(MouseButton::Left)), &mut out).unwrap();
         assert_eq!(out, b"\x1b[<0;5;3M");
 
         out.clear();
-        encoder
-            .encode(
-                input(MouseAction::Release, Some(MouseButton::Left)),
-                &mut out,
-            )
-            .unwrap();
+        encoder.encode(input(MouseAction::Release, Some(MouseButton::Left)), &mut out).unwrap();
         assert_eq!(out, b"\x1b[<0;5;3m");
 
         out.clear();
-        encoder
-            .encode(
-                input(MouseAction::Press, Some(MouseButton::WheelUp)),
-                &mut out,
-            )
-            .unwrap();
+        encoder.encode(input(MouseAction::Press, Some(MouseButton::WheelUp)), &mut out).unwrap();
         assert_eq!(out, b"\x1b[<64;5;3M");
 
         out.clear();
-        encoder
-            .encode(
-                input(MouseAction::Press, Some(MouseButton::WheelLeft)),
-                &mut out,
-            )
-            .unwrap();
+        encoder.encode(input(MouseAction::Press, Some(MouseButton::WheelLeft)), &mut out).unwrap();
         assert_eq!(out, b"\x1b[<66;5;3M");
 
         out.clear();
-        encoder
-            .encode(
-                input(MouseAction::Press, Some(MouseButton::WheelRight)),
-                &mut out,
-            )
-            .unwrap();
+        encoder.encode(input(MouseAction::Press, Some(MouseButton::WheelRight)), &mut out).unwrap();
         assert_eq!(out, b"\x1b[<67;5;3M");
     }
 
@@ -567,9 +523,7 @@ mod tests {
         encoder.sync_from_terminal(&terminal);
         let mut out = Vec::new();
 
-        encoder
-            .encode(input(MouseAction::Press, Some(MouseButton::Left)), &mut out)
-            .unwrap();
+        encoder.encode(input(MouseAction::Press, Some(MouseButton::Left)), &mut out).unwrap();
 
         assert!(out.is_empty());
     }
@@ -636,10 +590,7 @@ mod tests {
         out.clear();
         encoder.encode(event, &mut out).unwrap();
 
-        assert!(
-            out.is_empty(),
-            "reasserted normal tracking must suppress motion"
-        );
+        assert!(out.is_empty(), "reasserted normal tracking must suppress motion");
     }
 
     #[test]
@@ -650,16 +601,11 @@ mod tests {
         encoder.sync_from_terminal(&terminal);
 
         terminal.vt_write(b"\x1b[?1006\x07h");
-        assert!(
-            terminal.mode(1006, false),
-            "Ghostty must accept BEL inside CSI parameters"
-        );
+        assert!(terminal.mode(1006, false), "Ghostty must accept BEL inside CSI parameters");
         encoder.sync_from_terminal(&terminal);
 
         let mut out = Vec::new();
-        encoder
-            .encode(input(MouseAction::Press, Some(MouseButton::Left)), &mut out)
-            .unwrap();
+        encoder.encode(input(MouseAction::Press, Some(MouseButton::Left)), &mut out).unwrap();
         assert_eq!(
             out, b"\x1b[<0;5;3M",
             "encoder synchronization must follow Ghostty's authoritative SGR mouse mode"
@@ -684,10 +630,7 @@ mod tests {
         out.clear();
         encoder.encode(event, &mut out).unwrap();
 
-        assert!(
-            out.is_empty(),
-            "restored normal tracking must suppress motion"
-        );
+        assert!(out.is_empty(), "restored normal tracking must suppress motion");
     }
 
     #[test]

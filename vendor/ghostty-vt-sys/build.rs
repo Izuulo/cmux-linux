@@ -68,16 +68,9 @@ fn main() {
     if let Ok(cpu) = env::var("CMUX_GHOSTTY_VT_ZIG_CPU") {
         command.arg(format!("-Dcpu={cpu}"));
     }
-    let status = command
-        .arg("--prefix")
-        .arg(&prefix)
-        .status()
-        .unwrap_or_else(|e| {
-            panic!(
-                "failed to run `{zig} build` in {}: {e}",
-                ghostty_dir.display()
-            )
-        });
+    let status = command.arg("--prefix").arg(&prefix).status().unwrap_or_else(|e| {
+        panic!("failed to run `{zig} build` in {}: {e}", ghostty_dir.display())
+    });
     if !status.success() {
         panic!("zig build of libghostty-vt failed with {status}");
     }
@@ -104,13 +97,7 @@ fn main() {
     // Generate bindings from the public C header.
     let include_dir = ghostty_dir.join("include");
     let bindings = bindgen::Builder::default()
-        .header(
-            include_dir
-                .join("ghostty/vt.h")
-                .to_str()
-                .unwrap()
-                .to_string(),
-        )
+        .header(include_dir.join("ghostty/vt.h").to_str().unwrap().to_string())
         .clang_arg(format!("-I{}", include_dir.display()))
         .allowlist_function("ghostty_.*")
         .allowlist_type("Ghostty.*")
@@ -120,23 +107,15 @@ fn main() {
         .layout_tests(false)
         .generate()
         .expect("bindgen failed for ghostty/vt.h");
-    bindings
-        .write_to_file(out_dir.join("bindings.rs"))
-        .expect("failed to write bindings.rs");
+    bindings.write_to_file(out_dir.join("bindings.rs")).expect("failed to write bindings.rs");
 }
 
 fn emit_cargo_path_directive(directive: &str, path: &Path) {
-    let value = path.to_str().unwrap_or_else(|| {
-        panic!(
-            "cargo:{directive} path is not valid UTF-8: {}",
-            path.display()
-        )
-    });
+    let value = path
+        .to_str()
+        .unwrap_or_else(|| panic!("cargo:{directive} path is not valid UTF-8: {}", path.display()));
     if value.bytes().any(|byte| matches!(byte, b'\r' | b'\n')) {
-        panic!(
-            "cargo:{directive} path contains CR or LF: {}",
-            path.display()
-        );
+        panic!("cargo:{directive} path contains CR or LF: {}", path.display());
     }
     println!("cargo:{directive}={value}");
 }
@@ -149,10 +128,7 @@ fn emit_cargo_path_directive(directive: &str, path: &Path) {
 fn strip_windows_verbatim(path: PathBuf) -> PathBuf {
     if cfg!(windows) {
         let s = path.to_str().unwrap_or_else(|| {
-            panic!(
-                "canonical Ghostty source path is not valid UTF-8: {}",
-                path.display()
-            )
+            panic!("canonical Ghostty source path is not valid UTF-8: {}", path.display())
         });
         if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
             return PathBuf::from(format!(r"\\{rest}"));
