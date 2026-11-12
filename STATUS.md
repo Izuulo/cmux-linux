@@ -4,8 +4,8 @@
      current version to docs/status-archive.md. -->
 
 **Updated:** 2026-11-11
-**Current milestone:** M10 persistence, branch `m10-persistence` (PR #14). Plan written 2026-11-11 (`docs/milestones/m10-persistence/plan.md`): Part 1 layout restore, Part 2 Claude/custom-agent resume, Part 3 local-tmux. No code yet. Earlier: M6–M9, the client-side window buttons and PR #13 (sidebar reopen button, rounded corners, app icon) are merged to `master`.
-**Next action:** agent: M10 Part 1 Task 1 (`cmux-core::session`: `Layout::shape()`/`from_shape()` with tests), after the owner OKs the plan's deviations (auto-resume of interrupted Claude, no scrollback persistence, local-tmux without a registry). Owner, when convenient: (a) click-test PR #13's reopen button and window buttons; (b) done 2026-11-11 with Claude Code 2.1.322 (M9 journal): messages, default auto-naming, automations and a two-teammate `cmux claude-teams` run pass, the last only after adding `respawn-pane`; still open: M7 Task 9 Step 2 (a permission prompt in the Feed) and the `Stop` continue path; (c) the mouse and typing checks no script can do: M8's group header click, `+`, chevron, menus, rename field, Delete prompt, drags, sidebar edge drag, Dock "New Terminal"; older: divider/tab/row drag, Feed buttons, clicking a bubble, IME, `CMUX_TRACE_LATENCY=1` (M1 exit 3), blur by eye; (d) `makepkg -si` and a launcher start.
+**Current milestone:** M10 persistence, branch `m10-persistence` (draft PR #14). All three parts are coded and pushed (2026-11-11): layout restore (`session.json`, Super+Q quit), agent resume (Claude via `SessionStart`/`SessionEnd` hooks, `[[vault.agents]]`, `cmux vault list|resume`), `cmux local-tmux`. Exits 1 and 2 checked on KDE by script (2 with a fake `claude`); exit 3 unchecked (no tmux installed).
+**Next action:** owner: install tmux (`sudo pacman -S tmux`), then agent runs exit 3 (start a counting process with `cmux local-tmux start`, quit, relaunch, see it still counting); owner: one real Claude Code run for exit 2 (run `cmux hooks setup` again first), then say done to merge PR #14. Close the two stray dev `cmux-app` windows from 2026-11-11 if still open (M10 journal, Part 3). Older owner checks: (a) click-test PR #13's reopen button and window buttons; (b) done 2026-11-11 with Claude Code 2.1.322 (M9 journal): messages, default auto-naming, automations and a two-teammate `cmux claude-teams` run pass, the last only after adding `respawn-pane`; still open: M7 Task 9 Step 2 (a permission prompt in the Feed) and the `Stop` continue path; (c) the mouse and typing checks no script can do: M8's group header click, `+`, chevron, menus, rename field, Delete prompt, drags, sidebar edge drag, Dock "New Terminal"; older: divider/tab/row drag, Feed buttons, clicking a bubble, IME, `CMUX_TRACE_LATENCY=1` (M1 exit 3), blur by eye; (d) `makepkg -si` and a launcher start.
 
 ## Where things are
 - Project design and milestone table: `docs/design.md`
@@ -26,7 +26,7 @@
 | M7 feed | merged (PR #8); Feed seen drawn on KDE (permission, question, empty state); buttons unclicked; real Claude Code run (Task 9 Step 2) pending |
 | M8 groups-dock | merged (PR #10); both exit criteria checked on KDE by script and screenshot; mouse paths unverified |
 | M9 agent-coordination | merged (PR #11); each exit criterion checked against the app on KDE with hand-run hooks, a fake naming command and a fake `claude`; real Claude run pending |
-| M10 persistence | in progress: plan written, Part 1 next |
+| M10 persistence | coded (PR #14, draft); exit 1 checked by script, exit 2 with a fake `claude`, exit 3 needs tmux |
 | M11 productivity | not started (post-v1) |
 
 ## Decisions so far
@@ -61,6 +61,7 @@
 - `cmux-app`: gpui `TerminalView` + `TerminalElement`, keys, colours, style, mouse, IME; M2 adds `actions`, `chrome`, `workspace`, `workspace/tab_strip`, `assets`; M3 adds `window_view` (root, pollers), `window_view/sidebar`, `window_view/rename`, `blur` (Linux); M4 adds `attention` (ring, flash), `window_view/notify` (rules wiring, jump), `window_view/panel`, `desktop_notify` (zbus, Linux), `activation` + `wayland` (Linux).
 
 ## Open risks
+- M10: SIGTERM (logout) skips the quit save, so up to 8 s of layout changes are lost. Restored workspaces fire `workspace.created`. Claude resume is a bare `claude --resume <id>` (no permission mode or launch flags). local-tmux matches sessions by name only. Scripted checks must clear inherited `CMUX_*` and set `CMUX_SOCKET_PATH` to the dev app, or they hit the owner's app.
 - M9: nothing ran under a real Claude Code. Messages: hook output shapes match the hooks reference; no idle wake, no off switch, not persisted. Claude Teams: the tmux commands a team sends were taken from cmux's shim, not observed; an unhandled one fails loudly; splits can fail for lack of room (no column layout). Auto-naming's default `claude -p` line is untested. Automations: a `run` that calls `cmux` can loop at its rate limit.
 - M8: nothing in it was clicked or dragged (see Next action b). The Dock is invisible to the socket: `cmux notify`, the Feed hook and OSC notifications don't work from Dock terminals, and CLI commands can't target them. Dock keeps the main area's minimum pane size, so side-by-side splits need a wide sidebar. Groups and Dock are not persisted (M10).
 - gpui is pre-1.0 (pinned). No public FontMetrics → `line_gap` 0.
