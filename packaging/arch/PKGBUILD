@@ -14,7 +14,7 @@ depends=('fontconfig' 'freetype2' 'libxkbcommon' 'libxkbcommon-x11' 'wayland'
          'glib2' 'nspr' 'nss' 'at-spi2-core' 'dbus' 'libcups' 'libxcomposite' 'libxdamage'
          'libxext' 'libxfixes' 'libxrandr' 'mesa' 'expat' 'cairo' 'pango' 'systemd-libs'
          'alsa-lib')
-options=('!debug')
+options=('!debug' '!lto')  # makepkg LTO makes ring's C objects (CEF download) bitcode rust-lld can't link
 makedepends=('git' 'rustup' 'clang' 'binutils' 'cmake' 'ninja')
 provides=('cmux-linux')
 conflicts=('cmux-linux')
