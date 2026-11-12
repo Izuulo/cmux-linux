@@ -184,19 +184,17 @@ impl WorkspaceView {
                     .children(tabs),
             )
             .child(
-                // Empty strip area: the bottom separator continues; double-click opens a tab,
-                // and a drag moves a self-decorated window.
-                crate::csd::window_drag(div(), false)
+                // Empty strip area: the bottom separator continues; a drag moves and a
+                // double-click maximizes a self-decorated window (owner's choice over cmux's
+                // double-click-for-new-tab).
+                crate::csd::window_drag(div(), true)
                     .id(SharedString::from(format!("strip-empty-{}", pane_id.0)))
                     .flex_1()
                     .h_full()
                     .border_b_1()
                     .border_color(p.separator)
-                    .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
-                        if ev.click_count() == 2 {
-                            this.layout.focus_pane(pane_id);
-                            this.new_tab(window, cx);
-                        } else if this.layout.focus_pane(pane_id) {
+                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                        if this.layout.focus_pane(pane_id) {
                             this.focus_active(window, cx);
                         }
                     })),

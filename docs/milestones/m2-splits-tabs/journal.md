@@ -10,3 +10,6 @@ Append-only, newest last. One entry per session: date, what was tried, what was 
 - Task 12 Step 2 (design.md `toml` dependency) done early; it doesn't depend on Task 11.
 - Not yet possible on macOS: `install-zig.sh` is Linux-only and the PTY uses pidfd, so Task 11 waits for the KDE desktop.
 - Exit 3 option: a Mac with cmux installed can supply a real `cmux-mac-splits.png` (same 2 × 2 layout) instead of cmux's published screenshot.
+
+## 2026-11-11 — strip double-click
+- Owner's request: a double-click on the empty tab-strip area no longer opens a tab (cmux does); it maximizes a self-decorated window, as the sidebar band already did. Deviation from the Swift app. Tab double-click still toggles pane zoom.
