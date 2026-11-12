@@ -422,6 +422,23 @@ pub fn process_argv(pid: u32) -> Option<(Vec<String>, Option<String>, Option<Str
     (!argv.is_empty()).then_some((argv, exe, comm))
 }
 
+/// A process's environment (`/proc/<pid>/environ`); M10 local-tmux detection.
+#[cfg(target_os = "linux")]
+pub fn process_environ(pid: u32) -> Option<Vec<String>> {
+    let raw = std::fs::read(format!("/proc/{pid}/environ")).ok()?;
+    Some(
+        raw.split(|b| *b == 0)
+            .filter(|a| !a.is_empty())
+            .map(|a| String::from_utf8_lossy(a).into_owned())
+            .collect(),
+    )
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn process_environ(_pid: u32) -> Option<Vec<String>> {
+    None
+}
+
 // shortcut: no custom-agent detection off Linux; macOS needs `KERN_PROCARGS2`.
 #[cfg(not(target_os = "linux"))]
 pub fn process_argv(_pid: u32) -> Option<(Vec<String>, Option<String>, Option<String>)> {

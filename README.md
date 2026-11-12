@@ -42,8 +42,9 @@ original. It is a **local app**: no cloud services, no browser, no account.
 
 Also here: an agent approval Feed, workspace groups, a Dock, agent-to-agent
 messages, workspace auto-naming, automations and Claude Code teams in splits
-(below), and the layout and running agent sessions come back after a restart. Later:
-opt-in tmux persistence, a command palette and SSH workspaces.
+(below), and the layout and running agent sessions come back after a restart, with
+opt-in tmux-backed terminals whose processes survive it. Later: a command palette and SSH
+workspaces.
 
 ## How it's built
 
@@ -504,6 +505,24 @@ resume_command = "{{executable}} --session {{sessionId}}"
 too. `cmux vault list` shows every session that would resume, `cmux vault resume <surface>`
 types its resume line again. Session ids with anything but letters, digits, `.`, `_` and `-`
 are ignored, since the line goes to a shell.
+
+### Keeping processes alive (local-tmux)
+
+Opt-in: a terminal attached to your own tmux server keeps its processes when the app quits.
+
+```sh
+cmux local-tmux start work --cwd ~/src/project --command 'npm run dev'
+cmux local-tmux list
+cmux local-tmux attach work     # from another terminal
+cmux local-tmux close work      # ends the session and what runs in it
+```
+
+`start` creates the session on `~/.local/state/cmux-linux/local-tmux/tmux.sock` (directory
+mode 0700, 10,000 lines of history) and attaches the terminal you ran it in (`--detached`
+doesn't). Quitting the app or closing the tab only detaches; when the app restores the
+terminal it attaches again. It needs `tmux` on `PATH` (or `CMUX_LOCAL_TMUX_BIN`). It does not
+survive a logout or reboot, which ends the tmux server. Sessions are found by name: if the
+server was restarted and a new session got the same name, that one is attached.
 
 ## Contributing
 

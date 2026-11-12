@@ -4,7 +4,7 @@
 pub(crate) const GROUPS: &[(&str, &[&str])] = &[
     (
         "Start & Resume",
-        &["new-workspace", "claude-teams", "vault"],
+        &["new-workspace", "claude-teams", "vault", "local-tmux"],
     ),
     (
         "Navigate & Arrange",
@@ -78,6 +78,7 @@ pub(crate) fn usage_line(cmd: &str) -> Option<&'static str> {
         }
         "automation" => "automation <list|reload>",
         "vault" => "vault <list|resume <surface>>",
+        "local-tmux" => "local-tmux <start|list|attach|close> [options]",
         "claude-teams" => "claude-teams [claude-args...]",
         "hooks" => {
             "hooks <setup|uninstall> [--settings-file <path>] | hooks <feed|message|session> --source claude"
@@ -151,6 +152,7 @@ pub(crate) fn command(cmd: &str) -> Option<String> {
         "agent" => AGENT,
         "automation" => AUTOMATION,
         "vault" => VAULT,
+        "local-tmux" => LOCAL_TMUX,
         "claude-teams" => CLAUDE_TEAMS,
         "ping" => PING,
         _ => return None,
@@ -437,6 +439,25 @@ its hooks (`cmux hooks setup`) and agents from [[vault.agents]] in
 
   list    Show each session: surface, workspace, agent, session id, directory
   resume  Type the session's resume command into its surface again
+";
+
+const LOCAL_TMUX: &str =
+    "Usage: cmux local-tmux start <name> [--cwd <dir>] [--command <cmd>] [--detached]
+       cmux local-tmux list
+       cmux local-tmux attach <name>
+       cmux local-tmux close <name>
+
+Terminals whose processes survive an app restart: each session lives on your own
+tmux server (~/.local/state/cmux-linux/local-tmux/tmux.sock), and this terminal
+attaches to it. Quitting the app or closing the tab only detaches; a restored
+terminal attaches again. Needs tmux (or CMUX_LOCAL_TMUX_BIN). Names: letters,
+digits, _ and -, at most 128.
+
+  start   Create the session (10,000 lines of history) and attach this terminal,
+          unless --detached
+  list    Show the sessions on the server
+  attach  Attach this terminal to an existing session
+  close   End the session and everything running in it
 ";
 
 const AGENT: &str = r#"Usage: cmux agent message <target> [--from <name>] <text|->

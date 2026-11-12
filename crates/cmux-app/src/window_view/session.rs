@@ -9,6 +9,7 @@ use gpui::{App, Context, Entity, Task, Window, WindowBounds};
 use serde_json::{Value, json};
 
 use cmux_config::vault::{self, Registration};
+use cmux_ipc::local_tmux;
 
 use super::WindowView;
 use super::dock::RightMode;
@@ -43,12 +44,27 @@ pub struct SavedLayout {
     pub terms: Vec<SavedTerm>,
 }
 
-/// The registered agent a foreground process `pid` is, if any.
+fn env(k: &str) -> Option<String> {
+    std::env::var(k).ok()
+}
+
+/// What a foreground process `pid` is, if anything to resume: a client attached to a
+/// local-tmux session (plan T3), else a registered agent (V2).
 pub fn detect_agent(regs: &[Registration], pid: u32) -> Option<Agent> {
+    let (argv, exe, comm) = cmux_term::pty::process_argv(pid)?;
+    if let Some(sock) = local_tmux::socket_path(&env)
+        && let Some(environ) = cmux_term::pty::process_environ(pid)
+        && let Some(name) = local_tmux::detect(&argv, &environ, &sock.to_string_lossy())
+    {
+        return Some(Agent {
+            kind: local_tmux::KIND.into(),
+            session_id: name,
+            executable: exe,
+        });
+    }
     if regs.is_empty() {
         return None;
     }
-    let (argv, exe, comm) = cmux_term::pty::process_argv(pid)?;
     let names: Vec<&str> = [&comm, &exe]
         .into_iter()
         .flatten()
@@ -67,6 +83,13 @@ impl SavedTerm {
     pub fn resume_line(&self, regs: &[Registration]) -> Option<String> {
         let a = self.agent.as_ref()?;
         let (exe, cwd) = (a.executable.as_deref(), self.cwd.as_deref());
+        if a.kind == local_tmux::KIND {
+            let sock = local_tmux::socket_path(&env)?;
+            // The configured binary, as the CLI's line: a wrapper's executable is its interpreter.
+            let bin = local_tmux::bin(&env);
+            return local_tmux::valid_name(&a.session_id)
+                .then(|| local_tmux::attach_line(&bin, &sock.to_string_lossy(), &a.session_id));
+        }
         vault::resume_line(regs, &a.kind, &a.session_id, exe, cwd)
     }
 }

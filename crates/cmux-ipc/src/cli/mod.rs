@@ -18,6 +18,7 @@ mod commands;
 mod groups;
 mod help;
 mod hooks;
+mod local_tmux;
 mod notify;
 mod tmux;
 mod vault;
@@ -156,6 +157,7 @@ fn run_inner(args: &[String], ctx: &Ctx) -> Result<String, CliError> {
         "agent" => agent::agent(&mut cmd),
         "automation" => automation::automation(&mut cmd),
         "vault" => vault::vault(&mut cmd),
+        "local-tmux" => local_tmux::local_tmux(&mut cmd),
         other => fail(format!("{other} is not available yet")),
     }
 }

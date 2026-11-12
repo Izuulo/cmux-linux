@@ -123,11 +123,14 @@ impl WindowView {
                     continue;
                 };
                 let a = t.agent.as_ref().expect("agent_term sets it");
-                let name = self
-                    .vault_agents
-                    .iter()
-                    .find(|r| r.id == a.kind)
-                    .map_or("Claude Code", |r| r.name.as_str());
+                let name = self.vault_agents.iter().find(|r| r.id == a.kind).map_or(
+                    if a.kind == cmux_ipc::local_tmux::KIND {
+                        "tmux session"
+                    } else {
+                        "Claude Code"
+                    },
+                    |r| r.name.as_str(),
+                );
                 rows.push(json!({
                     "workspace_id": ws.handle.id, "workspace_ref": ws.handle.r#ref,
                     "workspace_title": ws.title,
