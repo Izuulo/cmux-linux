@@ -178,11 +178,7 @@ fn random_hex() -> String {
 /// The upload commands for `files` (sd:129–320): make the paste directory and learn `$HOME`
 /// (`home` = None), else scp each file to a fresh name there and `chmod 600` them. Returns
 /// (scp argvs, chmod argv, remote paths).
-pub fn upload_argvs(
-    argv: &[String],
-    home: &str,
-    files: &[&Path],
-) -> Option<Upload> {
+pub fn upload_argvs(argv: &[String], home: &str, files: &[&Path]) -> Option<Upload> {
     let (opts, dest) = connection(argv)?;
     let mut scps = Vec::new();
     let mut remote = Vec::new();
