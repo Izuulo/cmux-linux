@@ -358,7 +358,7 @@ impl BrowserView {
             .ml(px(4.))
             .px(px(metric::OMNIBAR_PAD_X))
             .rounded(px(metric::OMNIBAR_RADIUS))
-            .bg(t.control)
+            .bg(t.field)
             .border_1()
             .border_color(if editing.is_some() {
                 t.accent

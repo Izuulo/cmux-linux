@@ -31,6 +31,8 @@ pub struct Theme {
     pub palette_select: Rgba,
     /// Card outline.
     pub card_edge: Rgba,
+    /// Inline text field fill (omnibar): the background, a hair darker (cmux dark: 36 on 38).
+    pub field: Rgba,
     /// Outline of an inline text field (omnibar).
     pub field_border: Rgba,
     /// Menu row under the pointer: accent fill, white text (NSMenu).
@@ -122,6 +124,7 @@ impl Theme {
             palette_border: if light { ink(0.12) } else { ink(0.18) },
             palette_select: alpha(p.accent, 0.14),
             card_edge: if light { separator } else { ink(0.08) },
+            field: chrome::shift(bg, if light { -0.04 } else { -2.0 / 255.0 }, 1.0),
             field_border: if light { ink(0.10) } else { ink(0.14) },
             menu_hover: p.accent,
             menu_hover_text: WHITE,
@@ -243,6 +246,7 @@ mod tests {
             "dark cards are darker than the window"
         );
         assert_eq!(dark.menu_hover, dark.accent);
+        assert!(dark.field.r < dark.bg.r && dark.bg.r - dark.field.r < 0.02);
     }
 
     #[test]
