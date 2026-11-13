@@ -4,8 +4,8 @@
      current version to docs/status-archive.md. -->
 
 **Updated:** 2026-11-12
-**Current milestone:** none open. M11, M12, M13 built 2026-11-11/12 as stacked PRs: #20 M11 (palette, `cmux.json`, `cmux ssh`), #21 M12 (live apply, config writers, Settings window), M13 PR (CEF browser tabs behind cargo feature `browser`, off by default; Arch package builds with it). Agent merges were blocked by permissions: owner merges in order.
-**Next action:** owner: merge #20, #21, then the M13 PR (each retargets to master); `scripts/install-cef.sh` then `cargo run --features cmux-app/browser` to try browser tabs (Super+Shift+L); click through Settings and a browser page (mouse, IME, `<select>`), then `makepkg -si`; click through every Settings control once and `diff` both config files (nothing was clicked: no pointer tool); M11 checks (journal "final review"): trust prompt buttons, a real ssh host, PNG drop, palette mouse; install tmux (`sudo pacman -S tmux`), then agent runs exit 3 (start a counting process with `cmux local-tmux start`, quit, relaunch, see it still counting); owner: one real Claude Code run for exit 2 (run `cmux hooks setup` again first), Close the two stray dev `cmux-app` windows from 2026-11-11 if still open (M10 journal, Part 3). Older owner checks: (a) click-test PR #13's reopen button and window buttons; (b) done 2026-11-11 with Claude Code 2.1.322 (M9 journal): messages, default auto-naming, automations and a two-teammate `cmux claude-teams` run pass, the last only after adding `respawn-pane`; still open: M7 Task 9 Step 2 (a permission prompt in the Feed) and the `Stop` continue path; (c) the mouse and typing checks no script can do: M8's group header click, `+`, chevron, menus, rename field, Delete prompt, drags, sidebar edge drag, Dock "New Terminal"; older: divider/tab/row drag, Feed buttons, clicking a bubble, IME, `CMUX_TRACE_LATENCY=1` (M1 exit 3), blur by eye; (d) `makepkg -si` and a launcher start.
+**Current milestone:** M14 mac-look (PR #23, branch `m14-mac-look`): shared `mac` UI kit (`crates/cmux-app/src/mac/`), Inter UI font, animated glass popover with arrow, menu, palette, Settings restyle, title bar, browser strip button and omnibar. All 11 plan tasks built and reviewed; calibration against real Tahoe not done. M11–M13 merged (#20–#22).
+**Next action:** owner: click through M14 (bell popover open/close, right-click a sidebar row for the menu, palette, title bar drag/double-click, Settings window buttons and controls, the globe button), then say "done" to merge PR #23. Older owner checks (M7–M13 mouse/typing, real Claude runs, tmux, `makepkg -si`) are in `docs/status-archive.md` (2026-11-12 — before M14).
 
 ## Where things are
 - Project design and milestone table: `docs/design.md`
@@ -30,6 +30,7 @@
 | M11 productivity | done; exits by script on KDE, ssh vs a fake `ssh`; prompt buttons, real host, drop unclicked |
 | M12 settings | done; exits by script on KDE (writer calls + armed recorder); no control clicked |
 | M13 browser | done; CEF off-screen rendering; exits by script on KDE; mouse/IME in pages unverified |
+| M14 mac-look | built and calibrated against cmux on macOS 27 (dark + light); popover, palette, Settings, title bar, browser bar seen on KDE side by side; clicks/hovers and the context menu on screen pending |
 
 ## Decisions so far
 - Port from source (cmux is GPL-3.0-or-later); REA not needed. Our license: GPL-3.0-or-later.
@@ -38,6 +39,7 @@
 - Dev setup: Zig 0.16.0 via `scripts/install-zig.sh`; `.tools/zig` on PATH. libc pinned to 0.2.189 in Cargo.lock; never bare `cargo update`. Toolchain pinned in `rust-toolchain.toml`.
 - Local app only: no cmux Cloud, Manaflow relays. In-app browser (M13): CEF off-screen via `cef` crate, cargo feature `browser`. v1 = M0–M6; M7–M13 add the extras.
 - `ui_scale` (config.toml, re-read every 1 s): chrome files take `px` from `cmux-app::ui`; measured values use `gpui::px`.
+- Look (M14): every colour, radius, shadow, text size and timing lives in `cmux-app::mac` (`Theme`, `metric`, `motion`); `scripts/check-mac-tokens.sh` (CI) greps the surfaces built on it. Glass is opaque (no blur in gpui). UI text Inter 4.1.
 - Target: KDE Plasma Wayland first, macOS second. ⌘ → Super by default, all keys remappable.
 - Terminal behaviour follows Ghostty source where cmux delegates to Ghostty (M1 journal lists the cases, e.g. Ctrl+[ sends CSI-u).
 - Config: reads Ghostty's own config (`~/.config/ghostty/config[.ghostty]`, includes, themes).
@@ -64,6 +66,7 @@
 - `cmux-app`: gpui `TerminalView` + `TerminalElement`, keys, colours, style, mouse, IME; M2 adds `actions`, `chrome`, `workspace`, `workspace/tab_strip`, `assets`; M3 adds `window_view` (root, pollers), `window_view/sidebar`, `window_view/rename`, `blur` (Linux); M4 adds `attention` (ring, flash), `window_view/notify` (rules wiring, jump), `window_view/panel`, `desktop_notify` (zbus, Linux), `activation` + `wayland` (Linux).
 
 ## Open risks
+- M14: Tahoe values are estimates until calibrated; only the notification popover was seen on screen (arrow fix after that not re-shot); fades restart from 0 on reopen; never screenshot the active window while the owner uses the desktop (`spectacle -a` captures whatever is in front).
 - M13: CEF 156 (`cef =156.4.0`) off-screen, frames as gpui images (full upload per frame; video heavy); HiDPI via page zoom (CEF ignores the scale on Linux); a no-`browser` build drops saved browser URLs on its next save; every restored browser tab starts CEF at launch; physical mouse, IME and popups unverified.
 - M12: Settings UI never clicked. Agent edits write every field (`argv_option = ""`); removing the first of two same-id agents keeps the first entry's extras; `.cmux-bak` is overwritten each run; quitting from the main window loses a half-typed Settings field; 819 theme cards rebuild per keystroke (frame time unmeasured); one recorded chord replaces all of an action's chords.
 - M11: palette, `cmux.json` and `cmux ssh` (details in its journal). Trust prompt buttons never clicked (gpui Linux prompt takes no keys). ssh: no reconnect loop; multi-pane restore with password auth asks per pane; cwd/branch need OSC 7 from the remote shell; probes run one workspace after another.
@@ -84,15 +87,12 @@
 - Groups (M8): runs in the workspace list, anchor first, kept by `Workspaces::normalize`; the sidebar draws `rows()`; no empty groups; notification bump stays inside the group; inline group rename; a context menu instead of a palette. Dock (M8): one window-owned `WorkspaceView` in the right sidebar (mode bar Feed/Dock, draggable width), seeded by `~/.config/cmux-linux/dock.json`.
 
 ## Carry to M4+
-- M3 deferred: keyboard workspace move doesn't scroll into view; drop line 1 px off/unclipped when scrolled; long rename hides caret; `run_with_deadline` drain join unbounded if a grandchild holds the pipe; no git dirty `*`; no persistence (M10); shell-integration kicks (M5).
-Plasma ≤6.6 blur (`org_kde_kwin_blur`): only if Task 8 finds no `ext_background_effect_v1`. M10: map Ghostty `scrollback-limit` and drive libghostty idle compression.
+- M3 deferred: keyboard workspace move doesn't scroll into view; drop line 1 px off/unclipped when scrolled; long rename hides caret; `run_with_deadline` drain join unbounded if a grandchild holds the pipe; no git dirty `*`; no persistence (M10); shell-integration kicks (M5). Plasma ≤6.6 blur (`org_kde_kwin_blur`): only if Task 8 finds no `ext_background_effect_v1`. M10: map Ghostty `scrollback-limit` and drive libghostty idle compression.
 - M5 deferred minors: timed-out requests still run later; denial text can become "Socket closed before reply"; CLI panics on `CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC=inf` and non-UTF-8 args; no flock against simultaneous starts; hidden new workspace splits measured at full width; no CLI tests for denial/timeout texts. Not in M6 spec (owner may add): `identify`, `rpc`, `list-notifications`, `clear-notifications`, capability tokens, socket settings UI.
 - **M1 exit criteria 2–3:** take the screenshot pair and run `CMUX_TRACE_LATENCY=1` next time the user is at the desktop.
 - Mouse: touchpad may scroll ~3× Ghostty's rate; no drag threshold, shift-click extend, autoscroll, horizontal wheel; mouse glue untested.
-- Render: underline styles simplified; per-cell Font clone in prepaint; blink task always wakes.
+- Render: underline styles simplified; per-cell Font clone in prepaint; blink task always wakes; PTY: `resize` locks on GUI thread; Term: epoch over-invalidates on any ESC[3J; title/bell coalesced per feed.
 - IME: preedit has no background and isn't clamped; `bounds_for_range` approximate; real IME (fcitx/ibus) unverified.
-- PTY: `resize` locks on GUI thread.
-- Term: epoch over-invalidates on any ESC[3J; title/bell coalesced per feed.
 - Config: quoted `?` path handling; theme files' own `theme`/`config-file` lines ignored.
 - CI: fmt `-p` list hand-maintained; clippy excludes vendored crates. Packaging: crate licence texts (`cargo about`) not shipped yet, before AUR publish; `-git` PKGBUILD only, no release tag; makepkg's Ghostty source still clones from GitHub.
 

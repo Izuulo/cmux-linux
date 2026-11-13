@@ -9,9 +9,10 @@ use gpui::{
     Rgba, SharedString, StatefulInteractiveElement, Styled, Window, canvas, div, prelude::*,
 };
 
-use super::controls::{self, Colors};
 use super::{FieldId, SettingsView};
 use crate::chrome::{rgba, wcag_is_light};
+use crate::mac::controls;
+use crate::mac::{Theme, alpha, metric};
 use crate::ui::{px, s};
 
 const CARD_MIN: f32 = 128.0;
@@ -87,7 +88,7 @@ impl SettingsView {
         t: &ThemePreview,
         selected: bool,
         w: f32,
-        c: Colors,
+        c: Theme,
         cx: &Context<Self>,
     ) -> AnyElement {
         let fg = rgba(t.foreground, 1.0);
@@ -99,22 +100,22 @@ impl SettingsView {
             .id(SharedString::from(format!("theme-{}", t.name)))
             .w(gpui::px(w))
             .p(px(5.))
-            .rounded(px(8.))
+            .rounded(px(metric::CONTROL_RADIUS))
             .border_2()
             .border_color(if selected {
                 accent
             } else {
                 gpui::transparent_black().into()
             })
-            .when(selected, |d| d.bg(Rgba { a: 0.12, ..accent }))
+            .when(selected, |d| d.bg(alpha(accent, 0.12)))
             .child(
                 div()
                     .relative()
                     .h(px(PREVIEW_H))
-                    .rounded(px(6.))
+                    .rounded(px(metric::CONTROL_RADIUS - 2.))
                     .bg(rgba(t.background, 1.0))
                     .border_1()
-                    .border_color(Rgba { a: 0.1, ..c.text })
+                    .border_color(alpha(c.text, 0.1))
                     .child(
                         div()
                             .flex()
@@ -140,7 +141,7 @@ impl SettingsView {
                                     .flex_none()
                                     .w(px(5.))
                                     .h(px(11.))
-                                    .rounded(px(1.))
+                                    .rounded(px(1.)) // mac-ok: the theme's cursor shape
                                     .bg(t.cursor.map_or(fg, |c| rgba(c, 1.0))),
                             ),
                     )
@@ -179,7 +180,7 @@ impl SettingsView {
 
     pub(super) fn render_themes(
         &mut self,
-        c: Colors,
+        c: Theme,
         window: &Window,
         cx: &mut Context<Self>,
     ) -> Vec<AnyElement> {

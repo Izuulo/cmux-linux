@@ -14,6 +14,9 @@ use crate::colors::{hsla, to_vt};
 /// Ghostty's default font (font/embedded.zig), bundled in assets/fonts.
 pub const DEFAULT_FONT_FAMILY: &str = "JetBrains Mono";
 
+/// UI text: Inter, the closest licensable face to Apple's SF Pro (M14 spec).
+pub const UI_FONT_FAMILY: &str = "Inter";
+
 /// Ghostty sizes fonts in points at 96 dpi on Linux (font/face.zig `default_dpi`).
 // shortcut: Linux only; macOS uses 72 dpi. Switch on target_os in the M6 macOS build.
 const POINTS_TO_PX: f32 = 96.0 / 72.0;
@@ -140,13 +143,17 @@ pub fn cell_size(
     (w / scale, h.max(1.0) / scale)
 }
 
-/// Registers the bundled JetBrains Mono faces with gpui. Call before any `font_id` lookup.
+/// Registers the bundled JetBrains Mono and Inter faces with gpui. Call before any `font_id` lookup.
 pub fn load_bundled_fonts(cx: &App) {
     let fonts: Vec<Cow<'static, [u8]>> = vec![
         Cow::Borrowed(include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf").as_slice()),
         Cow::Borrowed(include_bytes!("../assets/fonts/JetBrainsMono-Bold.ttf").as_slice()),
         Cow::Borrowed(include_bytes!("../assets/fonts/JetBrainsMono-Italic.ttf").as_slice()),
         Cow::Borrowed(include_bytes!("../assets/fonts/JetBrainsMono-BoldItalic.ttf").as_slice()),
+        Cow::Borrowed(include_bytes!("../assets/fonts/Inter-Regular.ttf").as_slice()),
+        Cow::Borrowed(include_bytes!("../assets/fonts/Inter-Medium.ttf").as_slice()),
+        Cow::Borrowed(include_bytes!("../assets/fonts/Inter-SemiBold.ttf").as_slice()),
+        Cow::Borrowed(include_bytes!("../assets/fonts/Inter-Bold.ttf").as_slice()),
     ];
     if let Err(e) = cx.text_system().add_fonts(fonts) {
         eprintln!("cmux-linux: could not load the bundled font: {e}");

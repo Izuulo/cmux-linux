@@ -9,8 +9,9 @@ use gpui::{
     Window, div, prelude::*,
 };
 
-use super::controls::{self, CONTROL_W, Colors};
 use super::{FieldId, SettingsView};
+use crate::mac::controls::{self, CONTROL_W};
+use crate::mac::{Theme, metric};
 use crate::ui::px;
 
 /// Each agent field: config key, title.
@@ -102,7 +103,7 @@ impl SettingsView {
         &self,
         id: impl Into<gpui::ElementId>,
         label: &'static str,
-        c: Colors,
+        c: Theme,
         cx: &Context<Self>,
         f: impl Fn(&mut Self, &mut Context<Self>) + 'static,
     ) -> AnyElement {
@@ -112,9 +113,9 @@ impl SettingsView {
             .items_center()
             .h(px(22.))
             .px(px(10.))
-            .rounded(px(5.))
+            .rounded(px(metric::CONTROL_RADIUS))
             .bg(c.control)
-            .text_size(px(12.))
+            .text_size(px(metric::BODY_TEXT))
             .hover(move |s| s.bg(c.hover))
             .child(label)
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| f(this, cx)))
@@ -123,7 +124,7 @@ impl SettingsView {
 
     pub(super) fn render_automation(
         &self,
-        c: Colors,
+        c: Theme,
         window: &Window,
         cx: &Context<Self>,
     ) -> Vec<AnyElement> {

@@ -43,6 +43,10 @@ JetBrains Mono 2.304 (crates/cmux-app/assets/fonts/, https://github.com/JetBrain
   Copyright 2020 The JetBrains Mono Project Authors. SIL Open Font License 1.1;
   see crates/cmux-app/assets/fonts/OFL.txt. Bundled unmodified as Ghostty's default font.
 
+Inter 4.1 (crates/cmux-app/assets/fonts/Inter-*.ttf, https://github.com/rsms/inter)
+  Copyright (c) 2016 The Inter Project Authors. SIL Open Font License 1.1;
+  see crates/cmux-app/assets/fonts/Inter-OFL.txt. Bundled unmodified for UI text.
+
 Zed terminal view (https://github.com/zed-industries/zed @ 69e2130295c2649963eb639fc70b4f2ee8ea1624,
   crates/terminal_view and crates/terminal)
   Copyright Zed Industries. GPL-3.0-or-later. crates/cmux-app/src/{terminal_element,
@@ -85,7 +89,9 @@ zbus (crates.io 5.19, https://github.com/dbus2/zbus), used by cmux-app on Linux 
 Lucide icons (crates/cmux-app/assets/icons/*.svg, https://lucide.dev, lucide-static 0.460.0)
   terminal, square-terminal, x, columns-2, rows-2, plus, panel-left, git-pull-request,
   git-merge, circle-x, bell, bell-off, shield, triangle-alert, list, circle-help, chevron-down,
-  chevron-right, folder, pin, panel-right, rss, settings, paintbrush, wand-sparkles, keyboard. Copyright Lucide Contributors and Cole Bemis (Feather). ISC License; see crates/cmux-app/assets/icons/LICENSE-lucide.txt.
+  chevron-right, chevron-left, folder, pin, panel-right, rss, settings, paintbrush,
+  wand-sparkles, keyboard, globe, rotate-cw, lock. Copyright Lucide Contributors and Cole
+  Bemis (Feather). ISC License; see crates/cmux-app/assets/icons/LICENSE-lucide.txt.
 
 Bonsplit (https://github.com/manaflow-ai/bonsplit @ 58b73fd), cmux's split/tab library
   Copyright (c) 2026 Alasdair Monk. MIT. crates/cmux-core and crates/cmux-app/src/workspace*

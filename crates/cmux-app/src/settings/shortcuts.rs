@@ -6,12 +6,13 @@ use cmux_config::keybindings::{self, DEFAULTS};
 use cmux_config::write;
 use gpui::{
     AnyElement, ClickEvent, Context, InteractiveElement, IntoElement, Keystroke, ParentElement,
-    Rgba, SharedString, StatefulInteractiveElement, Styled, div, prelude::*,
+    SharedString, StatefulInteractiveElement, Styled, div, prelude::*,
 };
 
 use super::SettingsView;
-use super::controls::{self, Colors};
 use crate::actions::PALETTE;
+use crate::mac::controls;
+use crate::mac::{Theme, alpha, metric};
 use crate::ui::px;
 
 const RECORDER_W: f32 = 160.0;
@@ -128,7 +129,7 @@ impl SettingsView {
             .collect()
     }
 
-    fn shortcut_row(&self, action: &'static str, c: Colors, cx: &Context<Self>) -> AnyElement {
+    fn shortcut_row(&self, action: &'static str, c: Theme, cx: &Context<Self>) -> AnyElement {
         let hints = self.hints(action);
         let recording = self.recording == Some(action);
         let (label, color) = if recording {
@@ -146,7 +147,7 @@ impl SettingsView {
             .w(px(RECORDER_W))
             .h(px(22.))
             .px(px(6.))
-            .rounded(px(5.))
+            .rounded(px(metric::CONTROL_RADIUS))
             .bg(c.control)
             .border_1()
             .border_color(if recording { c.accent } else { c.separator })
@@ -218,10 +219,10 @@ impl SettingsView {
             .gap(px(8.))
             .px(px(8.))
             .py(px(6.))
-            .rounded(px(6.))
-            .bg(Rgba { a: 0.12, ..red })
+            .rounded(px(metric::CONTROL_RADIUS))
+            .bg(alpha(red, 0.12))
             .border_1()
-            .border_color(Rgba { a: 0.35, ..red })
+            .border_color(alpha(red, 0.35))
             .text_size(px(11.))
             .child(
                 div()
@@ -248,7 +249,7 @@ impl SettingsView {
             .into_any_element()
     }
 
-    pub(super) fn render_shortcuts(&self, c: Colors, cx: &Context<Self>) -> Vec<AnyElement> {
+    pub(super) fn render_shortcuts(&self, c: Theme, cx: &Context<Self>) -> Vec<AnyElement> {
         let reset = self.button(
             "reset-shortcuts",
             "↺ Reset Defaults",

@@ -20,6 +20,7 @@ use gpui::{
 };
 
 use crate::actions::*;
+use crate::mac::Fading;
 use crate::style::TermStyle;
 use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
@@ -42,6 +43,7 @@ mod panel;
 pub(crate) mod rename;
 pub mod session;
 mod sidebar;
+mod titlebar;
 mod vault_ctl;
 
 use rename::RenameInput;
@@ -62,10 +64,10 @@ pub struct WindowView {
     rename: Option<Entity<RenameInput>>,
     /// The open rename edits this group's name, not a workspace title (M8 plan D9).
     rename_group: Option<GroupId>,
-    /// The sidebar's context menu, while open.
-    menu: Option<menu::Menu>,
-    /// The command palette, while open (M11).
-    palette: Option<palette::Palette>,
+    /// The sidebar's context menu; open only while live, not while fading out.
+    menu: Fading<menu::Menu>,
+    /// The command palette (M11); likewise.
+    palette: Fading<palette::Palette>,
     /// Workspaces something was typed into (the "untouched anchor" rule, plan D5).
     typed: HashSet<WorkspaceId>,
     /// Row bounds in list order, from the last paint (drop-gap maths).
@@ -115,8 +117,8 @@ pub struct WindowView {
     shell: Rc<control::ShellEnv>,
     /// The control socket (M5), while it runs.
     _server: Option<cmux_ipc::server::Server>,
-    /// The notification panel is showing (Super+I, the bell).
-    panel_open: bool,
+    /// The notification panel (Super+I, the bell); open only while live.
+    panel: Fading<()>,
     /// When a click outside last closed the panel (panel.rs REOPEN_GUARD).
     panel_dismissed: Option<Instant>,
     _tasks: Vec<Task<()>>,
@@ -183,8 +185,8 @@ impl WindowView {
             sidebar_scroll: ScrollHandle::new(),
             rename: None,
             rename_group: None,
-            menu: None,
-            palette: None,
+            menu: Fading::default(),
+            palette: Fading::default(),
             typed: HashSet::new(),
             row_bounds: Rc::default(),
             drop_gap: None,
@@ -218,7 +220,7 @@ impl WindowView {
             feed_field_focus: cx.focus_handle(),
             shell,
             _server: server,
-            panel_open: false,
+            panel: Fading::default(),
             panel_dismissed: None,
             _tasks: Vec::new(),
             _activation: None,
@@ -423,7 +425,10 @@ impl WindowView {
         }
         // Splits right after the switch need this workspace's width now, not next frame.
         if let Some(view) = self.views.get(&id) {
-            view.update(cx, |v, _| v.set_insets(inset, right));
+            view.update(cx, |v, _| {
+                v.set_insets(inset, right);
+                v.set_top_inset(titlebar::titlebar_h());
+            });
         }
         if let Some(view) = self.views.get(&id) {
             view.update(cx, |v, cx| v.focus_active(window, cx));
@@ -490,6 +495,12 @@ impl WindowView {
             }
             WorkspaceClosed::NotFound => {}
         }
+    }
+
+    /// The SSH host of a remote workspace (the last word of its argv), else `None`.
+    pub(crate) fn remote_host(&self, id: WorkspaceId, cx: &App) -> Option<String> {
+        let v = self.views.get(&id)?.read(cx);
+        Some(cmux_meta::remote::host(v.remote()?.last()?).to_string())
     }
 
     /// Custom title, else the cached OSC title, else "Terminal".
@@ -697,6 +708,16 @@ impl Focusable for WindowView {
 impl Render for WindowView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.note_window_bounds(window);
+        let now = Instant::now();
+        // Every prune runs: each drops its own finished leave.
+        let animating = [
+            self.menu.prune(now),
+            self.panel.prune(now),
+            self.palette.prune(now),
+        ];
+        if animating.contains(&true) {
+            window.request_animation_frame();
+        }
         if !cx.has_active_drag() {
             self.drop_gap = None;
             self.dragging = None;
@@ -709,7 +730,10 @@ impl Render for WindowView {
         let width = self.sidebar_px(window);
         let right = self.right_sidebar_px(window);
         if let Some(v) = &selected {
-            v.update(cx, |v, _| v.set_insets(width.unwrap_or(0.), right));
+            v.update(cx, |v, _| {
+                v.set_insets(width.unwrap_or(0.), right);
+                v.set_top_inset(titlebar::titlebar_h());
+            });
         }
         self.place_dock(window, cx);
         let radius = crate::csd::corner_radius(window);
@@ -722,6 +746,7 @@ impl Render for WindowView {
             .flex()
             .flex_row()
             .size_full()
+            .font_family(crate::style::UI_FONT_FAMILY)
             .on_drag_move(cx.listener(Self::on_sidebar_drag))
             .on_drag_move(cx.listener(Self::on_right_sidebar_drag))
             .on_action(
@@ -776,8 +801,7 @@ impl Render for WindowView {
                 this.show_right(Some(dock::RightMode::Dock), w, cx)
             }))
             .on_action(cx.listener(|this, _: &ShowNotifications, _, cx| {
-                this.panel_open = !this.panel_open;
-                cx.notify();
+                this.set_panel(!this.panel.is_open(), cx);
             }))
             // The terminal keeps focus while the panel is up, so Escape is caught here first.
             .on_action(
@@ -793,7 +817,7 @@ impl Render for WindowView {
                 }
                 if this.close_palette(w, cx) || this.close_menu(cx) {
                     cx.stop_propagation();
-                } else if this.panel_open {
+                } else if this.panel.is_open() {
                     this.close_panel(cx);
                     cx.stop_propagation();
                 }
@@ -810,7 +834,16 @@ impl Render for WindowView {
                 this.start_rename(id, w, cx);
             }))
             .when_some(width, |d, w| d.child(self.render_sidebar(w, radius, cx)))
-            .child(div().flex_1().min_w(px(0.)).h_full().children(selected))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .h_full()
+                    .child(self.render_titlebar(window, cx))
+                    .child(div().flex_1().min_h(px(0.)).children(selected)),
+            )
             .when(self.right_sidebar_open, |d| {
                 d.child(self.render_right_sidebar(window, cx))
             })

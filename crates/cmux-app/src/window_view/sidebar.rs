@@ -344,7 +344,7 @@ impl WindowView {
     }
 
     /// The way back with the mouse while the sidebar is hidden: the same toggle, in the
-    /// window's top-left corner (the tab strip there indents by `csd::REOPEN_LEAD`).
+    /// window's top-left corner (the title bar there indents by `csd::REOPEN_LEAD`).
     pub(super) fn render_reopen(&self, cx: &Context<Self>) -> impl IntoElement {
         band_button("sidebar-reopen", "icons/panel-left.svg", self.palette())
             .absolute()
@@ -516,14 +516,13 @@ impl WindowView {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_panel(cx)))
     }
 
-    /// Where the notification panel hangs: under the bell, or the top-left corner when the
-    /// sidebar is hidden.
+    /// Where the notification popover's arrow points: the bottom centre of the bell, or of the
+    /// reopen button in the top-left corner when the sidebar is hidden.
     pub(super) fn bell_anchor(&self, window: &Window) -> gpui::Point<Pixels> {
-        let x = self.sidebar_px(window).map_or(s(BAND_INSET), |w| {
-            // Band buttons from the right: new, then the bell.
-            w - s(BAND_INSET + 2. * BUTTON + BUTTON_GAP)
-        });
-        gpui::point(gpui::px(x), px(BAND_H))
+        gpui::point(
+            gpui::px(bell_centre_x(self.sidebar_px(window), s(1.0))),
+            px(BAND_H),
+        )
     }
 
     fn render_row(
@@ -724,9 +723,7 @@ impl WindowView {
         };
         // A remote workspace's ports are on its host (not forwarded).
         let port_host = self
-            .views
-            .get(&id)
-            .and_then(|v| Some(cmux_meta::remote::host(v.read(cx).remote()?.last()?).to_string()))
+            .remote_host(id, cx)
             .map(|h| if h.contains(':') { format!("[{h}]") } else { h })
             .unwrap_or_else(|| "localhost".into());
         let ports = (!m.ports.is_empty()).then(|| {
@@ -945,8 +942,26 @@ fn band_icon(group: &'static str, icon: &'static str, p: SidebarPalette) -> impl
         .group_hover(group, move |s| s.text_color(tint(ICON_HOVER_ALPHA)))
 }
 
+/// Window-px x of the bell's centre; `sidebar` is the sidebar's width in window px. Band
+/// buttons from the right edge are new, then the bell.
+fn bell_centre_x(sidebar: Option<f32>, scale: f32) -> f32 {
+    let left = sidebar.map_or(BAND_INSET * scale, |w| {
+        w - (BAND_INSET + 2. * BUTTON + BUTTON_GAP) * scale
+    });
+    left + BUTTON * scale / 2.0
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn bell_centre_is_half_a_button_in() {
+        // 240 wide: bell left = 240 - (6 + 40 + 6) = 188, centre 198.
+        assert_eq!(bell_centre_x(Some(240.0), 1.0), 198.0);
+        assert_eq!(bell_centre_x(Some(480.0), 2.0), 396.0);
+        // Hidden sidebar: the reopen button in the corner.
+        assert_eq!(bell_centre_x(None, 1.0), 16.0);
+    }
+
     #[test]
     fn bell_label_caps_at_99() {
         assert_eq!(bell_label(0), None);

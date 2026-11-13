@@ -20,7 +20,6 @@ const DOT_TOP: f32 = 8.0;
 const MOVE_SLOP: f32 = 4.0;
 const EDGE: f32 = 5.0;
 const CORNER: f32 = 12.0;
-const RADIUS: f32 = 10.0;
 
 thread_local! {
     /// Where the left button went down on a draggable strip, until released or moved away.
@@ -39,15 +38,6 @@ pub fn controls_width(window: &Window) -> f32 {
     }
 }
 
-/// How far a top strip must indent on one side to clear `reserved` px in that window corner,
-/// when the strip's end is `edge_gap` px from that window edge.
-pub fn inset(reserved: f32, edge_gap: f32, strip_y: f32) -> f32 {
-    match strip_y == 0.0 {
-        true => (reserved - edge_gap).max(0.0),
-        false => 0.0,
-    }
-}
-
 /// Radius of the window's own corners: none when the compositor decorates, or when the window
 /// is maximized, fullscreen or tiled.
 pub fn corner_radius(window: &Window) -> f32 {
@@ -57,11 +47,11 @@ pub fn corner_radius(window: &Window) -> f32 {
     let tiled = tiling.top || tiling.bottom || tiling.left || tiling.right;
     match tiled || window.is_maximized() || window.is_fullscreen() {
         true => 0.0,
-        false => RADIUS,
+        false => crate::mac::metric::WINDOW_RADIUS,
     }
 }
 
-/// What the top-left strip clears while the sidebar is hidden: the reopen button that
+/// What the title bar clears while the sidebar is hidden: the reopen button that
 /// `sidebar.rs` draws there (its 20 px button with the band's 6 px inset either side).
 pub const REOPEN_LEAD: f32 = 32.0;
 
@@ -206,18 +196,4 @@ pub fn resize_grips(window: &Window) -> Vec<AnyElement> {
             .into_any_element()
         })
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::inset as lead;
-
-    #[test]
-    fn only_a_top_corner_strip_indents() {
-        assert_eq!(lead(72.0, 0.0, 0.0), 72.0);
-        assert_eq!(lead(72.0, 50.0, 0.0), 22.0);
-        assert_eq!(lead(72.0, 240.0, 0.0), 0.0, "past the sidebar");
-        assert_eq!(lead(72.0, 0.0, 300.0), 0.0, "a lower pane");
-        assert_eq!(lead(0.0, 0.0, 0.0), 0.0, "compositor decorates");
-    }
 }

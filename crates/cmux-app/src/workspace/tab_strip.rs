@@ -68,10 +68,12 @@ pub fn insertion_index(mid_xs: &[f32], x: f32) -> usize {
     mid_xs.iter().position(|m| *m > x).unwrap_or(mid_xs.len())
 }
 
-/// The right-hand split-action buttons (cmux's default set minus the browser).
+/// The right-hand action buttons in cmux's default order (the browser one only in browser builds).
 #[derive(Debug, Clone, Copy)]
 enum StripButton {
     NewTerminal,
+    #[cfg(feature = "browser")]
+    NewBrowser,
     SplitRight,
     SplitDown,
 }
@@ -99,7 +101,6 @@ impl WorkspaceView {
         pane: &Pane,
         focused: bool,
         strip_x: f32,
-        chrome: super::PaneChrome,
         cx: &Context<Self>,
     ) -> impl IntoElement + use<> {
         let p = self.palette(focused);
@@ -120,12 +121,12 @@ impl WorkspaceView {
             .enumerate()
             .map(|(ix, s)| self.render_tab(*s, ix == pane.selected, p, cx))
             .collect();
-        let buttons = [
-            (StripButton::NewTerminal, "icons/square-terminal.svg"),
-            (StripButton::SplitRight, "icons/columns-2.svg"),
-            (StripButton::SplitDown, "icons/rows-2.svg"),
-        ]
-        .map(|(b, icon)| {
+        let mut buttons = vec![(StripButton::NewTerminal, "icons/square-terminal.svg")];
+        #[cfg(feature = "browser")]
+        buttons.push((StripButton::NewBrowser, "icons/globe.svg"));
+        buttons.push((StripButton::SplitRight, "icons/columns-2.svg"));
+        buttons.push((StripButton::SplitDown, "icons/rows-2.svg"));
+        let buttons = buttons.into_iter().map(|(b, icon)| {
             div()
                 .id(SharedString::from(format!("strip-{}-{:?}", pane_id.0, b)))
                 .flex()
@@ -151,10 +152,6 @@ impl WorkspaceView {
             .flex_none()
             .w_full()
             .h(px(TAB_BAR_HEIGHT))
-            .pl(gpui::px(chrome.lead))
-            .pr(gpui::px(chrome.trail))
-            .rounded_tl(gpui::px(chrome.tl))
-            .rounded_tr(gpui::px(chrome.tr))
             .bg(p.bar)
             .on_drag_move(
                 cx.listener(move |this, ev: &DragMoveEvent<DraggedTab>, _, cx| {
@@ -429,6 +426,10 @@ impl WorkspaceView {
         self.layout.focus_pane(pane);
         match b {
             StripButton::NewTerminal => self.new_tab(window, cx),
+            #[cfg(feature = "browser")]
+            StripButton::NewBrowser => {
+                self.open_browser(Some(pane), "about:blank", window, cx);
+            }
             StripButton::SplitRight => self.split(Orientation::Horizontal, window, cx),
             StripButton::SplitDown => self.split(Orientation::Vertical, window, cx),
         }

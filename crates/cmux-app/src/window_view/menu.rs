@@ -1,23 +1,16 @@
 //! The sidebar's context menu (M8 plan D8): a small popup at the pointer for workspace rows,
 //! group headers and the blank area below the list.
 
-use crate::ui::px;
 use cmux_core::{GroupId, WorkspaceId};
 use gpui::{
-    BoxShadow, ClickEvent, Context, InteractiveElement, IntoElement, ParentElement, Pixels, Point,
-    Rgba, SharedString, StatefulInteractiveElement, Styled, Window, anchored, deferred, div, point,
+    ClickEvent, Context, InteractiveElement, IntoElement, Pixels, Point,
+    StatefulInteractiveElement, Window, prelude::FluentBuilder,
 };
+use std::time::Instant;
 
 use super::WindowView;
 use crate::chrome;
-
-const WIDTH: f32 = 220.0;
-const MARGIN: f32 = 4.0;
-const PAD_Y: f32 = 4.0;
-const ITEM_PAD_X: f32 = 10.0;
-const ITEM_PAD_Y: f32 = 4.0;
-const ITEM_PX: f32 = 12.0;
-const ITEM_RADIUS: f32 = 4.0;
+use crate::mac::{self, Theme};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum MenuAction {
@@ -97,83 +90,54 @@ impl WindowView {
         items: MenuItems,
         cx: &mut Context<Self>,
     ) {
-        self.menu = Some(Menu { at, items });
+        self.menu.open(Menu { at, items });
         cx.notify();
     }
 
-    /// False if no menu was open.
+    /// False if no menu was open. A closed menu still fades out, for looks only.
     pub(super) fn close_menu(&mut self, cx: &mut Context<Self>) -> bool {
-        let open = self.menu.take().is_some();
-        if open {
-            cx.notify();
+        if self.menu.close(Instant::now()).is_none() {
+            return false;
         }
-        open
+        cx.notify();
+        true
     }
 
+    /// The menu, live or fading out; only a live one takes clicks or closes on a click outside.
     pub(super) fn render_menu(&self, cx: &Context<Self>) -> Option<impl IntoElement + use<>> {
-        let menu = self.menu.as_ref()?;
-        let cfg = &self.style.cfg;
-        let p = chrome::sidebar_palette(chrome::rgba(cfg.background, 1.0));
-        let items = menu.items.iter().enumerate().map(|(k, item)| match item {
-            None => div()
-                .flex_none()
-                .h(px(1.))
-                .my(px(PAD_Y))
-                .bg(p.border)
-                .into_any_element(),
-            Some((label, action)) => {
-                let action = *action;
-                div()
-                    .id(("menu-item", k))
-                    .mx(px(PAD_Y))
-                    .px(px(ITEM_PAD_X - PAD_Y))
-                    .py(px(ITEM_PAD_Y))
-                    .rounded(px(ITEM_RADIUS))
-                    .text_size(px(ITEM_PX))
-                    .text_color(p.title)
-                    .whitespace_nowrap()
-                    .overflow_hidden()
-                    .text_ellipsis()
-                    .hover(|s| s.bg(p.accent).text_color(gpui::white()))
-                    .child(SharedString::from(label.clone()))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                        this.close_menu(cx);
-                        this.run_menu(action, window, cx);
-                    }))
-                    .into_any_element()
-            }
+        let (m, fade) = self.menu.shown()?;
+        let live = !fade.leaving();
+        let t = Theme::new(chrome::rgba(self.style.cfg.background, 1.0));
+        let rows = m
+            .items
+            .iter()
+            .enumerate()
+            .map(|(k, item)| match item {
+                None => mac::menu_separator(&t),
+                Some((label, action)) => {
+                    let action = *action;
+                    mac::menu_item(("menu-item", k), &t, label, None)
+                        .when(live, |d| {
+                            d.on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                                this.close_menu(cx);
+                                this.run_menu(action, window, cx);
+                            }))
+                        })
+                        .into_any_element()
+                }
+            })
+            .collect();
+        let menu = mac::menu(&t, rows).when(live, |d| {
+            d.on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                this.close_menu(cx);
+            }))
         });
-        Some(deferred(
-            anchored()
-                .position(menu.at)
-                .snap_to_window_with_margin(px(MARGIN))
-                .child(
-                    div()
-                        .id("context-menu")
-                        .occlude()
-                        .flex()
-                        .flex_col()
-                        .w(px(WIDTH))
-                        .py(px(PAD_Y))
-                        .rounded(px(6.))
-                        .border_1()
-                        .border_color(p.border)
-                        .bg(p.bg)
-                        .shadow(vec![BoxShadow {
-                            color: Rgba {
-                                a: 0.3,
-                                ..gpui::black().into()
-                            }
-                            .into(),
-                            offset: point(px(0.), px(4.)),
-                            blur_radius: px(16.),
-                            spread_radius: px(0.),
-                        }])
-                        .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                            this.close_menu(cx);
-                        }))
-                        .children(items),
-                ),
+        Some(mac::overlay(
+            "context-menu",
+            m.at,
+            fade,
+            Instant::now(),
+            menu,
         ))
     }
 

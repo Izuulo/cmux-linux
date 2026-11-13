@@ -430,6 +430,11 @@ impl WorkspaceView {
         self.right_inset = right;
     }
 
+    /// Height of what sits above this view (the main area's title bar).
+    pub fn set_top_inset(&mut self, top: f32) {
+        self.top_inset = top;
+    }
+
     pub fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
         self.active = active;
         if !active {
@@ -968,7 +973,7 @@ impl WorkspaceView {
             .overflow_hidden()
             .key_context("Pane")
             // Tab bounds are window-space; the content area starts at left_inset.
-            .child(self.render_tab_strip(pane, focused, self.left_inset + r.x, chrome, cx))
+            .child(self.render_tab_strip(pane, focused, self.left_inset + r.x, cx))
             .child(
                 div()
                     .relative()
@@ -1052,14 +1057,10 @@ impl Focusable for WorkspaceView {
     }
 }
 
-/// How a pane gives way to window chrome: its strip's indents for the reopen button and the
-/// window buttons, and the radius of each rounded window corner it sits in (else 0).
+/// How a pane gives way to window chrome: the radius of each rounded bottom window corner it sits
+/// in (else 0). The title bar owns the window's top edge and its corners.
 #[derive(Clone, Copy)]
 pub(crate) struct PaneChrome {
-    pub lead: f32,
-    pub trail: f32,
-    pub tl: f32,
-    pub tr: f32,
     pub bl: f32,
     pub br: f32,
 }
@@ -1074,26 +1075,16 @@ impl Render for WorkspaceView {
         let (w, h, scale) = self.container(window);
         let rects = self.layout.rects(w, h, scale);
         let focused = self.layout.focused();
-        let controls = crate::csd::controls_width(window);
-        // No sidebar left of us: the window draws its reopen button in our top-left corner.
-        let reopen = match self.left_inset == 0.0 {
-            true => crate::ui::s(crate::csd::REOPEN_LEAD),
-            false => 0.0,
-        };
         let radius = crate::csd::corner_radius(window);
-        let (left, top, right) = (self.left_inset, self.top_inset, self.right_inset);
+        let (left, right) = (self.left_inset, self.right_inset);
         let chrome_of = move |r: Rect| {
-            let (x, y) = (left + r.x, top + r.y);
+            let x = left + r.x;
             let (right_gap, bottom_gap) = (right + w - r.x - r.w, h - r.y - r.h);
             let at = |a: f32, b: f32| match a.abs() < 1.0 && b.abs() < 1.0 {
                 true => radius,
                 false => 0.0,
             };
             PaneChrome {
-                lead: crate::csd::inset(reopen, x, y),
-                trail: crate::csd::inset(controls, right_gap, y),
-                tl: at(x, y),
-                tr: at(right_gap, y),
                 bl: at(x, bottom_gap),
                 br: at(right_gap, bottom_gap),
             }
@@ -1110,7 +1101,7 @@ impl Render for WorkspaceView {
                 Some(SurfaceView::Browser(b)) => {
                     let cfg = &self.style.cfg;
                     let colors = (
-                        self.palette(*p == focused),
+                        crate::mac::Theme::new(chrome::rgba(cfg.background, 1.0)),
                         chrome::rgba(cfg.background, cfg.background_opacity),
                     );
                     b.update(cx, |v, _| v.colors = Some(colors));

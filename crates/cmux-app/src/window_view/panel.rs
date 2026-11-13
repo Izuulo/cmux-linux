@@ -6,18 +6,17 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use crate::ui::{px, s};
 use cmux_core::NotificationId;
 use gpui::{
-    AnyElement, BoxShadow, ClickEvent, Context, FontWeight, InteractiveElement, IntoElement,
-    ParentElement, Rgba, SharedString, StatefulInteractiveElement, Styled, Window, anchored,
-    deferred, div, point, prelude::*, svg,
+    AnyElement, ClickEvent, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    Rgba, SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::*, svg,
 };
 
 use super::WindowView;
 use crate::chrome::{self, SidebarPalette};
+use crate::mac::{self, Theme, metric};
 
 // rn §7 metrics.
 const WIDTH: f32 = 560.0;
 const HEIGHT: f32 = 760.0;
-const MARGIN: f32 = 8.0;
 const HEADER_PAD_X: f32 = 14.0;
 const HEADER_PAD_Y: f32 = 10.0;
 const ROW_MIN_H: f32 = 56.0;
@@ -43,12 +42,7 @@ const EMPTY_ICON_ALPHA: f32 = 0.7;
 const DIVIDER_ALPHA: f32 = 0.4;
 const DIVIDER_INSET: f32 = 18.0;
 /// A click outside closes the panel; a click on the bell right after must not reopen it.
-const REOPEN_GUARD: Duration = Duration::from_millis(300);
-
-/// SwiftUI `color.opacity(a)`: scales the colour's own alpha.
-fn alpha(c: Rgba, a: f32) -> Rgba {
-    Rgba { a: c.a * a, ..c }
-}
+const REOPEN_GUARD: Duration = Duration::from_millis(300); // mac-ok: click guard, not motion
 
 impl WindowView {
     /// The bell's click: toggles the panel, unless the same click just closed it.
@@ -59,15 +53,24 @@ impl WindowView {
         {
             return;
         }
-        self.panel_open = !self.panel_open;
+        self.set_panel(!self.panel.is_open(), cx);
+    }
+
+    /// Opens or closes the panel, with its fade; a close mid-enter leaves from where it was.
+    pub(super) fn set_panel(&mut self, open: bool, cx: &mut Context<Self>) {
+        match open {
+            true => self.panel.open(()),
+            false => {
+                self.panel.close(Instant::now());
+            }
+        }
         cx.notify();
     }
 
     pub(super) fn close_panel(&mut self, cx: &mut Context<Self>) {
-        if self.panel_open {
-            self.panel_open = false;
+        if self.panel.is_open() {
+            self.set_panel(false, cx);
             self.panel_dismissed = Some(Instant::now());
-            cx.notify();
         }
     }
 
@@ -76,16 +79,23 @@ impl WindowView {
         window: &Window,
         cx: &Context<Self>,
     ) -> Option<impl IntoElement + use<>> {
-        if !self.panel_open {
-            return None;
-        }
+        let (_, fade) = self.panel.shown()?;
         let cfg = &self.style.cfg;
-        let p = chrome::sidebar_palette(chrome::rgba(cfg.background, 1.0));
+        let bg = chrome::rgba(cfg.background, 1.0);
+        let p = chrome::sidebar_palette(bg);
+        let t = Theme::new(bg);
         let size = window.viewport_size();
-        let w = s(WIDTH).min(f32::from(size.width) - 2. * s(MARGIN)).max(0.);
+        let sc = s(1.0);
+        // Design px: the popover scales them itself.
+        let win_w = f32::from(size.width) / sc;
         let at = self.bell_anchor(window);
-        let h = s(HEIGHT)
-            .min(f32::from(size.height) - f32::from(at.y) - s(MARGIN))
+        let w = WIDTH.min(win_w - 2. * metric::OVERLAY_MARGIN).max(0.);
+        let h = HEIGHT
+            .min(
+                (f32::from(size.height) - f32::from(at.y)) / sc
+                    - metric::ARROW_H
+                    - metric::OVERLAY_MARGIN,
+            )
             .max(0.);
         let list = self.notifications.list();
         let unread = self.notifications.total_unread();
@@ -106,7 +116,7 @@ impl WindowView {
                             .flex_none()
                             .h(px(1.))
                             .ml(px(DIVIDER_INSET))
-                            .bg(alpha(p.border, DIVIDER_ALPHA))
+                            .bg(crate::mac::scale_alpha(p.border, DIVIDER_ALPHA))
                             .into_any_element()
                     });
                     let row = self.render_panel_row(
@@ -123,33 +133,26 @@ impl WindowView {
                 }))
                 .into_any_element()
         };
-        Some(deferred(
-            anchored()
-                .position(at)
-                .snap_to_window_with_margin(px(MARGIN))
-                .child(
-                    div()
-                        .id("notif-panel")
-                        .occlude()
-                        .flex()
-                        .flex_col()
-                        .w(gpui::px(w))
-                        .h(gpui::px(h))
-                        .overflow_hidden()
-                        .rounded(px(8.))
-                        .border_1()
-                        .border_color(p.border)
-                        .bg(p.bg)
-                        .shadow(vec![BoxShadow {
-                            color: alpha(gpui::black().into(), 0.3).into(),
-                            offset: point(px(0.), px(4.)),
-                            blur_radius: px(16.),
-                            spread_radius: px(0.),
-                        }])
-                        .on_mouse_down_out(cx.listener(|this, _, _, cx| this.close_panel(cx)))
-                        .child(header)
-                        .child(body),
-                ),
+        let content = div()
+            .flex()
+            .flex_col()
+            .size_full()
+            .when(!fade.leaving(), |d| {
+                d.on_mouse_down_out(cx.listener(|this, _, _, cx| this.close_panel(cx)))
+            })
+            .child(header)
+            .child(body)
+            .into_any_element();
+        Some(mac::popover(
+            "notif-panel",
+            &t,
+            at,
+            win_w,
+            w,
+            Some(h),
+            fade,
+            Instant::now(),
+            content,
         ))
     }
 
@@ -165,10 +168,10 @@ impl WindowView {
                 .id(id)
                 .px(px(8.))
                 .py(px(4.))
-                .rounded(px(5.))
+                .rounded(px(crate::mac::metric::CONTROL_RADIUS))
                 .text_size(px(11.))
                 .text_color(if enabled { p.title } else { p.detail })
-                .bg(alpha(
+                .bg(crate::mac::scale_alpha(
                     p.detail,
                     if enabled {
                         BUTTON_FILL_ALPHA
@@ -252,7 +255,7 @@ impl WindowView {
             .flex_none()
             .min_h(px(ROW_MIN_H))
             .pl(px(ROW_LEAD))
-            .hover(|s| s.bg(alpha(p.title, HOVER_ALPHA)))
+            .hover(|s| s.bg(crate::mac::scale_alpha(p.title, HOVER_ALPHA)))
             .child(
                 div()
                     .flex_none()
@@ -325,12 +328,11 @@ impl WindowView {
                             .justify_center()
                             .size(px(CLOSE))
                             .rounded_full()
-                            .bg(alpha(p.title, CLOSE_FILL_ALPHA))
+                            .bg(crate::mac::scale_alpha(p.title, CLOSE_FILL_ALPHA))
                             .child(
-                                svg()
-                                    .path("icons/x.svg")
-                                    .size(px(9.))
-                                    .text_color(alpha(p.title, CLOSE_GLYPH_ALPHA)),
+                                svg().path("icons/x.svg").size(px(9.)).text_color(
+                                    crate::mac::scale_alpha(p.title, CLOSE_GLYPH_ALPHA),
+                                ),
                             )
                             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                                 cx.stop_propagation();
@@ -359,7 +361,7 @@ fn empty_state(p: SidebarPalette) -> impl IntoElement {
             svg()
                 .path("icons/bell-off.svg")
                 .size(px(30.))
-                .text_color(alpha(p.detail, EMPTY_ICON_ALPHA)),
+                .text_color(crate::mac::scale_alpha(p.detail, EMPTY_ICON_ALPHA)),
         )
         .child(
             div()
