@@ -64,6 +64,8 @@ pub struct WindowView {
     rename_group: Option<GroupId>,
     /// The sidebar's context menu, while open.
     menu: Option<menu::Menu>,
+    /// The menu just closed, still fading out; visual only, never "open".
+    menu_leaving: Option<menu::Menu>,
     /// The command palette, while open (M11).
     palette: Option<palette::Palette>,
     /// Workspaces something was typed into (the "untouched anchor" rule, plan D5).
@@ -184,6 +186,7 @@ impl WindowView {
             rename: None,
             rename_group: None,
             menu: None,
+            menu_leaving: None,
             palette: None,
             typed: HashSet::new(),
             row_bounds: Rc::default(),
@@ -697,6 +700,21 @@ impl Focusable for WindowView {
 impl Render for WindowView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.note_window_bounds(window);
+        let now = Instant::now();
+        if self
+            .menu_leaving
+            .as_ref()
+            .is_some_and(|m| m.fade.done_at(now))
+        {
+            self.menu_leaving = None;
+        }
+        let animating = [&self.menu, &self.menu_leaving]
+            .into_iter()
+            .flatten()
+            .any(|m| !m.fade.done_at(now));
+        if animating {
+            window.request_animation_frame();
+        }
         if !cx.has_active_drag() {
             self.drop_gap = None;
             self.dragging = None;

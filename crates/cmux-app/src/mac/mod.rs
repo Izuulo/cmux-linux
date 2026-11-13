@@ -3,10 +3,12 @@
 
 pub mod fade;
 pub mod glass;
+pub mod menu;
 pub mod popover;
 pub mod tokens;
 
 pub use fade::Fade;
 pub use glass::glass_panel;
+pub use menu::{menu, menu_height, menu_item, menu_separator};
 pub use popover::{ArrowPts, arrow_points, popover};
 pub use tokens::{Theme, metric, motion, popover_shadow};
