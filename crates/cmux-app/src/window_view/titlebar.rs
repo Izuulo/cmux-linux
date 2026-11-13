@@ -28,11 +28,11 @@ impl WindowView {
         // Left: the reopen button floats here while the sidebar is hidden. Right: the window
         // buttons float here unless the right sidebar is what sits in the corner.
         let lead = match self.sidebar_px(window) {
-            Some(_) => 12.,
+            Some(_) => s(12.),
             None => s(crate::csd::REOPEN_LEAD),
         };
         let trail = match self.right_sidebar_open {
-            true => 12.,
+            true => s(12.),
             false => crate::csd::controls_width(window) + s(8.),
         };
         let strip = div()
