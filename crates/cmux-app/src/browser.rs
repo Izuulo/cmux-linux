@@ -28,8 +28,6 @@ use crate::window_view::rename::{RenameKey, RenameOutcome, RenameState};
 /// cmux `BrowserChromeMetrics` at the default tab font: 26 px buttons, 4 px padding.
 const BAR_H: f32 = 34.0;
 const BAR_PAD_X: f32 = 8.0;
-const OMNIBAR_PAD_X: f32 = 8.0;
-const LOCK_GLYPH: f32 = 11.0;
 /// Chromium's Linux wheel step, in CSS pixels per line.
 const WHEEL_LINE: f32 = 53.0;
 
@@ -358,7 +356,7 @@ impl BrowserView {
             .min_w(px(0.))
             .h(px(metric::OMNIBAR_H))
             .ml(px(4.))
-            .px(px(OMNIBAR_PAD_X))
+            .px(px(metric::OMNIBAR_PAD_X))
             .rounded(px(metric::OMNIBAR_RADIUS))
             .bg(t.control)
             .border_1()
@@ -396,7 +394,7 @@ impl BrowserView {
                     svg()
                         .path("icons/lock.svg")
                         .flex_none()
-                        .size(px(LOCK_GLYPH))
+                        .size(px(metric::LOCK_GLYPH))
                         .mr(px(4.))
                         .text_color(t.secondary),
                 )

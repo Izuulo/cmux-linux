@@ -104,6 +104,9 @@ pub mod metric {
     pub const OMNIBAR_H: f32 = 22.0;
     pub const OMNIBAR_RADIUS: f32 = 10.0;
     pub const OMNIBAR_TEXT: f32 = 12.0;
+    pub const OMNIBAR_PAD_X: f32 = 8.0;
+    /// The https lock before the omnibar text.
+    pub const LOCK_GLYPH: f32 = 11.0;
     /// Gap kept between an overlay and the window edge.
     pub const OVERLAY_MARGIN: f32 = 8.0;
 }
