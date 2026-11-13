@@ -5,7 +5,7 @@
 
 **Updated:** 2026-11-12
 **Current milestone:** M14 mac-look (PR #23, branch `m14-mac-look`): shared `mac` UI kit (`crates/cmux-app/src/mac/`), Inter UI font, animated glass popover with arrow, menu, palette, Settings restyle, title bar, browser strip button and omnibar. All 11 plan tasks built and reviewed; calibration against real Tahoe not done. M11–M13 merged (#20–#22).
-**Next action:** owner: send cmux screenshots from the Mac (notification popover, context menu, palette, Settings, browser tab; light and dark) and say when the desktop is free, so the agent can screenshot the dev build and tune `mac::metric`/`Theme` (M14 plan Task 11 Step 2); then click through: bell popover open/close, right-click menu hover, palette, title bar drag/double-click, Settings controls, browser globe button. Older owner checks (M7–M13 mouse/typing, real Claude runs, tmux, `makepkg -si`) are listed in `docs/status-archive.md` (2026-11-12 — before M14).
+**Next action:** owner: click through M14 (bell popover open/close, right-click a sidebar row for the menu, palette, title bar drag/double-click, Settings window buttons and controls, the globe button), then say "done" to merge PR #23. Older owner checks (M7–M13 mouse/typing, real Claude runs, tmux, `makepkg -si`) are in `docs/status-archive.md` (2026-11-12 — before M14).
 
 ## Where things are
 - Project design and milestone table: `docs/design.md`
@@ -30,7 +30,7 @@
 | M11 productivity | done; exits by script on KDE, ssh vs a fake `ssh`; prompt buttons, real host, drop unclicked |
 | M12 settings | done; exits by script on KDE (writer calls + armed recorder); no control clicked |
 | M13 browser | done; CEF off-screen rendering; exits by script on KDE; mouse/IME in pages unverified |
-| M14 mac-look | built (11/11 tasks reviewed); popover seen on KDE; Tahoe calibration and clicks pending |
+| M14 mac-look | built and calibrated against cmux on macOS 27 (dark + light); popover, palette, Settings, title bar, browser bar seen on KDE side by side; clicks/hovers and the context menu on screen pending |
 
 ## Decisions so far
 - Port from source (cmux is GPL-3.0-or-later); REA not needed. Our license: GPL-3.0-or-later.
