@@ -58,7 +58,8 @@ pub fn popover_left(tip_x: f32, width: f32, window_w: f32, margin: f32) -> (f32,
         .min(window_w - margin - width)
         .max(margin);
     let inset = metric::POPOVER_RADIUS + metric::ARROW_W / 2.0;
-    (left, tip_x.clamp(left + inset, left + width - inset))
+    // max then min, not clamp: a body narrower than two insets must not panic.
+    (left, tip_x.max(left + inset).min(left + width - inset))
 }
 
 #[allow(clippy::too_many_arguments)]
