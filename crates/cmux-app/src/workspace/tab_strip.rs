@@ -151,8 +151,6 @@ impl WorkspaceView {
             .flex_none()
             .w_full()
             .h(px(TAB_BAR_HEIGHT))
-            .pl(gpui::px(chrome.lead))
-            .pr(gpui::px(chrome.trail))
             .rounded_tl(gpui::px(chrome.tl))
             .rounded_tr(gpui::px(chrome.tr))
             .bg(p.bar)

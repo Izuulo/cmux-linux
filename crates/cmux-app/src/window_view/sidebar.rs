@@ -344,7 +344,7 @@ impl WindowView {
     }
 
     /// The way back with the mouse while the sidebar is hidden: the same toggle, in the
-    /// window's top-left corner (the tab strip there indents by `csd::REOPEN_LEAD`).
+    /// window's top-left corner (the title bar there indents by `csd::REOPEN_LEAD`).
     pub(super) fn render_reopen(&self, cx: &Context<Self>) -> impl IntoElement {
         band_button("sidebar-reopen", "icons/panel-left.svg", self.palette())
             .absolute()
@@ -723,9 +723,7 @@ impl WindowView {
         };
         // A remote workspace's ports are on its host (not forwarded).
         let port_host = self
-            .views
-            .get(&id)
-            .and_then(|v| Some(cmux_meta::remote::host(v.read(cx).remote()?.last()?).to_string()))
+            .remote_host(id, cx)
             .map(|h| if h.contains(':') { format!("[{h}]") } else { h })
             .unwrap_or_else(|| "localhost".into());
         let ports = (!m.ports.is_empty()).then(|| {

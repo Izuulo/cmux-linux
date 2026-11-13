@@ -430,6 +430,11 @@ impl WorkspaceView {
         self.right_inset = right;
     }
 
+    /// Height of what sits above this view (the main area's title bar).
+    pub fn set_top_inset(&mut self, top: f32) {
+        self.top_inset = top;
+    }
+
     pub fn set_active(&mut self, active: bool, cx: &mut Context<Self>) {
         self.active = active;
         if !active {
@@ -1052,12 +1057,10 @@ impl Focusable for WorkspaceView {
     }
 }
 
-/// How a pane gives way to window chrome: its strip's indents for the reopen button and the
-/// window buttons, and the radius of each rounded window corner it sits in (else 0).
+/// How a pane gives way to window chrome: the radius of each rounded window corner it sits in
+/// (else 0). The title bar owns the window's top edge, so only the bottom corners are ever set.
 #[derive(Clone, Copy)]
 pub(crate) struct PaneChrome {
-    pub lead: f32,
-    pub trail: f32,
     pub tl: f32,
     pub tr: f32,
     pub bl: f32,
@@ -1074,12 +1077,6 @@ impl Render for WorkspaceView {
         let (w, h, scale) = self.container(window);
         let rects = self.layout.rects(w, h, scale);
         let focused = self.layout.focused();
-        let controls = crate::csd::controls_width(window);
-        // No sidebar left of us: the window draws its reopen button in our top-left corner.
-        let reopen = match self.left_inset == 0.0 {
-            true => crate::ui::s(crate::csd::REOPEN_LEAD),
-            false => 0.0,
-        };
         let radius = crate::csd::corner_radius(window);
         let (left, top, right) = (self.left_inset, self.top_inset, self.right_inset);
         let chrome_of = move |r: Rect| {
@@ -1090,8 +1087,6 @@ impl Render for WorkspaceView {
                 false => 0.0,
             };
             PaneChrome {
-                lead: crate::csd::inset(reopen, x, y),
-                trail: crate::csd::inset(controls, right_gap, y),
                 tl: at(x, y),
                 tr: at(right_gap, y),
                 bl: at(x, bottom_gap),

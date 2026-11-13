@@ -43,6 +43,7 @@ mod panel;
 pub(crate) mod rename;
 pub mod session;
 mod sidebar;
+mod titlebar;
 mod vault_ctl;
 
 use rename::RenameInput;
@@ -436,7 +437,10 @@ impl WindowView {
         }
         // Splits right after the switch need this workspace's width now, not next frame.
         if let Some(view) = self.views.get(&id) {
-            view.update(cx, |v, _| v.set_insets(inset, right));
+            view.update(cx, |v, _| {
+                v.set_insets(inset, right);
+                v.set_top_inset(crate::ui::s(crate::mac::metric::TITLEBAR_H));
+            });
         }
         if let Some(view) = self.views.get(&id) {
             view.update(cx, |v, cx| v.focus_active(window, cx));
@@ -503,6 +507,12 @@ impl WindowView {
             }
             WorkspaceClosed::NotFound => {}
         }
+    }
+
+    /// The SSH host of a remote workspace (the last word of its argv), else `None`.
+    pub(crate) fn remote_host(&self, id: WorkspaceId, cx: &App) -> Option<String> {
+        let v = self.views.get(&id)?.read(cx);
+        Some(cmux_meta::remote::host(v.remote()?.last()?).to_string())
     }
 
     /// Custom title, else the cached OSC title, else "Terminal".
@@ -749,7 +759,10 @@ impl Render for WindowView {
         let width = self.sidebar_px(window);
         let right = self.right_sidebar_px(window);
         if let Some(v) = &selected {
-            v.update(cx, |v, _| v.set_insets(width.unwrap_or(0.), right));
+            v.update(cx, |v, _| {
+                v.set_insets(width.unwrap_or(0.), right);
+                v.set_top_inset(crate::ui::s(crate::mac::metric::TITLEBAR_H));
+            });
         }
         self.place_dock(window, cx);
         let radius = crate::csd::corner_radius(window);
@@ -850,7 +863,16 @@ impl Render for WindowView {
                 this.start_rename(id, w, cx);
             }))
             .when_some(width, |d, w| d.child(self.render_sidebar(w, radius, cx)))
-            .child(div().flex_1().min_w(px(0.)).h_full().children(selected))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .h_full()
+                    .child(self.render_titlebar(window, cx))
+                    .child(div().flex_1().min_h(px(0.)).children(selected)),
+            )
             .when(self.right_sidebar_open, |d| {
                 d.child(self.render_right_sidebar(window, cx))
             })
