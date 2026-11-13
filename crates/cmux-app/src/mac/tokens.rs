@@ -97,6 +97,8 @@ pub mod metric {
     pub const PALETTE_RADIUS: f32 = 16.0;
     pub const CARD_RADIUS: f32 = 13.0;
     pub const CONTROL_RADIUS: f32 = 7.0;
+    /// Small key-hint and count badges.
+    pub const BADGE_RADIUS: f32 = 4.0;
     pub const SWITCH_W: f32 = 38.0;
     pub const SWITCH_H: f32 = 22.0;
     pub const TOOLBAR_BUTTON: f32 = 26.0;
@@ -125,6 +127,11 @@ pub mod motion {
         let t = t.clamp(0.0, 1.0);
         1.0 - (1.0 - t).powi(3)
     }
+}
+
+/// `c` with its alpha multiplied by `k` (SwiftUI `color.opacity(k)`).
+pub fn scale_alpha(c: Rgba, k: f32) -> Rgba {
+    Rgba { a: c.a * k, ..c }
 }
 
 /// `c` with its alpha replaced.

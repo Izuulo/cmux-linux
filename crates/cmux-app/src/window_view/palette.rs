@@ -393,7 +393,7 @@ impl WindowView {
                             .flex_none()
                             .px(px(4.))
                             .py(px(1.))
-                            .rounded(px(4.))
+                            .rounded(px(metric::BADGE_RADIUS))
                             .bg(t.hover)
                             .text_size(px(metric::SMALL_TEXT))
                             .font_weight(FontWeight::MEDIUM)

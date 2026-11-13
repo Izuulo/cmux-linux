@@ -42,12 +42,7 @@ const EMPTY_ICON_ALPHA: f32 = 0.7;
 const DIVIDER_ALPHA: f32 = 0.4;
 const DIVIDER_INSET: f32 = 18.0;
 /// A click outside closes the panel; a click on the bell right after must not reopen it.
-const REOPEN_GUARD: Duration = Duration::from_millis(300);
-
-/// SwiftUI `color.opacity(a)`: scales the colour's own alpha.
-fn alpha(c: Rgba, a: f32) -> Rgba {
-    Rgba { a: c.a * a, ..c }
-}
+const REOPEN_GUARD: Duration = Duration::from_millis(300); // mac-ok: click guard, not motion
 
 impl WindowView {
     /// The bell's click: toggles the panel, unless the same click just closed it.
@@ -122,7 +117,7 @@ impl WindowView {
                             .flex_none()
                             .h(px(1.))
                             .ml(px(DIVIDER_INSET))
-                            .bg(alpha(p.border, DIVIDER_ALPHA))
+                            .bg(crate::mac::scale_alpha(p.border, DIVIDER_ALPHA))
                             .into_any_element()
                     });
                     let row = self.render_panel_row(
@@ -174,10 +169,10 @@ impl WindowView {
                 .id(id)
                 .px(px(8.))
                 .py(px(4.))
-                .rounded(px(5.))
+                .rounded(px(crate::mac::metric::CONTROL_RADIUS))
                 .text_size(px(11.))
                 .text_color(if enabled { p.title } else { p.detail })
-                .bg(alpha(
+                .bg(crate::mac::scale_alpha(
                     p.detail,
                     if enabled {
                         BUTTON_FILL_ALPHA
@@ -261,7 +256,7 @@ impl WindowView {
             .flex_none()
             .min_h(px(ROW_MIN_H))
             .pl(px(ROW_LEAD))
-            .hover(|s| s.bg(alpha(p.title, HOVER_ALPHA)))
+            .hover(|s| s.bg(crate::mac::scale_alpha(p.title, HOVER_ALPHA)))
             .child(
                 div()
                     .flex_none()
@@ -334,12 +329,11 @@ impl WindowView {
                             .justify_center()
                             .size(px(CLOSE))
                             .rounded_full()
-                            .bg(alpha(p.title, CLOSE_FILL_ALPHA))
+                            .bg(crate::mac::scale_alpha(p.title, CLOSE_FILL_ALPHA))
                             .child(
-                                svg()
-                                    .path("icons/x.svg")
-                                    .size(px(9.))
-                                    .text_color(alpha(p.title, CLOSE_GLYPH_ALPHA)),
+                                svg().path("icons/x.svg").size(px(9.)).text_color(
+                                    crate::mac::scale_alpha(p.title, CLOSE_GLYPH_ALPHA),
+                                ),
                             )
                             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                                 cx.stop_propagation();
@@ -368,7 +362,7 @@ fn empty_state(p: SidebarPalette) -> impl IntoElement {
             svg()
                 .path("icons/bell-off.svg")
                 .size(px(30.))
-                .text_color(alpha(p.detail, EMPTY_ICON_ALPHA)),
+                .text_color(crate::mac::scale_alpha(p.detail, EMPTY_ICON_ALPHA)),
         )
         .child(
             div()
