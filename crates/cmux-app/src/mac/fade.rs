@@ -20,13 +20,6 @@ impl Fade {
         }
     }
 
-    pub fn leave() -> Self {
-        Fade {
-            start: Instant::now(),
-            leaving: true,
-        }
-    }
-
     /// A leave that starts at `prev`'s current amount, so closing mid-enter doesn't jump.
     pub fn leave_from(prev: &Fade, now: Instant) -> Self {
         if prev.leaving {

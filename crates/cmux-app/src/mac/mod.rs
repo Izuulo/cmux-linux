@@ -3,13 +3,17 @@
 
 pub mod controls;
 pub mod fade;
+pub mod fading;
 pub mod glass;
 pub mod menu;
+pub mod overlay;
 pub mod popover;
 pub mod tokens;
 
 pub use fade::Fade;
+pub use fading::Fading;
 pub use glass::glass_panel;
 pub use menu::{menu, menu_height, menu_item, menu_separator};
+pub use overlay::overlay;
 pub use popover::{ArrowPts, arrow_points, popover};
 pub use tokens::{Theme, alpha, metric, motion, popover_shadow, scale_alpha};

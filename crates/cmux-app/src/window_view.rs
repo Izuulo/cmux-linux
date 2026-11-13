@@ -1,7 +1,7 @@
 //! The window's root view: the workspace list and one `WorkspaceView` per workspace. Only the
 //! selected workspace is rendered; the others keep their shells running (plan D1, D6).
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -20,7 +20,7 @@ use gpui::{
 };
 
 use crate::actions::*;
-use crate::mac::Fade;
+use crate::mac::Fading;
 use crate::style::TermStyle;
 use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
@@ -64,16 +64,10 @@ pub struct WindowView {
     rename: Option<Entity<RenameInput>>,
     /// The open rename edits this group's name, not a workspace title (M8 plan D9).
     rename_group: Option<GroupId>,
-    /// The sidebar's context menu, while open.
-    menu: Option<menu::Menu>,
-    /// The menu just closed, still fading out; visual only, never "open".
-    menu_leaving: Option<menu::Menu>,
-    /// The command palette, while open (M11).
-    palette: Option<palette::Palette>,
-    /// The palette fading out: an empty glass shell of `palette_h`, for looks only.
-    palette_leaving: Option<Fade>,
-    /// Height of the palette as last drawn, in window px.
-    palette_h: Rc<Cell<f32>>,
+    /// The sidebar's context menu; open only while live, not while fading out.
+    menu: Fading<menu::Menu>,
+    /// The command palette (M11); likewise.
+    palette: Fading<palette::Palette>,
     /// Workspaces something was typed into (the "untouched anchor" rule, plan D5).
     typed: HashSet<WorkspaceId>,
     /// Row bounds in list order, from the last paint (drop-gap maths).
@@ -123,10 +117,8 @@ pub struct WindowView {
     shell: Rc<control::ShellEnv>,
     /// The control socket (M5), while it runs.
     _server: Option<cmux_ipc::server::Server>,
-    /// The notification panel is showing (Super+I, the bell).
-    panel_open: bool,
-    /// The panel's fade: `Some` while opening, open or leaving, `None` once fully closed.
-    panel_fade: Option<Fade>,
+    /// The notification panel (Super+I, the bell); open only while live.
+    panel: Fading<()>,
     /// When a click outside last closed the panel (panel.rs REOPEN_GUARD).
     panel_dismissed: Option<Instant>,
     _tasks: Vec<Task<()>>,
@@ -193,11 +185,8 @@ impl WindowView {
             sidebar_scroll: ScrollHandle::new(),
             rename: None,
             rename_group: None,
-            menu: None,
-            menu_leaving: None,
-            palette: None,
-            palette_leaving: None,
-            palette_h: Rc::new(Cell::new(0.0)),
+            menu: Fading::default(),
+            palette: Fading::default(),
             typed: HashSet::new(),
             row_bounds: Rc::default(),
             drop_gap: None,
@@ -231,8 +220,7 @@ impl WindowView {
             feed_field_focus: cx.focus_handle(),
             shell,
             _server: server,
-            panel_open: false,
-            panel_fade: None,
+            panel: Fading::default(),
             panel_dismissed: None,
             _tasks: Vec::new(),
             _activation: None,
@@ -721,30 +709,13 @@ impl Render for WindowView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.note_window_bounds(window);
         let now = Instant::now();
-        if self
-            .menu_leaving
-            .as_ref()
-            .is_some_and(|m| m.fade.done_at(now))
-        {
-            self.menu_leaving = None;
-        }
-        if self
-            .panel_fade
-            .is_some_and(|f| f.leaving() && f.done_at(now))
-        {
-            self.panel_fade = None;
-        }
-        if self.palette_leaving.is_some_and(|f| f.done_at(now)) {
-            self.palette_leaving = None;
-        }
-        let animating = [&self.menu, &self.menu_leaving]
-            .into_iter()
-            .flatten()
-            .any(|m| !m.fade.done_at(now))
-            || self.panel_fade.is_some_and(|f| !f.done_at(now))
-            || self.palette.as_ref().is_some_and(|p| !p.fade.done_at(now))
-            || self.palette_leaving.is_some();
-        if animating {
+        // Every prune runs: each drops its own finished leave.
+        let animating = [
+            self.menu.prune(now),
+            self.panel.prune(now),
+            self.palette.prune(now),
+        ];
+        if animating.contains(&true) {
             window.request_animation_frame();
         }
         if !cx.has_active_drag() {
@@ -830,7 +801,7 @@ impl Render for WindowView {
                 this.show_right(Some(dock::RightMode::Dock), w, cx)
             }))
             .on_action(cx.listener(|this, _: &ShowNotifications, _, cx| {
-                this.set_panel(!this.panel_open, cx);
+                this.set_panel(!this.panel.is_open(), cx);
             }))
             // The terminal keeps focus while the panel is up, so Escape is caught here first.
             .on_action(
@@ -846,7 +817,7 @@ impl Render for WindowView {
                 }
                 if this.close_palette(w, cx) || this.close_menu(cx) {
                     cx.stop_propagation();
-                } else if this.panel_open {
+                } else if this.panel.is_open() {
                     this.close_panel(cx);
                     cx.stop_propagation();
                 }
@@ -883,7 +854,6 @@ impl Render for WindowView {
             .children(self.render_panel(window, cx))
             .children(self.render_menu(cx))
             .children(self.render_palette(window, cx))
-            .children(self.render_palette_leaving(window))
             .when(width.is_none(), |d| d.child(self.render_reopen(cx)))
             .children(crate::csd::controls(window))
             .children(crate::csd::resize_grips(window))

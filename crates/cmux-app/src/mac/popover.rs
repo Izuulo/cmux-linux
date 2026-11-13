@@ -3,11 +3,11 @@
 use std::time::Instant;
 
 use gpui::{
-    AnyElement, InteractiveElement, IntoElement, ParentElement, PathBuilder, Pixels, Point, Styled,
-    anchored, canvas, deferred, div, point, prelude::FluentBuilder,
+    AnyElement, IntoElement, ParentElement, PathBuilder, Pixels, Point, Styled, canvas, div, point,
+    prelude::FluentBuilder,
 };
 
-use super::{Fade, Theme, glass_panel, metric};
+use super::{Fade, Theme, glass_panel, metric, overlay};
 use crate::ui::{px, s};
 
 /// Up-pointing arrow outline: flared shoulders into a rounded tip.
@@ -74,7 +74,6 @@ pub fn popover(
     now: Instant,
     content: AnyElement,
 ) -> impl IntoElement + use<> {
-    let amount = fade.amount_at(now);
     // `window_w` and `width` are design px (unscaled); `tip` is already window px.
     let (left, arrow_x) = popover_left(
         f32::from(tip.x) / s(1.0),
@@ -107,39 +106,16 @@ pub fn popover(
         .flex()
         .flex_col()
         .child(content);
-    deferred(
-        anchored()
-            .position(point(gpui::px(s(left)), tip.y))
-            .snap_to_window_with_margin(px(metric::OVERLAY_MARGIN))
-            .child(
-                div()
-                    .id(id)
-                    .relative()
-                    .occlude()
-                    .opacity(amount)
-                    .mt(px(fade.slide(now)))
-                    .pt(px(metric::ARROW_H))
-                    .child(body)
-                    .child(
-                        div()
-                            .absolute()
-                            .top(px(0.))
-                            .left(px(arrow_x - left - metric::ARROW_W / 2.0))
-                            .child(arrow),
-                    )
-                    // Leaving: a handler-less cover on top takes clicks, so the caller's buttons
-                    // (e.g. "Clear All") can't fire during the fade.
-                    .when(fade.leaving(), |d| {
-                        d.child(
-                            div()
-                                .id("popover-leaving-cover")
-                                .absolute()
-                                .size_full()
-                                .occlude(),
-                        )
-                    }),
-            ),
-    )
+    let inner = div().relative().pt(px(metric::ARROW_H)).child(body).child(
+        div()
+            .absolute()
+            .top(px(0.))
+            .left(px(arrow_x - left - metric::ARROW_W / 2.0))
+            .child(arrow),
+    );
+    // Leaving, the overlay's cover takes clicks, so the caller's buttons (e.g. "Clear All")
+    // can't fire during the fade.
+    overlay(id, point(gpui::px(s(left)), tip.y), fade, now, inner)
 }
 
 #[cfg(test)]

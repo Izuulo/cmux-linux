@@ -12,7 +12,7 @@ use gpui::{
 
 use super::WindowView;
 use crate::chrome::{self, SidebarPalette};
-use crate::mac::{self, Fade, Theme, metric};
+use crate::mac::{self, Theme, metric};
 
 // rn §7 metrics.
 const WIDTH: f32 = 560.0;
@@ -53,23 +53,22 @@ impl WindowView {
         {
             return;
         }
-        self.set_panel(!self.panel_open, cx);
+        self.set_panel(!self.panel.is_open(), cx);
     }
 
     /// Opens or closes the panel, with its fade; a close mid-enter leaves from where it was.
     pub(super) fn set_panel(&mut self, open: bool, cx: &mut Context<Self>) {
-        self.panel_open = open;
-        let now = Instant::now();
-        self.panel_fade = Some(match (open, self.panel_fade) {
-            (false, Some(f)) => Fade::leave_from(&f, now),
-            (false, None) => Fade::leave(),
-            (true, _) => Fade::enter(),
-        });
+        match open {
+            true => self.panel.open(()),
+            false => {
+                self.panel.close(Instant::now());
+            }
+        }
         cx.notify();
     }
 
     pub(super) fn close_panel(&mut self, cx: &mut Context<Self>) {
-        if self.panel_open {
+        if self.panel.is_open() {
             self.set_panel(false, cx);
             self.panel_dismissed = Some(Instant::now());
         }
@@ -80,7 +79,7 @@ impl WindowView {
         window: &Window,
         cx: &Context<Self>,
     ) -> Option<impl IntoElement + use<>> {
-        let fade = self.panel_fade?;
+        let (_, fade) = self.panel.shown()?;
         let cfg = &self.style.cfg;
         let bg = chrome::rgba(cfg.background, 1.0);
         let p = chrome::sidebar_palette(bg);
