@@ -92,6 +92,12 @@ package; if you have `rust` installed, replace it with `rustup` first.
 It installs `cmux-linux` and the `cmux` CLI side by side in `/usr/lib/cmux-linux/`, with
 symlinks in `/usr/bin` and a `.desktop` entry.
 
+Any Linux, no root: `scripts/install-local.sh` builds your checkout (release, with the browser)
+and installs it for your user in `~/.local/lib/cmux-linux/`, with symlinks in `~/.local/bin`
+and a launcher entry. Re-run it after `git pull` to update; no sudo password is needed.
+`scripts/install-local.sh --uninstall` removes it. Don't keep both this and the package: remove
+the package once with `sudo pacman -R cmux-linux-git`.
+
 macOS: build a release binary (a debug build of the app hangs) and run it:
 
 ```sh
