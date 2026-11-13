@@ -32,3 +32,10 @@
 - Text field: 3 px focus border is unscaled and the 22 px box may clip descenders while editing.
 - Switch/slider knobs use `menu_hover_text` (white); an `on_accent` token would read better.
 - Some content text sizes in `settings/` and spacing in `browser.rs` are still literals (not covered by the check).
+
+### Final review fixes
+- Title bar: on a translucent window the root paints no fill, so the strip was see-through above the terminals. It now paints the tab strips' bar colour (`background` at `background-opacity`) when opacity < 1, and rounds its top-left corner while the left sidebar is hidden and its top-right while the right sidebar is closed. `PaneChrome.tl/tr` and the tab strip's top rounding are gone; `titlebar::titlebar_h()` replaces the two `s(TITLEBAR_H)` calls.
+- Overlays: `mac::overlay` is the deferred/anchored layer with fade and slide that the menu, palette and popover now share; a leaving overlay gets the popover's handler-less cover, so the menu and palette also swallow clicks on their own area during the 120 ms leave (before, those clicks went through). `mac::Fading<T>` (unit-tested) holds one value with its fade: `open`, `close(now)`, `live`/`live_mut`/`is_open`, `leaving`, `shown`, `prune(now)`. Menu, notification panel (`Fading<()>`) and palette use it; `WindowView::render` prunes all three in one line. Reopening during a leave drops the leaving copy, so a second menu no longer draws over a fading first one. `Fade::leave()` was unused and is removed.
+- The palette fades out with its real rows (no focus, no handlers) instead of the measured empty shell; `palette_h` is gone. A run custom command is cloned, not taken, so the rows don't change mid-fade.
+- NOTICE: Lucide list now names every icon in `assets/icons/` (added chevron-left, globe, rotate-cw, lock).
+- `cargo test -p cmux-app`: 133 (137 with `--features browser`); clippy and fmt clean both ways; `check-mac-tokens.sh` ok. Not checked on screen.
