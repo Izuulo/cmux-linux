@@ -115,6 +115,8 @@ impl WindowView {
                 cx.notify();
             }
         });
+        // A reopen during the leave fade: drop the fading shell, or it draws over the new one.
+        self.palette_leaving = None;
         self.palette = Some(Palette {
             field: field(text),
             selected: 0,

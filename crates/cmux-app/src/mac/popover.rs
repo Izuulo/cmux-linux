@@ -115,8 +115,7 @@ pub fn popover(
                 div()
                     .id(id)
                     .relative()
-                    // A leaving copy is visual only: clicks go to whatever is under it.
-                    .when(!fade.leaving(), |d| d.occlude())
+                    .occlude()
                     .opacity(amount)
                     .mt(px(fade.slide(now)))
                     .pt(px(metric::ARROW_H))
@@ -127,7 +126,18 @@ pub fn popover(
                             .top(px(0.))
                             .left(px(arrow_x - left - metric::ARROW_W / 2.0))
                             .child(arrow),
-                    ),
+                    )
+                    // Leaving: a handler-less cover on top takes clicks, so the caller's buttons
+                    // (e.g. "Clear All") can't fire during the fade.
+                    .when(fade.leaving(), |d| {
+                        d.child(
+                            div()
+                                .id("popover-leaving-cover")
+                                .absolute()
+                                .size_full()
+                                .occlude(),
+                        )
+                    }),
             ),
     )
 }
