@@ -10,39 +10,44 @@ use gpui::{
 use super::{Fade, Theme, glass_panel, metric, overlay};
 use crate::ui::{px, s};
 
-/// Up-pointing arrow outline: bell-shaped flanks (concave flare into the base) and a rounded tip.
+/// Up-pointing arrow outline: a rounded tip, then flanks that are steep at the tip and flatten
+/// into the base (one cubic per side whose last control sits on the base line).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ArrowPts {
     pub base_l: (f32, f32),
-    pub flare_l: (f32, f32),
-    pub shoulder_l: (f32, f32),
+    pub ctrl_l: [(f32, f32); 2],
     pub tip_l: (f32, f32),
     pub tip_ctrl: (f32, f32),
     pub tip_r: (f32, f32),
-    pub shoulder_r: (f32, f32),
-    pub flare_r: (f32, f32),
+    pub ctrl_r: [(f32, f32); 2],
     pub base_r: (f32, f32),
 }
+
+/// Slope (dy/dx) of the flank where it leaves the tip: about 56 degrees.
+const TIP_SLOPE: f32 = 1.5;
 
 pub fn arrow_points(tip_x: f32, tip_y: f32) -> ArrowPts {
     let (w, h, r) = (metric::ARROW_W, metric::ARROW_H, metric::ARROW_TIP_R);
     let base_y = tip_y + h;
-    // The tip is a quadratic whose end tangents are 45 degrees: ends at (+-0.7r, 0.35r), control
-    // at (0, -0.35r), so its apex is `tip_y`. Each flank continues that 45 degree line down to
-    // the shoulder, then a quadratic flares out of the base: no kink anywhere.
-    let (dx, dy) = (r * 0.7, r * 0.35);
-    let u = h * 0.46 - dy;
-    let (sx, sy) = (dx + u, dy + u);
-    let fx = sx + (h - sy);
+    // The tip is a quadratic from (-dx, dy) to (dx, dy) with its control at (0, -dy), so its
+    // apex is `tip_y` and its end tangent has slope 2 dy / dx = TIP_SLOPE. Each flank starts on
+    // that tangent (first control), and arrives level with the base (second control).
+    let dx = r * 0.55;
+    let dy = dx * TIP_SLOPE / 2.0;
+    let run = (h - dy) * 0.4;
+    let c1 = (dx + run / TIP_SLOPE, dy + run);
+    let c2 = (w / 2.0 - w * 0.2, h);
+    let (l, r_) = (
+        |(x, y): (f32, f32)| (tip_x - x, tip_y + y),
+        |(x, y): (f32, f32)| (tip_x + x, tip_y + y),
+    );
     ArrowPts {
         base_l: (tip_x - w / 2.0, base_y),
-        flare_l: (tip_x - fx, base_y),
-        shoulder_l: (tip_x - sx, tip_y + sy),
-        tip_l: (tip_x - dx, tip_y + dy),
+        ctrl_l: [l(c2), l(c1)],
+        tip_l: l((dx, dy)),
         tip_ctrl: (tip_x, tip_y - dy),
-        tip_r: (tip_x + dx, tip_y + dy),
-        shoulder_r: (tip_x + sx, tip_y + sy),
-        flare_r: (tip_x + fx, base_y),
+        tip_r: r_((dx, dy)),
+        ctrl_r: [r_(c1), r_(c2)],
         base_r: (tip_x + w / 2.0, base_y),
     }
 }
@@ -52,11 +57,9 @@ fn arrow_path(a: ArrowPts, origin: Point<Pixels>) -> PathBuilder {
     let at = |(x, y): (f32, f32)| point(origin.x + px(x), origin.y + px(y));
     let mut b = PathBuilder::fill();
     b.move_to(at(a.base_l));
-    b.curve_to(at(a.shoulder_l), at(a.flare_l));
-    b.line_to(at(a.tip_l));
+    b.cubic_bezier_to(at(a.tip_l), at(a.ctrl_l[0]), at(a.ctrl_l[1]));
     b.curve_to(at(a.tip_r), at(a.tip_ctrl));
-    b.line_to(at(a.shoulder_r));
-    b.curve_to(at(a.base_r), at(a.flare_r));
+    b.cubic_bezier_to(at(a.base_r), at(a.ctrl_r[0]), at(a.ctrl_r[1]));
     b.close();
     b
 }
@@ -138,21 +141,37 @@ mod tests {
         assert_eq!(a.base_l, (100.0 - w / 2.0, 50.0 + h));
         assert_eq!(a.base_r, (100.0 + w / 2.0, 50.0 + h));
         assert_eq!(100.0 - a.tip_l.0, a.tip_r.0 - 100.0);
-        assert_eq!(100.0 - a.shoulder_l.0, a.shoulder_r.0 - 100.0);
-        for p in [a.shoulder_l, a.tip_l, a.tip_r, a.shoulder_r] {
+        for p in [
+            a.tip_l,
+            a.tip_r,
+            a.ctrl_l[0],
+            a.ctrl_l[1],
+            a.ctrl_r[0],
+            a.ctrl_r[1],
+        ] {
             assert!(
                 p.1 >= 50.0 && p.1 <= 50.0 + h,
                 "{p:?} outside the arrow's box"
             );
         }
         assert!(a.tip_ctrl.1 < a.tip_l.1, "the tip curve bulges upward");
-        // Bell shape: the flare control stays on the base line, between the base corner and
-        // the shoulder (concave), and the 45 degree tip tangent continues into the shoulder.
-        assert_eq!(a.flare_l.1, a.base_l.1);
-        assert!(a.base_l.0 < a.flare_l.0 && a.flare_l.0 < a.shoulder_l.0);
+    }
+
+    #[test]
+    fn flanks_are_steep_at_the_tip_and_flatten_into_the_base() {
+        let a = arrow_points(100.0, 50.0);
+        // The last control is level with the base, so the flank arrives horizontally (concave
+        // flare), and the first control continues the tip's tangent (no kink).
+        assert_eq!(a.ctrl_l[0].1, a.base_l.1);
+        assert!(a.base_l.0 < a.ctrl_l[0].0 && a.ctrl_l[0].0 < 100.0);
         let slope = |p: (f32, f32), q: (f32, f32)| (q.1 - p.1) / (q.0 - p.0);
-        assert!((slope(a.shoulder_l, a.tip_l) + 1.0).abs() < 1e-4);
-        assert!((slope(a.flare_l, a.shoulder_l) + 1.0).abs() < 1e-4);
+        let tip_tangent = slope(a.tip_ctrl, a.tip_l);
+        assert!((tip_tangent + TIP_SLOPE).abs() < 1e-4);
+        assert!((slope(a.tip_l, a.ctrl_l[1]) + TIP_SLOPE).abs() < 1e-4);
+        assert!(
+            a.ctrl_l[1].0 > a.ctrl_l[0].0,
+            "steep part sits nearer the tip"
+        );
     }
 
     const M: f32 = metric::OVERLAY_MARGIN;
