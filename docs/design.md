@@ -90,8 +90,9 @@ criteria pass and STATUS.md says so.
 | M11 productivity | Faster everyday use | Command palette, `cmux.json` custom commands, SSH workspaces. |
 | M12 settings | Configure without editing files | Settings window for cmux-linux options and the Ghostty config (themes, blur, opacity, fonts), applied live. |
 | M13 browser | Web pages next to terminals | A browser surface in a pane or tab with URL bar and navigation; links and `cmux browser open` land there. |
+| M14 mac-look | Looks native to macOS Tahoe | A shared `mac` UI kit; animated glass popovers with arrows, menus, palette, title bar, System Settings–style Settings and browser chrome built on it. |
 
-M0–M6 are v1. M7–M13 come after, in order, unless STATUS.md records a change.
+M0–M6 are v1. M7–M14 come after, in order, unless STATUS.md records a change.
 
 ## Not planned
 
