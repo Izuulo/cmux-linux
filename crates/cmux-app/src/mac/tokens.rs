@@ -152,8 +152,6 @@ pub mod metric {
     pub const PALETTE_ROW_H: f32 = 20.0;
     pub const CARD_RADIUS: f32 = 12.0;
     pub const CONTROL_RADIUS: f32 = 7.0;
-    /// Small key-hint and count badges.
-    pub const BADGE_RADIUS: f32 = 4.0;
     pub const SWITCH_W: f32 = 44.0;
     pub const SWITCH_H: f32 = 22.0;
     pub const SIDEBAR_ROW_H: f32 = 32.0;
