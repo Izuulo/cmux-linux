@@ -3,7 +3,6 @@
 //! window's config poll applies them and hands the new style back here (`set_style`).
 
 mod automation;
-mod controls;
 mod shortcuts;
 mod terminal;
 mod themes;
@@ -22,20 +21,21 @@ use gpui::{
     AnyWindowHandle, App, AppContext, Bounds, ClickEvent, Context, FocusHandle, FontWeight,
     InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseMoveEvent, ParentElement,
     Pixels, Render, ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Subscription,
-    Task, TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, div, prelude::*, svg,
+    Task, TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions, div, prelude::*,
 };
 
 use crate::actions::{CloseTab, OpenSettings, Quit};
+use crate::mac::Theme;
+use crate::mac::controls::{self, Handler};
 use crate::style::TermStyle;
 use crate::ui::px;
 use crate::window_view::rename::{RenameKey, RenameOutcome, RenameState};
-use controls::{Handler, Theme};
 
 const WINDOW_W: f32 = 980.0;
 const WINDOW_H: f32 = 680.0;
 const SIDEBAR_W: f32 = 210.0;
 /// Ghostty writes wait this long for more changes (plan S5).
-const WRITE_DELAY: Duration = Duration::from_millis(250);
+const WRITE_DELAY: Duration = Duration::from_millis(250); // mac-ok: a write debounce, not motion
 const UI_SCALE_MIN: f32 = 0.5;
 const UI_SCALE_MAX: f32 = 2.0;
 const UI_SCALE_STEP: f32 = 0.05;
@@ -623,39 +623,23 @@ impl SettingsView {
                     .px(px(10.))
                     .pt(px(12.))
                     .pb(px(4.))
-                    .text_size(px(11.))
+                    .text_size(px(crate::mac::metric::SMALL_TEXT))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(c.secondary)
                     .child(*group)
                     .into_any_element(),
             );
             for &s in *sections {
-                let on = s == self.section;
-                let fg = if on { gpui::white().into() } else { c.text };
                 items.push(
-                    div()
-                        .id(SharedString::from(s.title()))
-                        .flex()
-                        .flex_row()
-                        .items_center()
-                        .gap(px(10.))
-                        .px(px(10.))
-                        .py(px(5.))
-                        .rounded(px(6.))
-                        .when(on, |d| d.bg(c.accent))
-                        .when(!on, |d| d.hover(move |st| st.bg(c.hover)))
-                        .child(
-                            svg()
-                                .path(s.icon())
-                                .size(px(16.))
-                                .flex_none()
-                                .text_color(fg),
-                        )
-                        .child(div().text_size(px(13.)).text_color(fg).child(s.title()))
-                        .on_click(
-                            cx.listener(move |this, _: &ClickEvent, _, cx| this.select(s, cx)),
-                        )
-                        .into_any_element(),
+                    controls::sidebar_row(
+                        SharedString::from(s.title()),
+                        &c,
+                        s.icon(),
+                        s.title(),
+                        s == self.section,
+                    )
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.select(s, cx)))
+                    .into_any_element(),
                 );
             }
         }

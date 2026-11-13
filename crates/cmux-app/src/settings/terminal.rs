@@ -7,9 +7,10 @@ use std::rc::Rc;
 use cmux_config::ghostty::{CursorStyle, Rgb, parse_rgb};
 use gpui::{AnyElement, Context, IntoElement, TextSystem, Window, prelude::*};
 
-use super::controls::{self, Theme};
 use super::{FieldId, SettingsView, step};
 use crate::chrome::rgba;
+use crate::mac::Theme;
+use crate::mac::controls;
 
 /// Every key this section writes, for the "Set in <file>" notes.
 pub(super) const KEYS: &[&str] = &[

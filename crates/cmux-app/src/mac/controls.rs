@@ -1,22 +1,26 @@
-//! The Settings window's building blocks (M12 plan S2, S8): cards, rows and the small controls
-//! (toggle, stepper, slider, segmented picker, dropdown button, text field). Each is a plain
-//! element; the caller owns the state and passes click handlers.
+//! The Settings window's building blocks (M12 plan S2, S8; M14 K8): cards, rows and the small
+//! controls (toggle, stepper, slider, segmented picker, dropdown button, text field) and the
+//! sidebar row, in the Tahoe look. Each is a plain element; the caller owns the state and
+//! passes click handlers.
 
 use std::cell::Cell;
 use std::rc::Rc;
 
+use super::{Theme, alpha, glass_panel, menu_item, metric};
 use crate::ui::px;
 use gpui::{
-    AnyElement, App, Bounds, ClickEvent, FontWeight, InteractiveElement, IntoElement, MouseButton,
-    MouseDownEvent, ParentElement, Pixels, Rgba, SharedString, StatefulInteractiveElement, Styled,
-    Window, canvas, div, prelude::*,
+    AnyElement, App, Bounds, ClickEvent, ElementId, FontWeight, InteractiveElement, IntoElement,
+    MouseButton, MouseDownEvent, ParentElement, Pixels, Rgba, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, Window, canvas, div, prelude::*, svg,
 };
 
 /// Width of a row's control column.
 pub const CONTROL_W: f32 = 200.0;
 const ROW_PAD_X: f32 = 14.0;
 const ROW_PAD_Y: f32 = 9.0;
-const CARD_RADIUS: f32 = 13.0;
+const SIDEBAR_ROW_H: f32 = 28.0;
+const SIDEBAR_TILE: f32 = 20.0;
+const SIDEBAR_GLYPH: f32 = 12.0;
 const SLIDER_W: f32 = 140.0;
 const SLIDER_LABEL_W: f32 = 44.0;
 const KNOB: f32 = 14.0;
@@ -25,13 +29,11 @@ pub type Handler = Rc<dyn Fn(&mut Window, &mut App)>;
 /// Gets the index of the clicked choice.
 pub type Pick = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 
-pub use crate::mac::Theme;
-
 /// A section heading above a card.
 pub fn header(title: &str, c: Theme) -> impl IntoElement {
     div()
         .pl(px(2.))
-        .text_size(px(13.))
+        .text_size(px(metric::BODY_TEXT))
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(c.secondary)
         .child(SharedString::from(title.to_string()))
@@ -56,7 +58,7 @@ pub fn card(rows: Vec<AnyElement>, c: Theme) -> impl IntoElement {
     div()
         .flex()
         .flex_col()
-        .rounded(px(CARD_RADIUS))
+        .rounded(px(metric::CARD_RADIUS))
         .bg(c.card)
         .border_1()
         .border_color(c.separator)
@@ -68,7 +70,7 @@ pub fn note(text: impl Into<SharedString>, color: Rgba) -> AnyElement {
     div()
         .px(px(ROW_PAD_X))
         .py(px(8.))
-        .text_size(px(11.))
+        .text_size(px(metric::SMALL_TEXT))
         .text_color(color)
         .child(text.into())
         .into_any_element()
@@ -102,14 +104,14 @@ pub fn row(
                         .gap(px(3.))
                         .child(
                             div()
-                                .text_size(px(13.))
+                                .text_size(px(metric::BODY_TEXT))
                                 .font_weight(FontWeight::MEDIUM)
                                 .text_color(c.text)
                                 .child(SharedString::from(title.to_string())),
                         )
                         .children(subtitle.map(|s| {
                             div()
-                                .text_size(px(10.))
+                                .text_size(px(metric::SMALL_TEXT))
                                 .text_color(c.secondary)
                                 .child(SharedString::from(s.to_string()))
                         })),
@@ -128,28 +130,23 @@ pub fn row(
         .into_any_element()
 }
 
-fn button_base(id: impl Into<gpui::ElementId>, c: Theme) -> gpui::Stateful<gpui::Div> {
+fn button_base(id: impl Into<ElementId>, c: Theme) -> Stateful<gpui::Div> {
     div()
         .id(id)
         .flex()
         .items_center()
         .justify_center()
         .h(px(22.))
-        .rounded(px(5.))
+        .rounded(px(metric::CONTROL_RADIUS))
         .bg(c.control)
-        .text_size(px(12.))
+        .text_size(px(metric::BODY_TEXT))
         .text_color(c.text)
-        .hover(move |s| {
-            s.bg(Rgba {
-                a: c.control.a + 0.08,
-                ..c.control
-            })
-        })
+        .hover(move |s| s.bg(alpha(c.control, c.control.a + 0.08)))
 }
 
 /// An on/off switch.
 pub fn toggle(id: &'static str, on: bool, c: Theme, click: Handler) -> AnyElement {
-    let (w, h) = (32.0, 18.0);
+    let (w, h) = (metric::SWITCH_W, metric::SWITCH_H);
     div()
         .id(id)
         .flex()
@@ -162,7 +159,7 @@ pub fn toggle(id: &'static str, on: bool, c: Theme, click: Handler) -> AnyElemen
         .rounded_full()
         .bg(if on { c.accent } else { c.control })
         .on_click(move |_: &ClickEvent, window, cx| click(window, cx))
-        .child(div().size(px(h - 4.)).rounded_full().bg(gpui::white()))
+        .child(div().size(px(h - 4.)).rounded_full().bg(c.menu_hover_text))
         .into_any_element()
 }
 
@@ -181,7 +178,7 @@ pub fn stepper(
         .gap(px(8.))
         .child(
             div()
-                .text_size(px(12.))
+                .text_size(px(metric::BODY_TEXT))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(c.text)
                 .child(value),
@@ -222,7 +219,7 @@ pub fn segmented(
         .flex_row()
         .p(px(2.))
         .gap(px(2.))
-        .rounded(px(6.))
+        .rounded(px(metric::CONTROL_RADIUS))
         .bg(c.control)
         .children(options.iter().enumerate().map(|(k, label)| {
             let pick = pick.clone();
@@ -231,9 +228,9 @@ pub fn segmented(
                 .id((id, k))
                 .px(px(7.))
                 .py(px(2.))
-                .rounded(px(4.))
-                .text_size(px(11.))
-                .text_color(if on { gpui::white().into() } else { c.text })
+                .rounded(px(metric::CONTROL_RADIUS - 2.))
+                .text_size(px(metric::SMALL_TEXT))
+                .text_color(if on { c.menu_hover_text } else { c.text })
                 .when(on, |d| d.bg(c.accent))
                 .when(!on, |d| d.hover(move |s| s.bg(c.hover)))
                 .child(SharedString::from(label.to_string()))
@@ -313,7 +310,7 @@ pub fn slider(
                         .left(gpui::px(w * frac))
                         .size(px(KNOB))
                         .rounded_full()
-                        .bg(gpui::white())
+                        .bg(c.menu_hover_text)
                         .border_1()
                         .border_color(c.separator),
                 ),
@@ -323,7 +320,7 @@ pub fn slider(
                 .w(px(SLIDER_LABEL_W))
                 .flex()
                 .justify_end()
-                .text_size(px(12.))
+                .text_size(px(metric::BODY_TEXT))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(c.text)
                 .child(label),
@@ -363,36 +360,20 @@ pub fn dropdown_list(
 ) -> AnyElement {
     gpui::deferred(
         gpui::anchored().snap_to_window_with_margin(px(4.)).child(
-            div()
+            glass_panel(&c, metric::MENU_RADIUS)
                 .id(id)
                 .occlude()
                 .mt(px(24.))
                 .w(px(CONTROL_W))
                 .max_h(px(320.))
                 .overflow_y_scroll()
-                .py(px(4.))
-                .rounded(px(6.))
-                .border_1()
-                .border_color(c.separator)
-                .bg(c.bg)
+                .py(px(metric::MENU_INSET - 1.))
                 .on_mouse_down_out(move |_, window, cx| close(window, cx))
                 .children(items.iter().enumerate().map(|(k, label)| {
                     let pick = pick.clone();
                     let on = Some(k) == selected;
-                    div()
-                        .id((id, k))
-                        .mx(px(4.))
-                        .px(px(6.))
-                        .py(px(3.))
-                        .rounded(px(4.))
-                        .text_size(px(12.))
-                        .text_color(c.text)
-                        .whitespace_nowrap()
-                        .overflow_hidden()
-                        .text_ellipsis()
+                    menu_item((id, k), &c, label, None)
                         .when(on, |d| d.bg(c.hover))
-                        .hover(|s| s.bg(c.accent).text_color(gpui::white()))
-                        .child(SharedString::from(label.clone()))
                         .on_click(move |_: &ClickEvent, window, cx| pick(k, window, cx))
                 })),
         ),
@@ -429,16 +410,17 @@ pub fn text_field(
         .gap(px(6.))
         .w(px(width))
         .h(px(22.))
-        .px(px(6.))
-        .rounded(px(5.))
+        // The 3 px focus ring is a thicker border; padding gives the 2 px back so text stays put.
+        .px(px(if editing.is_some() { 4. } else { 6. }))
+        .rounded(px(metric::CONTROL_RADIUS))
         .bg(c.control)
-        .border_1()
-        .border_color(if editing.is_some() {
-            c.accent
-        } else {
-            c.separator
+        .when(editing.is_some(), |d| {
+            d.border_3().border_color(alpha(c.accent, 0.5))
         })
-        .text_size(px(12.))
+        .when(editing.is_none(), |d| {
+            d.border_1().border_color(c.separator)
+        })
+        .text_size(px(metric::BODY_TEXT))
         .text_color(color)
         .overflow_hidden()
         .whitespace_nowrap()
@@ -446,13 +428,55 @@ pub fn text_field(
             div()
                 .flex_none()
                 .size(px(12.))
-                .rounded(px(3.))
+                .rounded(px(metric::CONTROL_RADIUS - 4.))
                 .border_1()
                 .border_color(c.separator)
                 .bg(s)
         }))
         .child(text)
         .on_click(move |_: &ClickEvent, window, cx| click(window, cx))
+}
+
+/// A Settings sidebar entry: coloured icon tile, label; `selected` fills it like a menu hover.
+/// The caller adds the click handler.
+pub fn sidebar_row(
+    id: impl Into<ElementId>,
+    t: &Theme,
+    icon: &'static str,
+    label: &str,
+    selected: bool,
+) -> Stateful<gpui::Div> {
+    let (hover, fg) = (t.hover, if selected { t.menu_hover_text } else { t.text });
+    div()
+        .id(id)
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(8.))
+        .h(px(SIDEBAR_ROW_H))
+        .px(px(6.))
+        .rounded(px(metric::MENU_ITEM_RADIUS))
+        .text_size(px(metric::BODY_TEXT))
+        .text_color(fg)
+        .when(selected, |d| d.bg(t.menu_hover))
+        .when(!selected, |d| d.hover(move |s| s.bg(hover)))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .flex_none()
+                .size(px(SIDEBAR_TILE))
+                .rounded(px(metric::CONTROL_RADIUS))
+                .bg(t.accent)
+                .child(
+                    svg()
+                        .path(icon)
+                        .size(px(SIDEBAR_GLYPH))
+                        .text_color(t.menu_hover_text),
+                ),
+        )
+        .child(SharedString::from(label.to_string()))
 }
 
 #[cfg(test)]
