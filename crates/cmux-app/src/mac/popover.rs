@@ -73,7 +73,7 @@ pub fn popover(
     fade: Fade,
     now: Instant,
     content: AnyElement,
-) -> impl IntoElement {
+) -> impl IntoElement + use<> {
     let amount = fade.amount_at(now);
     // `window_w` and `width` are design px (unscaled); `tip` is already window px.
     let (left, arrow_x) = popover_left(

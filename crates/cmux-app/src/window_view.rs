@@ -20,6 +20,7 @@ use gpui::{
 };
 
 use crate::actions::*;
+use crate::mac::Fade;
 use crate::style::TermStyle;
 use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
@@ -119,6 +120,8 @@ pub struct WindowView {
     _server: Option<cmux_ipc::server::Server>,
     /// The notification panel is showing (Super+I, the bell).
     panel_open: bool,
+    /// The panel's fade: `Some` while opening, open or leaving, `None` once fully closed.
+    panel_fade: Option<Fade>,
     /// When a click outside last closed the panel (panel.rs REOPEN_GUARD).
     panel_dismissed: Option<Instant>,
     _tasks: Vec<Task<()>>,
@@ -222,6 +225,7 @@ impl WindowView {
             shell,
             _server: server,
             panel_open: false,
+            panel_fade: None,
             panel_dismissed: None,
             _tasks: Vec::new(),
             _activation: None,
@@ -708,10 +712,17 @@ impl Render for WindowView {
         {
             self.menu_leaving = None;
         }
+        if self
+            .panel_fade
+            .is_some_and(|f| f.leaving() && f.done_at(now))
+        {
+            self.panel_fade = None;
+        }
         let animating = [&self.menu, &self.menu_leaving]
             .into_iter()
             .flatten()
-            .any(|m| !m.fade.done_at(now));
+            .any(|m| !m.fade.done_at(now))
+            || self.panel_fade.is_some_and(|f| !f.done_at(now));
         if animating {
             window.request_animation_frame();
         }
@@ -795,8 +806,7 @@ impl Render for WindowView {
                 this.show_right(Some(dock::RightMode::Dock), w, cx)
             }))
             .on_action(cx.listener(|this, _: &ShowNotifications, _, cx| {
-                this.panel_open = !this.panel_open;
-                cx.notify();
+                this.set_panel(!this.panel_open, cx);
             }))
             // The terminal keeps focus while the panel is up, so Escape is caught here first.
             .on_action(
