@@ -173,7 +173,9 @@ pub fn open(
             }),
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             app_id: Some("cmux-linux".into()),
-            window_decorations: Some(gpui::WindowDecorations::Server),
+            // Like the main window: our own buttons and rounded corners (csd.rs); macOS keeps its title bar.
+            window_decorations: cfg!(target_os = "linux")
+                .then_some(gpui::WindowDecorations::Client),
             ..Default::default()
         },
         |window, cx| cx.new(|cx| SettingsView::new(env, style, window, cx)),
@@ -615,7 +617,7 @@ impl SettingsView {
         Theme::new(crate::chrome::rgba(self.style.cfg.background, 1.0))
     }
 
-    fn render_sidebar(&self, c: Theme, cx: &Context<Self>) -> impl IntoElement {
+    fn render_sidebar(&self, c: Theme, radius: f32, cx: &Context<Self>) -> impl IntoElement {
         let mut items = Vec::new();
         for (group, sections) in GROUPS {
             items.push(
@@ -652,6 +654,8 @@ impl SettingsView {
             .px(px(8.))
             .py(px(8.))
             .bg(c.sidebar)
+            .rounded_tl(gpui::px(radius))
+            .rounded_bl(gpui::px(radius))
             .border_r_1()
             .border_color(c.separator)
             .children(items)
@@ -699,11 +703,26 @@ impl Render for SettingsView {
             Section::Automation => self.render_automation(c, window, cx),
             Section::KeyboardShortcuts => self.render_shortcuts(c, cx),
         };
-        let detail = div()
+        let radius = crate::csd::corner_radius(window);
+        // The strip over the content: "Settings", draggable, clear of the window buttons.
+        let strip = div()
+            .id("settings-titlebar")
+            .flex()
+            .flex_row()
+            .flex_none()
+            .items_center()
+            .h(px(crate::mac::metric::TITLEBAR_H))
+            .pl(px(20.))
+            .pr(gpui::px(crate::csd::controls_width(window)))
+            .rounded_tr(gpui::px(radius))
+            .text_size(px(crate::mac::metric::TITLE_TEXT))
+            .font_weight(FontWeight::BOLD)
+            .text_color(c.text)
+            .child("Settings");
+        let scroller = div()
             .id("settings-detail")
             .flex_1()
-            .min_w(px(0.))
-            .h_full()
+            .min_h(px(0.))
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
             .child(
@@ -720,8 +739,17 @@ impl Render for SettingsView {
                     )
                     .children(body),
             );
+        let detail = div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w(px(0.))
+            .h_full()
+            .child(crate::csd::window_drag(strip, true))
+            .child(scroller);
         div()
             .id("settings")
+            .relative()
             .font_family(crate::style::UI_FONT_FAMILY)
             .key_context("Settings")
             .track_focus(&self.focus)
@@ -762,8 +790,9 @@ impl Render for SettingsView {
             .flex_row()
             .size_full()
             .bg(c.bg)
+            .rounded(gpui::px(radius))
             .text_color(c.text)
-            .child(self.render_sidebar(c, cx))
+            .child(self.render_sidebar(c, radius, cx))
             .child(detail)
             .children(crate::csd::controls(window))
             .children(crate::csd::resize_grips(window))
