@@ -468,7 +468,12 @@ pub fn sidebar_row(
                 .flex_none()
                 .size(px(SIDEBAR_TILE))
                 .rounded(px(metric::CONTROL_RADIUS))
-                .bg(t.accent)
+                // On the accent-filled selected row an accent tile would vanish: a light tint instead.
+                .bg(if selected {
+                    super::alpha(t.menu_hover_text, 0.25)
+                } else {
+                    t.accent
+                })
                 .child(
                     svg()
                         .path(icon)
