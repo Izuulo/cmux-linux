@@ -439,7 +439,7 @@ impl WindowView {
         if let Some(view) = self.views.get(&id) {
             view.update(cx, |v, _| {
                 v.set_insets(inset, right);
-                v.set_top_inset(crate::ui::s(crate::mac::metric::TITLEBAR_H));
+                v.set_top_inset(titlebar::titlebar_h());
             });
         }
         if let Some(view) = self.views.get(&id) {
@@ -761,7 +761,7 @@ impl Render for WindowView {
         if let Some(v) = &selected {
             v.update(cx, |v, _| {
                 v.set_insets(width.unwrap_or(0.), right);
-                v.set_top_inset(crate::ui::s(crate::mac::metric::TITLEBAR_H));
+                v.set_top_inset(titlebar::titlebar_h());
             });
         }
         self.place_dock(window, cx);

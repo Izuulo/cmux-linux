@@ -973,7 +973,7 @@ impl WorkspaceView {
             .overflow_hidden()
             .key_context("Pane")
             // Tab bounds are window-space; the content area starts at left_inset.
-            .child(self.render_tab_strip(pane, focused, self.left_inset + r.x, chrome, cx))
+            .child(self.render_tab_strip(pane, focused, self.left_inset + r.x, cx))
             .child(
                 div()
                     .relative()
@@ -1057,12 +1057,10 @@ impl Focusable for WorkspaceView {
     }
 }
 
-/// How a pane gives way to window chrome: the radius of each rounded window corner it sits in
-/// (else 0). The title bar owns the window's top edge, so only the bottom corners are ever set.
+/// How a pane gives way to window chrome: the radius of each rounded bottom window corner it sits
+/// in (else 0). The title bar owns the window's top edge and its corners.
 #[derive(Clone, Copy)]
 pub(crate) struct PaneChrome {
-    pub tl: f32,
-    pub tr: f32,
     pub bl: f32,
     pub br: f32,
 }
@@ -1078,17 +1076,15 @@ impl Render for WorkspaceView {
         let rects = self.layout.rects(w, h, scale);
         let focused = self.layout.focused();
         let radius = crate::csd::corner_radius(window);
-        let (left, top, right) = (self.left_inset, self.top_inset, self.right_inset);
+        let (left, right) = (self.left_inset, self.right_inset);
         let chrome_of = move |r: Rect| {
-            let (x, y) = (left + r.x, top + r.y);
+            let x = left + r.x;
             let (right_gap, bottom_gap) = (right + w - r.x - r.w, h - r.y - r.h);
             let at = |a: f32, b: f32| match a.abs() < 1.0 && b.abs() < 1.0 {
                 true => radius,
                 false => 0.0,
             };
             PaneChrome {
-                tl: at(x, y),
-                tr: at(right_gap, y),
                 bl: at(x, bottom_gap),
                 br: at(right_gap, bottom_gap),
             }

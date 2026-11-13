@@ -3,7 +3,7 @@
 
 use gpui::{
     Context, FontWeight, InteractiveElement, IntoElement, ParentElement, SharedString, Styled,
-    Window, div, svg,
+    Window, div, prelude::FluentBuilder, svg,
 };
 
 use super::WindowView;
@@ -18,6 +18,11 @@ pub(super) fn titlebar_text(title: &str, host: Option<&str>) -> String {
         Some(h) => format!("{title} · {h}"),
         None => title.to_string(),
     }
+}
+
+/// The strip's height in window px: the content column's top inset.
+pub(super) fn titlebar_h() -> f32 {
+    s(metric::TITLEBAR_H)
 }
 
 impl WindowView {
@@ -35,8 +40,17 @@ impl WindowView {
             true => s(12.),
             false => crate::csd::controls_width(window) + s(8.),
         };
+        let cfg = &self.style.cfg;
+        // A translucent window gets no root fill (window_view.rs), so the strip paints its own,
+        // like a pane's tab strip; its outer top corners are the window's while no sidebar sits there.
+        let radius = gpui::px(crate::csd::corner_radius(window));
         let strip = div()
             .id("titlebar")
+            .when(cfg.background_opacity < 1.0, |d| {
+                d.bg(chrome::rgba(cfg.background, cfg.background_opacity))
+            })
+            .when(self.sidebar_px(window).is_none(), |d| d.rounded_tl(radius))
+            .when(!self.right_sidebar_open, |d| d.rounded_tr(radius))
             .flex()
             .flex_row()
             .flex_none()

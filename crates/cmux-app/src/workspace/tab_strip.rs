@@ -101,7 +101,6 @@ impl WorkspaceView {
         pane: &Pane,
         focused: bool,
         strip_x: f32,
-        chrome: super::PaneChrome,
         cx: &Context<Self>,
     ) -> impl IntoElement + use<> {
         let p = self.palette(focused);
@@ -153,8 +152,6 @@ impl WorkspaceView {
             .flex_none()
             .w_full()
             .h(px(TAB_BAR_HEIGHT))
-            .rounded_tl(gpui::px(chrome.tl))
-            .rounded_tr(gpui::px(chrome.tr))
             .bg(p.bar)
             .on_drag_move(
                 cx.listener(move |this, ev: &DragMoveEvent<DraggedTab>, _, cx| {
