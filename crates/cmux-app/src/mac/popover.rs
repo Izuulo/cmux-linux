@@ -51,11 +51,22 @@ fn arrow_path(a: ArrowPts, origin: Point<Pixels>) -> PathBuilder {
     b
 }
 
+/// Body left edge and arrow centre (design px): the body is centred on `tip_x` but slides to
+/// stay inside the window; the arrow keeps pointing at `tip_x`, within the body's straight edge.
+pub fn popover_left(tip_x: f32, width: f32, window_w: f32, margin: f32) -> (f32, f32) {
+    let left = (tip_x - width / 2.0)
+        .min(window_w - margin - width)
+        .max(margin);
+    let inset = metric::POPOVER_RADIUS + metric::ARROW_W / 2.0;
+    (left, tip_x.clamp(left + inset, left + width - inset))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn popover(
     id: &'static str,
     t: &Theme,
     tip: Point<Pixels>,
+    window_w: f32,
     width: f32,
     height: Option<f32>,
     fade: Fade,
@@ -63,6 +74,13 @@ pub fn popover(
     content: AnyElement,
 ) -> impl IntoElement {
     let amount = fade.amount_at(now);
+    // `window_w` and `width` are design px (unscaled); `tip` is already window px.
+    let (left, arrow_x) = popover_left(
+        f32::from(tip.x) / s(1.0),
+        width,
+        window_w,
+        metric::OVERLAY_MARGIN,
+    );
     let (fill, edge) = (t.glass, t.glass_edge);
     // The arrow is drawn in its own box above the body; the body's top edge hides its base.
     let arrow = canvas(
@@ -89,7 +107,7 @@ pub fn popover(
         .child(content);
     deferred(
         anchored()
-            .position(point(tip.x - gpui::px(s(width) / 2.0), tip.y))
+            .position(point(gpui::px(s(left)), tip.y))
             .snap_to_window_with_margin(px(metric::OVERLAY_MARGIN))
             .child(
                 div()
@@ -100,8 +118,11 @@ pub fn popover(
                     .mt(px(fade.slide(now)))
                     .flex()
                     .flex_col()
-                    .items_center()
-                    .child(arrow)
+                    .child(
+                        div()
+                            .ml(px(arrow_x - left - metric::ARROW_W / 2.0))
+                            .child(arrow),
+                    )
                     // Overlap the arrow's base by 1 px so no seam shows.
                     .child(div().mt(px(-1.0)).child(body)),
             ),
@@ -127,5 +148,42 @@ mod tests {
             );
         }
         assert!(a.tip_ctrl.1 < a.tip_l.1, "the tip curve bulges upward");
+    }
+
+    const M: f32 = metric::OVERLAY_MARGIN;
+    const W: f32 = 560.0;
+    const WIN: f32 = 1200.0;
+    // Arrow centre must stay this far inside the body's edge (straight part of the edge).
+    const INSET: f32 = metric::POPOVER_RADIUS + metric::ARROW_W / 2.0;
+
+    #[test]
+    fn centred_when_there_is_room() {
+        let (left, arrow) = popover_left(600.0, W, WIN, M);
+        assert_eq!((left, arrow), (600.0 - W / 2.0, 600.0));
+    }
+
+    #[test]
+    fn clamped_at_left_edge_arrow_keeps_pointing() {
+        let (left, arrow) = popover_left(100.0, W, WIN, M);
+        assert_eq!((left, arrow), (M, 100.0));
+    }
+
+    #[test]
+    fn clamped_at_right_edge_arrow_keeps_pointing() {
+        let (left, arrow) = popover_left(1150.0, W, WIN, M);
+        assert_eq!((left, arrow), (WIN - M - W, 1150.0));
+    }
+
+    #[test]
+    fn arrow_stays_within_the_straight_edge() {
+        let (left, arrow) = popover_left(0.0, W, WIN, M);
+        assert_eq!(arrow, left + INSET);
+        let (left, arrow) = popover_left(WIN, W, WIN, M);
+        assert_eq!(arrow, left + W - INSET);
+    }
+
+    #[test]
+    fn wider_than_window_pins_to_margin() {
+        assert_eq!(popover_left(300.0, 2000.0, WIN, M).0, M);
     }
 }
