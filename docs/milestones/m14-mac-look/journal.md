@@ -63,3 +63,8 @@ Measured from the owner's Retina screenshots (points = logical px); light mode v
 | Sidebar row | 28 tall, 20 px accent tile + 12 px white glyph | 32 tall (`SIDEBAR_ROW_H`), plain 16 px glyph (`SIDEBAR_GLYPH`), no tile | Settings |
 
 Other: `glass`/`glass_edge` are gone; the omnibar border keeps its old look as `Theme::field_border`. `glass_panel(t, radius, fill)` takes its fill. Not checked on screen (controller screenshots next). Concern: the Settings dropdown list scrolls (`overflow_y_scroll`), so its inner edge overlay scrolls with the content on long lists.
+
+### Calibration (light) and browser bar
+- Light screenshots on the owner's Mac (system appearance switched for a minute and back): cmux's main chrome stays on the terminal theme; the notification popover and Settings follow the system. Popover fill rgb(235,236,237), inner edge white, outer edge near-black (we use black 0.5: at 1x a 1 px line weighs twice a Retina hairline); Settings cards white on a white window, sidebar rgb(235,236,237). Menu light fill not captured cleanly (assumed = popover).
+- Browser bar (dark): omnibar 27 pt tall including its 1 pt border, fill ≈ the terminal background, accent border while focused; back/forward/reload are bare glyphs. `OMNIBAR_H` 22 → 27.
+- The Mac was left as found: dark mode back on, the browser tab and Settings closed.

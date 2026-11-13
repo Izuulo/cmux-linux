@@ -58,10 +58,10 @@ impl Theme {
                 a,
             }
         };
-        // Dark: darker than the window (measured). Light: macOS controlBackgroundColor at 0.76
-        // (sui `SettingsCard`), a step off the backdrop; light: not yet measured.
+        // Measured: dark cards are darker than the window; light cards are white on white,
+        // set off by their edge.
         let card = if light {
-            chrome::shift(bg, 0.06, 0.76)
+            WHITE
         } else {
             chrome::shift(bg, -0.03, 1.0)
         };
@@ -71,7 +71,8 @@ impl Theme {
             b: b / 255.0,
             a: 1.0,
         };
-        let light_fill = chrome::shift(bg, 0.04, 1.0); // light: not yet measured
+        // Light: NSPopover fill measured on macOS 27; menus not measured, assumed the same.
+        let light_fill = grey(235., 236., 237.);
         let black = |a: f32| Rgba {
             r: 0.0,
             g: 0.0,
@@ -114,12 +115,9 @@ impl Theme {
             } else {
                 grey(61., 59., 62.)
             },
-            edge_outer: if light { black(0.15) } else { black(0.9) },
-            edge_inner: if light {
-                alpha(WHITE, 0.6)
-            } else {
-                alpha(WHITE, 0.10)
-            },
+            // Light measured near-black too; 0.5 because at 1x a 1 px line is twice as heavy.
+            edge_outer: if light { black(0.5) } else { black(0.9) },
+            edge_inner: if light { WHITE } else { alpha(WHITE, 0.10) },
             palette: bg,
             palette_border: if light { ink(0.12) } else { ink(0.18) },
             palette_select: alpha(p.accent, 0.14),
@@ -162,7 +160,7 @@ pub mod metric {
     pub const SIDEBAR_GLYPH: f32 = 16.0;
     pub const TOOLBAR_BUTTON: f32 = 26.0;
     pub const TOOLBAR_GLYPH: f32 = 14.0;
-    pub const OMNIBAR_H: f32 = 22.0;
+    pub const OMNIBAR_H: f32 = 27.0; // measured on macOS 27 (cmux source says 18 + padding)
     pub const OMNIBAR_RADIUS: f32 = 10.0;
     pub const OMNIBAR_TEXT: f32 = 12.0;
     pub const OMNIBAR_PAD_X: f32 = 8.0;
@@ -239,7 +237,7 @@ mod tests {
         assert_eq!((dark.menu.r * 255.0).round(), 61.0);
         assert_eq!((dark.edge_outer.r, dark.edge_outer.a), (0.0, 0.9));
         assert_eq!((dark.edge_inner.r, dark.edge_inner.a), (1.0, 0.10));
-        assert_eq!((light.edge_outer.a, light.edge_inner.a), (0.15, 0.6));
+        assert_eq!((light.edge_outer.a, light.edge_inner.a), (0.5, 1.0));
         assert_eq!(dark.palette, dark.bg);
         assert_eq!(dark.palette_select.a, 0.14);
         assert!(
