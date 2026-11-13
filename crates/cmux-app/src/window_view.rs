@@ -722,6 +722,7 @@ impl Render for WindowView {
             .flex()
             .flex_row()
             .size_full()
+            .font_family(crate::style::UI_FONT_FAMILY)
             .on_drag_move(cx.listener(Self::on_sidebar_drag))
             .on_drag_move(cx.listener(Self::on_right_sidebar_drag))
             .on_action(

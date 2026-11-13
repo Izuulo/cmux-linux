@@ -43,6 +43,10 @@ JetBrains Mono 2.304 (crates/cmux-app/assets/fonts/, https://github.com/JetBrain
   Copyright 2020 The JetBrains Mono Project Authors. SIL Open Font License 1.1;
   see crates/cmux-app/assets/fonts/OFL.txt. Bundled unmodified as Ghostty's default font.
 
+Inter 4.1 (crates/cmux-app/assets/fonts/Inter-*.ttf, https://github.com/rsms/inter)
+  Copyright (c) 2016 The Inter Project Authors. SIL Open Font License 1.1;
+  see crates/cmux-app/assets/fonts/Inter-OFL.txt. Bundled unmodified for UI text.
+
 Zed terminal view (https://github.com/zed-industries/zed @ 69e2130295c2649963eb639fc70b4f2ee8ea1624,
   crates/terminal_view and crates/terminal)
   Copyright Zed Industries. GPL-3.0-or-later. crates/cmux-app/src/{terminal_element,

@@ -738,6 +738,7 @@ impl Render for SettingsView {
             );
         div()
             .id("settings")
+            .font_family(crate::style::UI_FONT_FAMILY)
             .key_context("Settings")
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &Quit, window, cx| {
