@@ -7,7 +7,7 @@ use std::rc::Rc;
 use cmux_config::ghostty::{CursorStyle, Rgb, parse_rgb};
 use gpui::{AnyElement, Context, IntoElement, TextSystem, Window, prelude::*};
 
-use super::controls::{self, Colors};
+use super::controls::{self, Theme};
 use super::{FieldId, SettingsView, step};
 use crate::chrome::rgba;
 
@@ -109,7 +109,7 @@ impl SettingsView {
         cx.notify();
     }
 
-    fn font_row(&self, c: Colors, cx: &Context<Self>) -> AnyElement {
+    fn font_row(&self, c: Theme, cx: &Context<Self>) -> AnyElement {
         let current = self.cfg.font_family.first().cloned();
         // "Default" first, then the families; the configured one is kept even if not found.
         let mut items = vec!["Default".to_string()];
@@ -174,7 +174,7 @@ impl SettingsView {
         self.ghostty_row("Font", "font-family", control, c)
     }
 
-    fn ghostty_row(&self, title: &str, key: &str, control: AnyElement, c: Colors) -> AnyElement {
+    fn ghostty_row(&self, title: &str, key: &str, control: AnyElement, c: Theme) -> AnyElement {
         controls::row(title, Some(key), control, self.origin_note(key, c), c)
     }
 
@@ -184,7 +184,7 @@ impl SettingsView {
         key: &'static str,
         current: f32,
         (min, max): (f32, f32),
-        c: Colors,
+        c: Theme,
         cx: &Context<Self>,
     ) -> AnyElement {
         let v = self.slider_value(key, current);
@@ -211,7 +211,7 @@ impl SettingsView {
         title: &str,
         key: &'static str,
         on: bool,
-        c: Colors,
+        c: Theme,
         cx: &Context<Self>,
     ) -> AnyElement {
         let click = self.handler(cx, move |this, _, cx| {
@@ -226,7 +226,7 @@ impl SettingsView {
         key: &'static str,
         current: Option<Rgb>,
         window: &Window,
-        c: Colors,
+        c: Theme,
         cx: &Context<Self>,
     ) -> AnyElement {
         let swatch = current.map(|c| rgba(c, 1.0));
@@ -245,7 +245,7 @@ impl SettingsView {
 
     pub(super) fn render_terminal(
         &mut self,
-        c: Colors,
+        c: Theme,
         window: &Window,
         cx: &Context<Self>,
     ) -> Vec<AnyElement> {

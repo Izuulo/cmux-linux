@@ -9,7 +9,7 @@ use gpui::{
     Window, div, prelude::*,
 };
 
-use super::controls::{self, CONTROL_W, Colors};
+use super::controls::{self, CONTROL_W, Theme};
 use super::{FieldId, SettingsView};
 use crate::ui::px;
 
@@ -102,7 +102,7 @@ impl SettingsView {
         &self,
         id: impl Into<gpui::ElementId>,
         label: &'static str,
-        c: Colors,
+        c: Theme,
         cx: &Context<Self>,
         f: impl Fn(&mut Self, &mut Context<Self>) + 'static,
     ) -> AnyElement {
@@ -123,7 +123,7 @@ impl SettingsView {
 
     pub(super) fn render_automation(
         &self,
-        c: Colors,
+        c: Theme,
         window: &Window,
         cx: &Context<Self>,
     ) -> Vec<AnyElement> {

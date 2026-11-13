@@ -29,7 +29,7 @@ use crate::actions::{CloseTab, OpenSettings, Quit};
 use crate::style::TermStyle;
 use crate::ui::px;
 use crate::window_view::rename::{RenameKey, RenameOutcome, RenameState};
-use controls::{Colors, Handler};
+use controls::{Handler, Theme};
 
 const WINDOW_W: f32 = 980.0;
 const WINDOW_H: f32 = 680.0;
@@ -307,7 +307,7 @@ impl SettingsView {
     }
 
     /// W2's note for a row whose value comes from another file.
-    fn origin_note(&self, key: &str, c: Colors) -> Option<(String, gpui::Rgba)> {
+    fn origin_note(&self, key: &str, c: Theme) -> Option<(String, gpui::Rgba)> {
         let path = self.origins.get(key)?;
         let main = edit::main_file(&self.env);
         let name = main
@@ -611,11 +611,11 @@ impl SettingsView {
 
     // ---- render ----
 
-    fn colors(&self) -> Colors {
-        Colors::new(crate::chrome::rgba(self.style.cfg.background, 1.0))
+    fn colors(&self) -> Theme {
+        Theme::new(crate::chrome::rgba(self.style.cfg.background, 1.0))
     }
 
-    fn render_sidebar(&self, c: Colors, cx: &Context<Self>) -> impl IntoElement {
+    fn render_sidebar(&self, c: Theme, cx: &Context<Self>) -> impl IntoElement {
         let mut items = Vec::new();
         for (group, sections) in GROUPS {
             items.push(
@@ -673,7 +673,7 @@ impl SettingsView {
             .children(items)
     }
 
-    fn render_app(&self, c: Colors, cx: &Context<Self>) -> Vec<gpui::AnyElement> {
+    fn render_app(&self, c: Theme, cx: &Context<Self>) -> Vec<gpui::AnyElement> {
         let scale = self.ui_scale;
         let by = |dir: f32| {
             self.handler(cx, move |this, _, cx| {

@@ -15,6 +15,7 @@ pub mod csd;
 pub mod desktop_notify;
 pub mod ime;
 pub mod keys;
+pub mod mac;
 pub mod mouse;
 pub mod settings;
 pub mod style;

@@ -10,7 +10,7 @@ use gpui::{
 };
 
 use super::SettingsView;
-use super::controls::{self, Colors};
+use super::controls::{self, Theme};
 use crate::actions::PALETTE;
 use crate::ui::px;
 
@@ -128,7 +128,7 @@ impl SettingsView {
             .collect()
     }
 
-    fn shortcut_row(&self, action: &'static str, c: Colors, cx: &Context<Self>) -> AnyElement {
+    fn shortcut_row(&self, action: &'static str, c: Theme, cx: &Context<Self>) -> AnyElement {
         let hints = self.hints(action);
         let recording = self.recording == Some(action);
         let (label, color) = if recording {
@@ -248,7 +248,7 @@ impl SettingsView {
             .into_any_element()
     }
 
-    pub(super) fn render_shortcuts(&self, c: Colors, cx: &Context<Self>) -> Vec<AnyElement> {
+    pub(super) fn render_shortcuts(&self, c: Theme, cx: &Context<Self>) -> Vec<AnyElement> {
         let reset = self.button(
             "reset-shortcuts",
             "↺ Reset Defaults",

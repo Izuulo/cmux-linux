@@ -5,7 +5,6 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use crate::chrome;
 use crate::ui::px;
 use gpui::{
     AnyElement, App, Bounds, ClickEvent, FontWeight, InteractiveElement, IntoElement, MouseButton,
@@ -26,68 +25,10 @@ pub type Handler = Rc<dyn Fn(&mut Window, &mut App)>;
 /// Gets the index of the clicked choice.
 pub type Pick = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 
-/// Settings colours, derived from the terminal background like the rest of the chrome.
-#[derive(Debug, Clone, Copy)]
-pub struct Colors {
-    pub bg: Rgba,
-    pub sidebar: Rgba,
-    pub card: Rgba,
-    pub separator: Rgba,
-    pub text: Rgba,
-    pub secondary: Rgba,
-    pub accent: Rgba,
-    pub hover: Rgba,
-    pub control: Rgba,
-    pub warning: Rgba,
-    pub error: Rgba,
-}
-
-impl Colors {
-    pub fn new(bg: Rgba) -> Self {
-        let p = chrome::sidebar_palette(bg);
-        let light = chrome::wcag_is_light(bg);
-        let ink = |a: f32| {
-            let v = if light { 0.0 } else { 1.0 };
-            Rgba {
-                r: v,
-                g: v,
-                b: v,
-                a,
-            }
-        };
-        // macOS controlBackgroundColor at 0.76 (sui `SettingsCard`): a step off the backdrop.
-        let card = chrome::shift(bg, if light { 0.06 } else { 0.05 }, 0.76);
-        Colors {
-            bg,
-            sidebar: chrome::shift(bg, if light { -0.03 } else { 0.025 }, 1.0),
-            card,
-            separator: Rgba {
-                a: p.border.a * 0.5,
-                ..p.border
-            },
-            text: p.title,
-            secondary: p.detail,
-            accent: p.accent,
-            hover: ink(0.07),
-            control: ink(0.12),
-            warning: Rgba {
-                r: 1.0,
-                g: 0.62,
-                b: 0.04,
-                a: 1.0,
-            },
-            error: Rgba {
-                r: 1.0,
-                g: 0.27,
-                b: 0.23,
-                a: 1.0,
-            },
-        }
-    }
-}
+pub use crate::mac::Theme;
 
 /// A section heading above a card.
-pub fn header(title: &str, c: Colors) -> impl IntoElement {
+pub fn header(title: &str, c: Theme) -> impl IntoElement {
     div()
         .pl(px(2.))
         .text_size(px(13.))
@@ -97,7 +38,7 @@ pub fn header(title: &str, c: Colors) -> impl IntoElement {
 }
 
 /// Rows stacked in a rounded card with a separator line between them.
-pub fn card(rows: Vec<AnyElement>, c: Colors) -> impl IntoElement {
+pub fn card(rows: Vec<AnyElement>, c: Theme) -> impl IntoElement {
     let n = rows.len();
     let mut out = Vec::with_capacity(n * 2);
     for (k, row) in rows.into_iter().enumerate() {
@@ -139,7 +80,7 @@ pub fn row(
     subtitle: Option<&str>,
     control: AnyElement,
     note_line: Option<(String, Rgba)>,
-    c: Colors,
+    c: Theme,
 ) -> AnyElement {
     div()
         .flex()
@@ -187,7 +128,7 @@ pub fn row(
         .into_any_element()
 }
 
-fn button_base(id: impl Into<gpui::ElementId>, c: Colors) -> gpui::Stateful<gpui::Div> {
+fn button_base(id: impl Into<gpui::ElementId>, c: Theme) -> gpui::Stateful<gpui::Div> {
     div()
         .id(id)
         .flex()
@@ -207,7 +148,7 @@ fn button_base(id: impl Into<gpui::ElementId>, c: Colors) -> gpui::Stateful<gpui
 }
 
 /// An on/off switch.
-pub fn toggle(id: &'static str, on: bool, c: Colors, click: Handler) -> AnyElement {
+pub fn toggle(id: &'static str, on: bool, c: Theme, click: Handler) -> AnyElement {
     let (w, h) = (32.0, 18.0);
     div()
         .id(id)
@@ -229,7 +170,7 @@ pub fn toggle(id: &'static str, on: bool, c: Colors, click: Handler) -> AnyEleme
 pub fn stepper(
     id: &'static str,
     value: String,
-    c: Colors,
+    c: Theme,
     down: Handler,
     up: Handler,
 ) -> AnyElement {
@@ -273,7 +214,7 @@ pub fn segmented(
     id: &'static str,
     options: &[&str],
     selected: usize,
-    c: Colors,
+    c: Theme,
     pick: Pick,
 ) -> AnyElement {
     div()
@@ -316,7 +257,7 @@ pub fn slider(
     frac: f32,
     label: String,
     track: Rc<Cell<Bounds<Pixels>>>,
-    c: Colors,
+    c: Theme,
     down: impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
     let frac = frac.clamp(0.0, 1.0);
@@ -391,7 +332,7 @@ pub fn slider(
 }
 
 /// A button showing the current choice; the caller draws the list (`dropdown_list`) when open.
-pub fn dropdown_button(id: &'static str, label: String, c: Colors, click: Handler) -> AnyElement {
+pub fn dropdown_button(id: &'static str, label: String, c: Theme, click: Handler) -> AnyElement {
     button_base(id, c)
         .w(px(CONTROL_W))
         .justify_between()
@@ -416,7 +357,7 @@ pub fn dropdown_list(
     id: &'static str,
     items: &[String],
     selected: Option<usize>,
-    c: Colors,
+    c: Theme,
     pick: Pick,
     close: Handler,
 ) -> AnyElement {
@@ -470,7 +411,7 @@ pub fn text_field(
     placeholder: &str,
     swatch: Option<Rgba>,
     width: f32,
-    c: Colors,
+    c: Theme,
     click: Handler,
 ) -> gpui::Stateful<gpui::Div> {
     // shortcut: the caret is a glyph after the text (no cursor movement, no IME), as in the

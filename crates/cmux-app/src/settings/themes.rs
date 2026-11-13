@@ -9,7 +9,7 @@ use gpui::{
     Rgba, SharedString, StatefulInteractiveElement, Styled, Window, canvas, div, prelude::*,
 };
 
-use super::controls::{self, Colors};
+use super::controls::{self, Theme};
 use super::{FieldId, SettingsView};
 use crate::chrome::{rgba, wcag_is_light};
 use crate::ui::{px, s};
@@ -87,7 +87,7 @@ impl SettingsView {
         t: &ThemePreview,
         selected: bool,
         w: f32,
-        c: Colors,
+        c: Theme,
         cx: &Context<Self>,
     ) -> AnyElement {
         let fg = rgba(t.foreground, 1.0);
@@ -179,7 +179,7 @@ impl SettingsView {
 
     pub(super) fn render_themes(
         &mut self,
-        c: Colors,
+        c: Theme,
         window: &Window,
         cx: &mut Context<Self>,
     ) -> Vec<AnyElement> {
