@@ -1,4 +1,4 @@
-//! NSMenu look: glass list, accent row under the pointer, shortcut right-aligned.
+//! NSMenu look: list, accent row under the pointer, shortcut right-aligned.
 
 use gpui::{
     AnyElement, Div, ElementId, InteractiveElement, IntoElement, ParentElement, SharedString,
@@ -16,7 +16,7 @@ pub fn menu_height(items: usize, separators: usize) -> f32 {
 }
 
 pub fn menu(t: &Theme, rows: Vec<AnyElement>) -> Div {
-    glass_panel(t, metric::MENU_RADIUS)
+    glass_panel(t, metric::MENU_RADIUS, t.menu)
         .w(px(metric::MENU_W))
         .py(px(metric::MENU_INSET))
         .flex()

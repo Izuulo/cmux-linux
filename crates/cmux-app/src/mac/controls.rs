@@ -18,9 +18,6 @@ use gpui::{
 pub const CONTROL_W: f32 = 200.0;
 const ROW_PAD_X: f32 = 14.0;
 const ROW_PAD_Y: f32 = 9.0;
-const SIDEBAR_ROW_H: f32 = 28.0;
-const SIDEBAR_TILE: f32 = 20.0;
-const SIDEBAR_GLYPH: f32 = 12.0;
 const SLIDER_W: f32 = 140.0;
 const SLIDER_LABEL_W: f32 = 44.0;
 const KNOB: f32 = 14.0;
@@ -61,7 +58,7 @@ pub fn card(rows: Vec<AnyElement>, c: Theme) -> impl IntoElement {
         .rounded(px(metric::CARD_RADIUS))
         .bg(c.card)
         .border_1()
-        .border_color(c.separator)
+        .border_color(c.card_edge)
         .children(out)
 }
 
@@ -360,7 +357,7 @@ pub fn dropdown_list(
 ) -> AnyElement {
     gpui::deferred(
         gpui::anchored().snap_to_window_with_margin(px(4.)).child(
-            glass_panel(&c, metric::MENU_RADIUS)
+            glass_panel(&c, metric::MENU_RADIUS, c.menu)
                 .id(id)
                 .occlude()
                 .mt(px(24.))
@@ -437,8 +434,8 @@ pub fn text_field(
         .on_click(move |_: &ClickEvent, window, cx| click(window, cx))
 }
 
-/// A Settings sidebar entry: coloured icon tile, label; `selected` fills it like a menu hover.
-/// The caller adds the click handler.
+/// A Settings sidebar entry: monochrome glyph, label; `selected` fills it with the accent and
+/// white text. The caller adds the click handler.
 pub fn sidebar_row(
     id: impl Into<ElementId>,
     t: &Theme,
@@ -453,33 +450,19 @@ pub fn sidebar_row(
         .flex_row()
         .items_center()
         .gap(px(8.))
-        .h(px(SIDEBAR_ROW_H))
-        .px(px(6.))
+        .h(px(metric::SIDEBAR_ROW_H))
+        .px(px(8.))
         .rounded(px(metric::MENU_ITEM_RADIUS))
         .text_size(px(metric::BODY_TEXT))
         .text_color(fg)
         .when(selected, |d| d.bg(t.menu_hover))
         .when(!selected, |d| d.hover(move |s| s.bg(hover)))
         .child(
-            div()
-                .flex()
-                .items_center()
-                .justify_center()
+            svg()
+                .path(icon)
                 .flex_none()
-                .size(px(SIDEBAR_TILE))
-                .rounded(px(metric::CONTROL_RADIUS))
-                // On the accent-filled selected row an accent tile would vanish: a light tint instead.
-                .bg(if selected {
-                    super::alpha(t.menu_hover_text, 0.25)
-                } else {
-                    t.accent
-                })
-                .child(
-                    svg()
-                        .path(icon)
-                        .size(px(SIDEBAR_GLYPH))
-                        .text_color(t.menu_hover_text),
-                ),
+                .size(px(metric::SIDEBAR_GLYPH))
+                .text_color(fg),
         )
         .child(SharedString::from(label.to_string()))
 }

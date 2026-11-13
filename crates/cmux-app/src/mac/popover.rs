@@ -10,43 +10,53 @@ use gpui::{
 use super::{Fade, Theme, glass_panel, metric, overlay};
 use crate::ui::{px, s};
 
-/// Up-pointing arrow outline: flared shoulders into a rounded tip.
+/// Up-pointing arrow outline: bell-shaped flanks (concave flare into the base) and a rounded tip.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ArrowPts {
     pub base_l: (f32, f32),
+    pub flare_l: (f32, f32),
     pub shoulder_l: (f32, f32),
     pub tip_l: (f32, f32),
     pub tip_ctrl: (f32, f32),
     pub tip_r: (f32, f32),
     pub shoulder_r: (f32, f32),
+    pub flare_r: (f32, f32),
     pub base_r: (f32, f32),
 }
 
 pub fn arrow_points(tip_x: f32, tip_y: f32) -> ArrowPts {
     let (w, h, r) = (metric::ARROW_W, metric::ARROW_H, metric::ARROW_TIP_R);
     let base_y = tip_y + h;
+    // The tip is a quadratic whose end tangents are 45 degrees: ends at (+-0.7r, 0.35r), control
+    // at (0, -0.35r), so its apex is `tip_y`. Each flank continues that 45 degree line down to
+    // the shoulder, then a quadratic flares out of the base: no kink anywhere.
+    let (dx, dy) = (r * 0.7, r * 0.35);
+    let u = h * 0.46 - dy;
+    let (sx, sy) = (dx + u, dy + u);
+    let fx = sx + (h - sy);
     ArrowPts {
         base_l: (tip_x - w / 2.0, base_y),
-        shoulder_l: (tip_x - w * 0.2, tip_y + h * 0.45),
-        tip_l: (tip_x - r, tip_y + r),
-        tip_ctrl: (tip_x, tip_y - r * 0.2),
-        tip_r: (tip_x + r, tip_y + r),
-        shoulder_r: (tip_x + w * 0.2, tip_y + h * 0.45),
+        flare_l: (tip_x - fx, base_y),
+        shoulder_l: (tip_x - sx, tip_y + sy),
+        tip_l: (tip_x - dx, tip_y + dy),
+        tip_ctrl: (tip_x, tip_y - dy),
+        tip_r: (tip_x + dx, tip_y + dy),
+        shoulder_r: (tip_x + sx, tip_y + sy),
+        flare_r: (tip_x + fx, base_y),
         base_r: (tip_x + w / 2.0, base_y),
     }
 }
 
-/// Scaled gpui path for `a`; the shoulders curve out of the base like NSPopover's.
+/// gpui path for `a`.
 fn arrow_path(a: ArrowPts, origin: Point<Pixels>) -> PathBuilder {
     let at = |(x, y): (f32, f32)| point(origin.x + px(x), origin.y + px(y));
-    let w = metric::ARROW_W;
     let mut b = PathBuilder::fill();
     b.move_to(at(a.base_l));
-    b.curve_to(at(a.shoulder_l), at((a.base_l.0 + w * 0.18, a.base_l.1)));
+    b.curve_to(at(a.shoulder_l), at(a.flare_l));
     b.line_to(at(a.tip_l));
     b.curve_to(at(a.tip_r), at(a.tip_ctrl));
     b.line_to(at(a.shoulder_r));
-    b.curve_to(at(a.base_r), at((a.base_r.0 - w * 0.18, a.base_r.1)));
+    b.curve_to(at(a.base_r), at(a.flare_r));
     b.close();
     b
 }
@@ -81,26 +91,25 @@ pub fn popover(
         window_w,
         metric::OVERLAY_MARGIN,
     );
-    let (fill, edge) = (t.glass, t.glass_edge);
-    // Drawn after the body, overlapping its top border by 1 px: the fill covers the border
-    // across the base, so no line crosses the arrow.
+    let (fill, outer, inner) = (t.popover, t.edge_outer, t.edge_inner);
+    // Drawn after the body, overlapping its two top lines (2 px): each layer sits 1 px lower
+    // than the last, so the outer line, the inner line and the fill show as on the body, and
+    // the last fill covers both lines across the base.
     let arrow = canvas(
         |_, _, _| {},
         move |bounds, _, window, _| {
-            let a = arrow_points(metric::ARROW_W / 2.0, 0.0);
-            if let Ok(p) = arrow_path(a, bounds.origin).build() {
-                window.paint_path(p, edge);
-            }
-            // Inset 1 px so the edge colour shows as a hairline outline.
-            let inner = arrow_points(metric::ARROW_W / 2.0, 1.0);
-            if let Ok(p) = arrow_path(inner, bounds.origin).build() {
-                window.paint_path(p, fill);
+            let layers = [(0.0, outer), (1.0, fill), (1.0, inner), (2.0, fill)];
+            for (tip_y, color) in layers {
+                let a = arrow_points(metric::ARROW_W / 2.0, tip_y);
+                if let Ok(p) = arrow_path(a, bounds.origin).build() {
+                    window.paint_path(p, color);
+                }
             }
         },
     )
     .w(px(metric::ARROW_W))
-    .h(px(metric::ARROW_H + 1.0));
-    let body = glass_panel(t, metric::POPOVER_RADIUS)
+    .h(px(metric::ARROW_H + 2.0));
+    let body = glass_panel(t, metric::POPOVER_RADIUS, fill)
         .w(px(width))
         .when_some(height, |d, h| d.h(px(h)))
         .flex()
@@ -137,6 +146,13 @@ mod tests {
             );
         }
         assert!(a.tip_ctrl.1 < a.tip_l.1, "the tip curve bulges upward");
+        // Bell shape: the flare control stays on the base line, between the base corner and
+        // the shoulder (concave), and the 45 degree tip tangent continues into the shoulder.
+        assert_eq!(a.flare_l.1, a.base_l.1);
+        assert!(a.base_l.0 < a.flare_l.0 && a.flare_l.0 < a.shoulder_l.0);
+        let slope = |p: (f32, f32), q: (f32, f32)| (q.1 - p.1) / (q.0 - p.0);
+        assert!((slope(a.shoulder_l, a.tip_l) + 1.0).abs() < 1e-4);
+        assert!((slope(a.flare_l, a.shoulder_l) + 1.0).abs() < 1e-4);
     }
 
     const M: f32 = metric::OVERLAY_MARGIN;

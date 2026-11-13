@@ -16,13 +16,34 @@ pub struct Theme {
     pub control: Rgba,
     pub warning: Rgba,
     pub error: Rgba,
-    /// Popover, menu and palette fill (plan K4: opaque; without blur any see-through shows text behind).
-    pub glass: Rgba,
-    pub glass_edge: Rgba,
+    /// Notification popover fill (opaque: without blur any see-through shows text behind).
+    pub popover: Rgba,
+    /// NSMenu fill (opaque, lighter than the popover).
+    pub menu: Rgba,
+    /// Outer 1 px line of popovers and menus.
+    pub edge_outer: Rgba,
+    /// Inner 1 px light line of popovers and menus.
+    pub edge_inner: Rgba,
+    /// Command palette fill: the terminal background itself.
+    pub palette: Rgba,
+    pub palette_border: Rgba,
+    /// Command palette selected row: a tint over the fill, the text keeps its colour.
+    pub palette_select: Rgba,
+    /// Card outline.
+    pub card_edge: Rgba,
+    /// Outline of an inline text field (omnibar).
+    pub field_border: Rgba,
     /// Menu row under the pointer: accent fill, white text (NSMenu).
     pub menu_hover: Rgba,
     pub menu_hover_text: Rgba,
 }
+
+const WHITE: Rgba = Rgba {
+    r: 1.0,
+    g: 1.0,
+    b: 1.0,
+    a: 1.0,
+};
 
 impl Theme {
     pub fn new(bg: Rgba) -> Self {
@@ -37,16 +58,35 @@ impl Theme {
                 a,
             }
         };
-        // macOS controlBackgroundColor at 0.76 (sui `SettingsCard`): a step off the backdrop.
-        let card = chrome::shift(bg, if light { 0.06 } else { 0.05 }, 0.76);
+        // Dark: darker than the window (measured). Light: macOS controlBackgroundColor at 0.76
+        // (sui `SettingsCard`), a step off the backdrop; light: not yet measured.
+        let card = if light {
+            chrome::shift(bg, 0.06, 0.76)
+        } else {
+            chrome::shift(bg, -0.03, 1.0)
+        };
+        let grey = |r: f32, g: f32, b: f32| Rgba {
+            r: r / 255.0,
+            g: g / 255.0,
+            b: b / 255.0,
+            a: 1.0,
+        };
+        let light_fill = chrome::shift(bg, 0.04, 1.0); // light: not yet measured
+        let black = |a: f32| Rgba {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a,
+        };
+        let separator = Rgba {
+            a: p.border.a * 0.5,
+            ..p.border
+        };
         Theme {
             bg,
             sidebar: chrome::shift(bg, if light { -0.03 } else { 0.025 }, 1.0),
             card,
-            separator: Rgba {
-                a: p.border.a * 0.5,
-                ..p.border
-            },
+            separator,
             text: p.title,
             secondary: p.detail,
             accent: p.accent,
@@ -64,43 +104,62 @@ impl Theme {
                 b: 0.23,
                 a: 1.0,
             },
-            glass: chrome::shift(bg, if light { 0.04 } else { 0.06 }, 1.0),
-            glass_edge: if light { ink(0.10) } else { ink(0.14) },
-            menu_hover: p.accent,
-            menu_hover_text: Rgba {
-                r: 1.0,
-                g: 1.0,
-                b: 1.0,
-                a: 1.0,
+            popover: if light {
+                light_fill
+            } else {
+                grey(30., 30., 30.)
             },
+            menu: if light {
+                light_fill
+            } else {
+                grey(61., 59., 62.)
+            },
+            edge_outer: if light { black(0.15) } else { black(0.9) },
+            edge_inner: if light {
+                alpha(WHITE, 0.6)
+            } else {
+                alpha(WHITE, 0.10)
+            },
+            palette: bg,
+            palette_border: if light { ink(0.12) } else { ink(0.18) },
+            palette_select: alpha(p.accent, 0.14),
+            card_edge: if light { separator } else { ink(0.08) },
+            field_border: if light { ink(0.10) } else { ink(0.14) },
+            menu_hover: p.accent,
+            menu_hover_text: WHITE,
         }
     }
 }
 
-/// Tahoe metrics in logical pixels before UI scale (plan K3). Calibrated in Task 11.
+/// Tahoe metrics in logical pixels before UI scale (plan K3). Calibrated against cmux on
+/// macOS 27 (2026-11-12, dark).
 pub mod metric {
     pub const WINDOW_RADIUS: f32 = 16.0;
     pub const TITLEBAR_H: f32 = 28.0;
     pub const TITLE_TEXT: f32 = 13.0;
     pub const BODY_TEXT: f32 = 13.0;
     pub const SMALL_TEXT: f32 = 11.0;
-    pub const MENU_RADIUS: f32 = 12.0;
+    pub const MENU_RADIUS: f32 = 13.0;
     pub const MENU_INSET: f32 = 5.0;
     pub const MENU_ITEM_H: f32 = 24.0;
-    pub const MENU_ITEM_RADIUS: f32 = 7.0;
+    pub const MENU_ITEM_RADIUS: f32 = 8.0;
     pub const MENU_ITEM_PAD_X: f32 = 10.0;
     pub const MENU_W: f32 = 220.0;
-    pub const POPOVER_RADIUS: f32 = 16.0;
-    pub const ARROW_W: f32 = 26.0;
-    pub const ARROW_H: f32 = 11.0;
-    pub const ARROW_TIP_R: f32 = 3.0;
-    pub const PALETTE_RADIUS: f32 = 16.0;
-    pub const CARD_RADIUS: f32 = 13.0;
+    pub const POPOVER_RADIUS: f32 = 20.0;
+    pub const ARROW_W: f32 = 30.0;
+    pub const ARROW_H: f32 = 12.0;
+    pub const ARROW_TIP_R: f32 = 4.0;
+    pub const PALETTE_RADIUS: f32 = 9.0;
+    pub const PALETTE_FIELD_H: f32 = 30.0;
+    pub const PALETTE_ROW_H: f32 = 20.0;
+    pub const CARD_RADIUS: f32 = 12.0;
     pub const CONTROL_RADIUS: f32 = 7.0;
     /// Small key-hint and count badges.
     pub const BADGE_RADIUS: f32 = 4.0;
-    pub const SWITCH_W: f32 = 38.0;
+    pub const SWITCH_W: f32 = 44.0;
     pub const SWITCH_H: f32 = 22.0;
+    pub const SIDEBAR_ROW_H: f32 = 32.0;
+    pub const SIDEBAR_GLYPH: f32 = 16.0;
     pub const TOOLBAR_BUTTON: f32 = 26.0;
     pub const TOOLBAR_GLYPH: f32 = 14.0;
     pub const OMNIBAR_H: f32 = 22.0;
@@ -139,7 +198,7 @@ pub fn alpha(c: Rgba, a: f32) -> Rgba {
     Rgba { a, ..c }
 }
 
-/// Soft two-layer shadow under glass (plan K4).
+/// Soft two-layer shadow under popovers and menus (plan K4).
 pub fn popover_shadow() -> Vec<BoxShadow> {
     let black = |a: f32| Rgba {
         r: 0.0,
@@ -172,12 +231,21 @@ mod tests {
     }
 
     #[test]
-    fn glass_is_opaque_and_edge_follows_appearance() {
+    fn surfaces_are_opaque_and_edges_follow_appearance() {
         let dark = Theme::new(rgba(0.1, 0.1, 0.1));
         let light = Theme::new(rgba(0.95, 0.95, 0.95));
-        assert_eq!(dark.glass.a, 1.0);
-        assert_eq!((dark.glass_edge.r, dark.glass_edge.a), (1.0, 0.14));
-        assert_eq!((light.glass_edge.r, light.glass_edge.a), (0.0, 0.10));
+        assert_eq!((dark.popover.a, dark.menu.a), (1.0, 1.0));
+        assert_eq!((dark.popover.r * 255.0).round(), 30.0);
+        assert_eq!((dark.menu.r * 255.0).round(), 61.0);
+        assert_eq!((dark.edge_outer.r, dark.edge_outer.a), (0.0, 0.9));
+        assert_eq!((dark.edge_inner.r, dark.edge_inner.a), (1.0, 0.10));
+        assert_eq!((light.edge_outer.a, light.edge_inner.a), (0.15, 0.6));
+        assert_eq!(dark.palette, dark.bg);
+        assert_eq!(dark.palette_select.a, 0.14);
+        assert!(
+            dark.card.r < dark.bg.r,
+            "dark cards are darker than the window"
+        );
         assert_eq!(dark.menu_hover, dark.accent);
     }
 

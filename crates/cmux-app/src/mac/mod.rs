@@ -12,7 +12,7 @@ pub mod tokens;
 
 pub use fade::Fade;
 pub use fading::Fading;
-pub use glass::glass_panel;
+pub use glass::{glass_panel, palette_panel};
 pub use menu::{menu, menu_height, menu_item, menu_separator};
 pub use overlay::overlay;
 pub use popover::{ArrowPts, arrow_points, popover};

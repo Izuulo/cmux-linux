@@ -39,3 +39,27 @@
 - The palette fades out with its real rows (no focus, no handlers) instead of the measured empty shell; `palette_h` is gone. A run custom command is cloned, not taken, so the rows don't change mid-fade.
 - NOTICE: Lucide list now names every icon in `assets/icons/` (added chevron-left, globe, rotate-cw, lock).
 - `cargo test -p cmux-app`: 133 (137 with `--features browser`); clippy and fmt clean both ways; `check-mac-tokens.sh` ok. Not checked on screen.
+
+### Calibration (dark) — cmux on macOS 27, 2026-11-12
+Measured from the owner's Retina screenshots (points = logical px); light mode values are unchanged guesses, marked `// light: not yet measured` in `mac/tokens.rs`.
+
+| Value | Before | After | Source |
+|---|---|---|---|
+| `POPOVER_RADIUS` | 16 | 20 | notification popover |
+| `ARROW_W` / `ARROW_H` / `ARROW_TIP_R` | 26 / 11 / 3 | 30 / 12 / 4 | popover arrow; bell-shaped flanks (concave flare, 45 degree tip tangents) |
+| Popover fill | bg +0.06 (`glass`) | rgb(30,30,30), `Theme::popover` | popover |
+| `MENU_RADIUS` | 12 | 13 | File menu |
+| Menu fill | bg +0.06 (`glass`) | rgb(61,59,62), `Theme::menu` | File menu |
+| Popover/menu edge | one 1 px line, white 0.14 (`glass_edge`) | outer 1 px black 0.9 (`edge_outer`) + inner 1 px white 0.10 (`edge_inner`, radius-1 overlay) | popover, menu |
+| `PALETTE_RADIUS` | 16 | 9 | palette |
+| Palette fill / border | bg +0.06 / white 0.14, shadow | terminal bg / white 0.18, no shadow (`palette_panel`) | palette |
+| Palette field / row height | ~30 (padding) / 24 | 30 / 20 (`PALETTE_FIELD_H`, `PALETTE_ROW_H`) | palette |
+| Palette selection | accent fill, white text | accent 0.14 over fill, normal text (`palette_select`) | palette |
+| `MENU_ITEM_RADIUS` | 7 | 8 | palette highlight, menu/sidebar rows |
+| `CARD_RADIUS` | 13 | 12 | Settings |
+| Card fill (dark) | bg +0.05 at 0.76 | bg -0.03 opaque | window rgb(41,42,43), card rgb(33,33,33) |
+| Card edge (dark) | `separator` | white 0.08 (`card_edge`) | Settings |
+| `SWITCH_W` | 38 | 44 (H stays 22) | Settings |
+| Sidebar row | 28 tall, 20 px accent tile + 12 px white glyph | 32 tall (`SIDEBAR_ROW_H`), plain 16 px glyph (`SIDEBAR_GLYPH`), no tile | Settings |
+
+Other: `glass`/`glass_edge` are gone; the omnibar border keeps its old look as `Theme::field_border`. `glass_panel(t, radius, fill)` takes its fill. Not checked on screen (controller screenshots next). Concern: the Settings dropdown list scrolls (`overflow_y_scroll`), so its inner edge overlay scrolls with the content on long lists.

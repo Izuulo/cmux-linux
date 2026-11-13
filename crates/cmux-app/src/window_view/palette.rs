@@ -25,10 +25,8 @@ const MIN_W: f32 = 340.0;
 const SIDE_ROOM: f32 = 260.0;
 const TOP: f32 = 40.0;
 const FIELD_PAD_X: f32 = 9.0;
-const FIELD_PAD_Y: f32 = 7.0;
-const ROW_H: f32 = 24.0;
+const EMPTY_PAD_Y: f32 = 7.0;
 const ROW_PAD_X: f32 = 9.0;
-const ROW_PAD_Y: f32 = 2.0;
 const LIST_MAX_H: f32 = 450.0;
 
 /// What a row does when run.
@@ -326,8 +324,8 @@ impl WindowView {
             .flex()
             .flex_row()
             .items_center()
+            .h(px(metric::PALETTE_FIELD_H))
             .px(px(FIELD_PAD_X))
-            .py(px(FIELD_PAD_Y))
             .text_size(px(metric::BODY_TEXT))
             .text_color(t.text)
             .whitespace_nowrap()
@@ -355,7 +353,7 @@ impl WindowView {
                 d.child(
                     div()
                         .px(px(ROW_PAD_X))
-                        .py(px(FIELD_PAD_Y))
+                        .py(px(EMPTY_PAD_Y))
                         .text_size(px(metric::BODY_TEXT))
                         .text_color(t.secondary)
                         .child(empty),
@@ -370,13 +368,12 @@ impl WindowView {
                     .flex_row()
                     .items_center()
                     .gap(px(8.))
-                    .h(px(ROW_H))
+                    .h(px(metric::PALETTE_ROW_H))
                     .px(px(ROW_PAD_X))
-                    .py(px(ROW_PAD_Y))
                     .rounded(px(metric::MENU_ITEM_RADIUS))
                     .text_size(px(metric::BODY_TEXT))
-                    .text_color(if chosen { t.menu_hover_text } else { t.text })
-                    .when(chosen, |d| d.bg(t.menu_hover))
+                    .text_color(t.text)
+                    .when(chosen, |d| d.bg(t.palette_select))
                     .when(!chosen, |d| d.hover(|s| s.bg(t.hover)))
                     .child(
                         div()
@@ -396,11 +393,7 @@ impl WindowView {
                             .bg(t.hover)
                             .text_size(px(metric::SMALL_TEXT))
                             .font_weight(FontWeight::MEDIUM)
-                            .text_color(if chosen {
-                                t.menu_hover_text
-                            } else {
-                                t.secondary
-                            })
+                            .text_color(t.secondary)
                             .child(h)
                     }))
                     .when(live, |d| {
@@ -409,7 +402,7 @@ impl WindowView {
                         }))
                     })
             }));
-        let panel = mac::glass_panel(&t, metric::PALETTE_RADIUS)
+        let panel = mac::palette_panel(&t)
             .id("command-palette")
             .relative()
             .flex()

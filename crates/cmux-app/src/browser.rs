@@ -363,7 +363,7 @@ impl BrowserView {
             .border_color(if editing.is_some() {
                 t.accent
             } else {
-                t.glass_edge
+                t.field_border
             })
             .overflow_hidden()
             .whitespace_nowrap()
