@@ -7,30 +7,29 @@ use cmux_config::commands::sanitize;
 use cmux_config::keybindings::Binding;
 use cmux_core::{SurfaceId, WorkspaceId};
 use gpui::{
-    BoxShadow, ClickEvent, Context, FocusHandle, FontWeight, InteractiveElement, IntoElement,
-    KeyDownEvent, ParentElement, Rgba, ScrollHandle, SharedString, StatefulInteractiveElement,
-    Styled, Subscription, Window, anchored, deferred, div, point, prelude::*,
+    ClickEvent, Context, FocusHandle, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
+    ParentElement, ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Subscription,
+    Window, anchored, canvas, deferred, div, point, prelude::*,
 };
+use std::time::Instant;
 
 use super::WindowView;
 use super::rename::{RenameKey, RenameOutcome, RenameState};
 use crate::actions::{Hints, PALETTE, action_for};
 use crate::chrome;
+use crate::mac::{self, Fade, Theme, metric};
 use cmux_config::commands::Loaded;
 
 const MAX_W: f32 = 560.0;
 const MIN_W: f32 = 340.0;
 const SIDE_ROOM: f32 = 260.0;
 const TOP: f32 = 40.0;
-const RADIUS: f32 = 8.0;
-const FIELD_PX: f32 = 13.0;
 const FIELD_PAD_X: f32 = 9.0;
 const FIELD_PAD_Y: f32 = 7.0;
 const ROW_H: f32 = 24.0;
 const ROW_PAD_X: f32 = 9.0;
 const ROW_PAD_Y: f32 = 2.0;
 const LIST_MAX_H: f32 = 450.0;
-const HINT_PX: f32 = 11.0;
 
 /// What a row does when run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,6 +61,7 @@ pub(super) struct Palette {
     restore: FocusHandle,
     scroll: ScrollHandle,
     custom: Loaded,
+    pub(super) fade: Fade,
     _blur: Subscription,
 }
 
@@ -111,7 +111,7 @@ impl WindowView {
         window.focus(&focus);
         // Focus moved elsewhere (a click, a shortcut that focuses a terminal): close.
         let _blur = cx.on_blur(&focus, window, |this, window, cx| {
-            if window.is_window_active() && this.palette.take().is_some() {
+            if window.is_window_active() && this.end_palette().is_some() {
                 cx.notify();
             }
         });
@@ -122,6 +122,7 @@ impl WindowView {
             restore,
             scroll: ScrollHandle::new(),
             custom: self.load_commands(cx),
+            fade: Fade::enter(),
             _blur,
         });
         cx.notify();
@@ -129,12 +130,19 @@ impl WindowView {
 
     /// False if it was not open.
     pub(super) fn close_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        let Some(p) = self.palette.take() else {
+        let Some(p) = self.end_palette() else {
             return false;
         };
         window.focus(&p.restore);
         cx.notify();
         true
+    }
+
+    /// Takes the palette and starts its fade-out; the leaving copy is an empty shell.
+    fn end_palette(&mut self) -> Option<Palette> {
+        let p = self.palette.take()?;
+        self.palette_leaving = Some(Fade::leave_from(&p.fade, Instant::now()));
+        Some(p)
     }
 
     /// Every row of the current mode, unfiltered, in table order.
@@ -286,16 +294,21 @@ impl WindowView {
         }
     }
 
+    /// Window width and palette width, window px.
+    fn palette_size(window: &Window) -> (f32, f32) {
+        let win_w = f32::from(window.viewport_size().width);
+        (win_w, s(MAX_W).min(s(MIN_W).max(win_w - s(SIDE_ROOM))))
+    }
+
     pub(super) fn render_palette(
         &self,
         window: &Window,
         cx: &Context<Self>,
     ) -> Option<impl IntoElement + use<>> {
         let p = self.palette.as_ref()?;
-        let c = chrome::sidebar_palette(chrome::rgba(self.style.cfg.background, 1.0));
-        let primary = |a: f32| Rgba { a, ..c.title };
-        let win_w = f32::from(window.viewport_size().width);
-        let w = s(MAX_W).min(s(MIN_W).max(win_w - s(SIDE_ROOM)));
+        let t = Theme::new(chrome::rgba(self.style.cfg.background, 1.0));
+        let now = Instant::now();
+        let (win_w, w) = Self::palette_size(window);
         let rows = self.palette_matches(cx);
         let sel = p.selected.min(rows.len().saturating_sub(1));
         let commands = p.commands();
@@ -314,14 +327,20 @@ impl WindowView {
             .items_center()
             .px(px(FIELD_PAD_X))
             .py(px(FIELD_PAD_Y))
-            .text_size(px(FIELD_PX))
-            .text_color(c.title)
+            .text_size(px(metric::BODY_TEXT))
+            .text_color(t.text)
             .whitespace_nowrap()
             .overflow_hidden()
             .when(!query.is_empty(), |d| d.child(query))
-            .child(div().flex_none().w(px(1.)).h(px(FIELD_PX + 2.)).bg(c.title))
+            .child(
+                div()
+                    .flex_none()
+                    .w(px(1.))
+                    .h(px(metric::BODY_TEXT + 2.))
+                    .bg(t.text),
+            )
             .when(p.field.text.is_empty() || p.field.text == ">", |d| {
-                d.child(div().ml(px(2.)).text_color(c.detail).child(placeholder))
+                d.child(div().ml(px(2.)).text_color(t.secondary).child(placeholder))
             });
         let list = div()
             .id("palette-list")
@@ -330,17 +349,19 @@ impl WindowView {
             .max_h(px(LIST_MAX_H))
             .overflow_y_scroll()
             .track_scroll(&p.scroll)
+            .p(px(metric::MENU_INSET))
             .when(rows.is_empty(), |d| {
                 d.child(
                     div()
                         .px(px(ROW_PAD_X))
                         .py(px(FIELD_PAD_Y))
-                        .text_size(px(FIELD_PX))
-                        .text_color(c.detail)
+                        .text_size(px(metric::BODY_TEXT))
+                        .text_color(t.secondary)
                         .child(empty),
                 )
             })
             .children(rows.into_iter().enumerate().map(|(k, row)| {
+                let chosen = k == sel;
                 div()
                     .id(("palette-row", k))
                     .flex_none()
@@ -351,15 +372,11 @@ impl WindowView {
                     .h(px(ROW_H))
                     .px(px(ROW_PAD_X))
                     .py(px(ROW_PAD_Y))
-                    .text_size(px(FIELD_PX))
-                    .text_color(c.title)
-                    .when(k == sel, |d| {
-                        d.bg(Rgba {
-                            a: 0.12,
-                            ..c.accent
-                        })
-                    })
-                    .when(k != sel, |d| d.hover(|s| s.bg(primary(0.04))))
+                    .rounded(px(metric::MENU_ITEM_RADIUS))
+                    .text_size(px(metric::BODY_TEXT))
+                    .text_color(if chosen { t.menu_hover_text } else { t.text })
+                    .when(chosen, |d| d.bg(t.menu_hover))
+                    .when(!chosen, |d| d.hover(|s| s.bg(t.hover)))
                     .child(
                         div()
                             .flex_1()
@@ -375,63 +392,88 @@ impl WindowView {
                             .px(px(4.))
                             .py(px(1.))
                             .rounded(px(4.))
-                            .bg(primary(0.08))
-                            .text_size(px(HINT_PX))
+                            .bg(t.hover)
+                            .text_size(px(metric::SMALL_TEXT))
                             .font_weight(FontWeight::MEDIUM)
-                            .text_color(c.detail)
+                            .text_color(if chosen {
+                                t.menu_hover_text
+                            } else {
+                                t.secondary
+                            })
                             .child(h)
                     }))
                     .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                         this.palette_run(k, window, cx);
                     }))
             }));
+        // Measures the panel for the fade-out shell (absolute: takes no room).
+        let measured = self.palette_h.clone();
+        let measure = canvas(
+            // The border is outside this box.
+            move |b, _, _| measured.set(f32::from(b.size.height) + 2.),
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .size_full();
         Some(deferred(
             anchored()
                 .position(point(gpui::px((win_w - w) / 2.), px(TOP)))
                 .child(
                     div()
-                        .id("command-palette")
-                        .key_context("CommandPalette")
-                        .track_focus(&p.focus)
-                        .occlude()
-                        .flex()
-                        .flex_col()
+                        .opacity(p.fade.amount_at(now))
+                        .mt(px(p.fade.slide(now)))
+                        .child(
+                            mac::glass_panel(&t, metric::PALETTE_RADIUS)
+                                .id("command-palette")
+                                .key_context("CommandPalette")
+                                .track_focus(&p.focus)
+                                .occlude()
+                                .relative()
+                                .flex()
+                                .flex_col()
+                                .w(gpui::px(w))
+                                .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                                    this.palette_key(ev, window, cx);
+                                    cx.stop_propagation();
+                                }))
+                                .on_action(cx.listener(
+                                    |this, _: &crate::actions::CommandPaletteNext, _, cx| {
+                                        this.palette_move(1, cx)
+                                    },
+                                ))
+                                .on_action(cx.listener(
+                                    |this, _: &crate::actions::CommandPalettePrevious, _, cx| {
+                                        this.palette_move(-1, cx)
+                                    },
+                                ))
+                                .on_mouse_down_out(cx.listener(|this, _, window, cx| {
+                                    this.close_palette(window, cx);
+                                }))
+                                .child(measure)
+                                .child(field)
+                                .child(div().flex_none().h(px(1.)).bg(t.separator))
+                                .child(list),
+                        ),
+                ),
+        ))
+    }
+
+    /// The palette fading out: an empty glass shell of its last height, with no handlers.
+    pub(super) fn render_palette_leaving(
+        &self,
+        window: &Window,
+    ) -> Option<impl IntoElement + use<>> {
+        let fade = self.palette_leaving?;
+        let t = Theme::new(chrome::rgba(self.style.cfg.background, 1.0));
+        let (win_w, w) = Self::palette_size(window);
+        Some(deferred(
+            anchored()
+                .position(point(gpui::px((win_w - w) / 2.), px(TOP)))
+                .child(
+                    mac::glass_panel(&t, metric::PALETTE_RADIUS)
                         .w(gpui::px(w))
-                        .overflow_hidden()
-                        .rounded(px(RADIUS))
-                        .border_1()
-                        .border_color(c.border)
-                        .bg(c.bg)
-                        .shadow(vec![BoxShadow {
-                            color: Rgba {
-                                a: 0.24,
-                                ..gpui::black().into()
-                            }
-                            .into(),
-                            offset: point(px(0.), px(5.)),
-                            blur_radius: px(10.),
-                            spread_radius: px(0.),
-                        }])
-                        .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
-                            this.palette_key(ev, window, cx);
-                            cx.stop_propagation();
-                        }))
-                        .on_action(cx.listener(
-                            |this, _: &crate::actions::CommandPaletteNext, _, cx| {
-                                this.palette_move(1, cx)
-                            },
-                        ))
-                        .on_action(cx.listener(
-                            |this, _: &crate::actions::CommandPalettePrevious, _, cx| {
-                                this.palette_move(-1, cx)
-                            },
-                        ))
-                        .on_mouse_down_out(cx.listener(|this, _, window, cx| {
-                            this.close_palette(window, cx);
-                        }))
-                        .child(field)
-                        .child(div().flex_none().h(px(1.)).bg(c.border))
-                        .child(list),
+                        .h(gpui::px(self.palette_h.get()))
+                        .opacity(fade.amount_at(Instant::now())),
                 ),
         ))
     }

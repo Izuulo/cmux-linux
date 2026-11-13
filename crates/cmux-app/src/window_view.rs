@@ -1,7 +1,7 @@
 //! The window's root view: the workspace list and one `WorkspaceView` per workspace. Only the
 //! selected workspace is rendered; the others keep their shells running (plan D1, D6).
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -69,6 +69,10 @@ pub struct WindowView {
     menu_leaving: Option<menu::Menu>,
     /// The command palette, while open (M11).
     palette: Option<palette::Palette>,
+    /// The palette fading out: an empty glass shell of `palette_h`, for looks only.
+    palette_leaving: Option<Fade>,
+    /// Height of the palette as last drawn, in window px.
+    palette_h: Rc<Cell<f32>>,
     /// Workspaces something was typed into (the "untouched anchor" rule, plan D5).
     typed: HashSet<WorkspaceId>,
     /// Row bounds in list order, from the last paint (drop-gap maths).
@@ -191,6 +195,8 @@ impl WindowView {
             menu: None,
             menu_leaving: None,
             palette: None,
+            palette_leaving: None,
+            palette_h: Rc::new(Cell::new(0.0)),
             typed: HashSet::new(),
             row_bounds: Rc::default(),
             drop_gap: None,
@@ -718,11 +724,16 @@ impl Render for WindowView {
         {
             self.panel_fade = None;
         }
+        if self.palette_leaving.is_some_and(|f| f.done_at(now)) {
+            self.palette_leaving = None;
+        }
         let animating = [&self.menu, &self.menu_leaving]
             .into_iter()
             .flatten()
             .any(|m| !m.fade.done_at(now))
-            || self.panel_fade.is_some_and(|f| !f.done_at(now));
+            || self.panel_fade.is_some_and(|f| !f.done_at(now))
+            || self.palette.as_ref().is_some_and(|p| !p.fade.done_at(now))
+            || self.palette_leaving.is_some();
         if animating {
             window.request_animation_frame();
         }
@@ -850,6 +861,7 @@ impl Render for WindowView {
             .children(self.render_panel(window, cx))
             .children(self.render_menu(cx))
             .children(self.render_palette(window, cx))
+            .children(self.render_palette_leaving(window))
             .when(width.is_none(), |d| d.child(self.render_reopen(cx)))
             .children(crate::csd::controls(window))
             .children(crate::csd::resize_grips(window))
