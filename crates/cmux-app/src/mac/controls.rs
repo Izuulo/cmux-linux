@@ -484,6 +484,33 @@ pub fn sidebar_row(
         .child(SharedString::from(label.to_string()))
 }
 
+/// A square icon button for a toolbar (browser back/forward/reload); the caller adds the click
+/// handler. Disabled is only dimmed: the caller leaves the handler off or ignores the click.
+pub fn toolbar_button(
+    id: impl Into<ElementId>,
+    t: &Theme,
+    icon: &'static str,
+    enabled: bool,
+) -> Stateful<gpui::Div> {
+    let hover = t.hover;
+    div()
+        .id(id)
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .size(px(metric::TOOLBAR_BUTTON))
+        .rounded(px(metric::CONTROL_RADIUS))
+        .opacity(if enabled { 1.0 } else { 0.4 })
+        .when(enabled, |d| d.hover(move |s| s.bg(hover)))
+        .child(
+            svg()
+                .path(icon)
+                .size(px(metric::TOOLBAR_GLYPH))
+                .text_color(t.text),
+        )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

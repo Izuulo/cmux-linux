@@ -21,18 +21,15 @@ use engine::{Engine, Msg, Page};
 pub use engine::{run_helper, shutdown};
 
 use crate::actions::{Copy, Paste};
-use crate::chrome::TabPalette;
+use crate::mac::{Theme, alpha, controls::toolbar_button, metric};
 use crate::ui::px;
 use crate::window_view::rename::{RenameKey, RenameOutcome, RenameState};
 
 /// cmux `BrowserChromeMetrics` at the default tab font: 26 px buttons, 4 px padding.
 const BAR_H: f32 = 34.0;
 const BAR_PAD_X: f32 = 8.0;
-const BUTTON: f32 = 26.0;
-const GLYPH: f32 = 12.0;
-const PILL_RADIUS: f32 = 10.0;
-const PILL_PAD_X: f32 = 8.0;
-const FIELD_PX: f32 = 12.0;
+const OMNIBAR_PAD_X: f32 = 8.0;
+const LOCK_GLYPH: f32 = 11.0;
 /// Chromium's Linux wheel step, in CSS pixels per line.
 const WHEEL_LINE: f32 = 53.0;
 
@@ -61,8 +58,8 @@ pub struct BrowserView {
     origin: Point<Pixels>,
     /// IME preedit.
     marked: String,
-    /// The strip palette and pane background, pushed by the workspace each render.
-    pub(crate) colors: Option<(TabPalette, Rgba)>,
+    /// The chrome theme and pane background, pushed by the workspace each render.
+    pub(crate) colors: Option<(Theme, Rgba)>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -325,19 +322,9 @@ impl BrowserView {
         }
     }
 
-    fn render_bar(&self, p: TabPalette, cx: &Context<Self>) -> impl IntoElement + use<> {
+    fn render_bar(&self, t: Theme, cx: &Context<Self>) -> impl IntoElement + use<> {
         let nav = |id: &'static str, icon: &'static str, enabled: bool, f: fn(&Self)| {
-            div()
-                .id(id)
-                .flex()
-                .flex_none()
-                .items_center()
-                .justify_center()
-                .size(px(BUTTON))
-                .rounded(px(6.))
-                .opacity(if enabled { 1.0 } else { 0.4 })
-                .when(enabled, |d| d.hover(|s| s.bg(p.hover_fill)))
-                .child(svg().path(icon).size(px(GLYPH)).text_color(p.active_text))
+            toolbar_button(id, &t, icon, enabled)
                 .on_click(cx.listener(move |this, _, _, _| f(this)))
         };
         let reload_icon = if self.page.loading {
@@ -357,8 +344,8 @@ impl BrowserView {
                 div()
                     .flex_none()
                     .w(px(1.))
-                    .h(px(FIELD_PX + 2.))
-                    .bg(p.active_text)
+                    .h(px(metric::OMNIBAR_TEXT + 2.))
+                    .bg(t.text)
             })
         };
         let field = div()
@@ -369,21 +356,21 @@ impl BrowserView {
             .items_center()
             .flex_1()
             .min_w(px(0.))
-            .h(px(BUTTON))
+            .h(px(metric::OMNIBAR_H))
             .ml(px(4.))
-            .px(px(PILL_PAD_X))
-            .rounded(px(PILL_RADIUS))
-            .bg(p.hover_fill)
+            .px(px(OMNIBAR_PAD_X))
+            .rounded(px(metric::OMNIBAR_RADIUS))
+            .bg(t.control)
             .border_1()
             .border_color(if editing.is_some() {
-                p.accent
+                t.accent
             } else {
-                Rgba { a: 0., ..p.accent }
+                t.glass_edge
             })
             .overflow_hidden()
             .whitespace_nowrap()
-            .text_size(px(FIELD_PX))
-            .text_color(p.active_text)
+            .text_size(px(metric::OMNIBAR_TEXT))
+            .text_color(t.text)
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _: &MouseDownEvent, window, cx| {
@@ -404,15 +391,25 @@ impl BrowserView {
                     cx.notify();
                 }
             }))
+            .when(show_lock(&self.page.url, editing.is_some()), |d| {
+                d.child(
+                    svg()
+                        .path("icons/lock.svg")
+                        .flex_none()
+                        .size(px(LOCK_GLYPH))
+                        .mr(px(4.))
+                        .text_color(t.secondary),
+                )
+            })
             .children(caret(placeholder))
             .child(if placeholder {
                 div()
-                    .text_color(p.inactive_text)
+                    .text_color(t.secondary)
                     .child("Search or enter URL")
                     .into_any_element()
             } else {
                 div()
-                    .when(selected, |d| d.bg(Rgba { a: 0.3, ..p.accent }))
+                    .when(selected, |d| d.bg(alpha(t.accent, 0.3)))
                     .child(text)
                     .into_any_element()
             })
@@ -541,6 +538,11 @@ fn cef_button(b: MouseButton) -> Option<cef::MouseButtonType> {
     }
 }
 
+/// The omnibar's lock: an https page whose field isn't being edited.
+fn show_lock(url: &str, editing: bool) -> bool {
+    !editing && url.starts_with("https://")
+}
+
 impl Drop for BrowserView {
     fn drop(&mut self) {
         self.engine.iter().for_each(|e| e.close());
@@ -562,9 +564,9 @@ impl Render for BrowserView {
         for old in self.stale.drain(..) {
             let _ = window.drop_image(old);
         }
-        let (p, bg) = self.colors.unwrap_or_else(|| {
+        let (t, bg) = self.colors.unwrap_or_else(|| {
             let bg = gpui::rgba(0x1e1e1eff);
-            (crate::chrome::tab_palette(bg, true), bg)
+            (Theme::new(bg), bg)
         });
         div()
             .track_focus(&self.root)
@@ -572,7 +574,7 @@ impl Render for BrowserView {
             .flex()
             .flex_col()
             .bg(bg)
-            .child(self.render_bar(p, cx))
+            .child(self.render_bar(t, cx))
             .child(self.render_page(window, cx))
     }
 }
@@ -665,5 +667,19 @@ impl EntityInputHandler for BrowserView {
         _: &mut Context<Self>,
     ) -> Option<usize> {
         None
+    }
+}
+
+#[cfg(test)]
+mod lock_tests {
+    use super::show_lock;
+
+    #[test]
+    fn lock_shows_for_https_when_not_editing() {
+        assert!(show_lock("https://example.com", false));
+        assert!(!show_lock("https://example.com", true));
+        assert!(!show_lock("http://example.com", false));
+        assert!(!show_lock("about:blank", false));
+        assert!(!show_lock("", false));
     }
 }

@@ -1105,7 +1105,7 @@ impl Render for WorkspaceView {
                 Some(SurfaceView::Browser(b)) => {
                     let cfg = &self.style.cfg;
                     let colors = (
-                        self.palette(*p == focused),
+                        crate::mac::Theme::new(chrome::rgba(cfg.background, 1.0)),
                         chrome::rgba(cfg.background, cfg.background_opacity),
                     );
                     b.update(cx, |v, _| v.colors = Some(colors));
