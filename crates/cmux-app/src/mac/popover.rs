@@ -83,7 +83,8 @@ pub fn popover(
         metric::OVERLAY_MARGIN,
     );
     let (fill, edge) = (t.glass, t.glass_edge);
-    // The arrow is drawn in its own box above the body; the body's top edge hides its base.
+    // Drawn after the body, overlapping its top border by 1 px: the fill covers the border
+    // across the base, so no line crosses the arrow.
     let arrow = canvas(
         |_, _, _| {},
         move |bounds, _, window, _| {
@@ -113,19 +114,20 @@ pub fn popover(
             .child(
                 div()
                     .id(id)
-                    .occlude()
-                    .when(fade.leaving(), |d| d.block_mouse_except_scroll())
+                    .relative()
+                    // A leaving copy is visual only: clicks go to whatever is under it.
+                    .when(!fade.leaving(), |d| d.occlude())
                     .opacity(amount)
                     .mt(px(fade.slide(now)))
-                    .flex()
-                    .flex_col()
+                    .pt(px(metric::ARROW_H))
+                    .child(body)
                     .child(
                         div()
-                            .ml(px(arrow_x - left - metric::ARROW_W / 2.0))
+                            .absolute()
+                            .top(px(0.))
+                            .left(px(arrow_x - left - metric::ARROW_W / 2.0))
                             .child(arrow),
-                    )
-                    // Overlap the arrow's base by 1 px so no seam shows.
-                    .child(div().mt(px(-1.0)).child(body)),
+                    ),
             ),
     )
 }

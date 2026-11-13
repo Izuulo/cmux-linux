@@ -16,7 +16,7 @@ pub struct Theme {
     pub control: Rgba,
     pub warning: Rgba,
     pub error: Rgba,
-    /// Popover, menu and palette fill (plan K4: no blur, so nearly opaque).
+    /// Popover, menu and palette fill (plan K4: opaque; without blur any see-through shows text behind).
     pub glass: Rgba,
     pub glass_edge: Rgba,
     /// Menu row under the pointer: accent fill, white text (NSMenu).
@@ -64,7 +64,7 @@ impl Theme {
                 b: 0.23,
                 a: 1.0,
             },
-            glass: chrome::shift(bg, if light { 0.04 } else { 0.06 }, 0.94),
+            glass: chrome::shift(bg, if light { 0.04 } else { 0.06 }, 1.0),
             glass_edge: if light { ink(0.10) } else { ink(0.14) },
             menu_hover: p.accent,
             menu_hover_text: Rgba {
@@ -155,10 +155,10 @@ mod tests {
     }
 
     #[test]
-    fn glass_is_nearly_opaque_and_edge_follows_appearance() {
+    fn glass_is_opaque_and_edge_follows_appearance() {
         let dark = Theme::new(rgba(0.1, 0.1, 0.1));
         let light = Theme::new(rgba(0.95, 0.95, 0.95));
-        assert!((dark.glass.a - 0.94).abs() < 1e-6);
+        assert_eq!(dark.glass.a, 1.0);
         assert_eq!((dark.glass_edge.r, dark.glass_edge.a), (1.0, 0.14));
         assert_eq!((light.glass_edge.r, light.glass_edge.a), (0.0, 0.10));
         assert_eq!(dark.menu_hover, dark.accent);
