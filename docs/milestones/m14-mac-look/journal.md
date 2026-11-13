@@ -68,3 +68,11 @@ Other: `glass`/`glass_edge` are gone; the omnibar border keeps its old look as `
 - Light screenshots on the owner's Mac (system appearance switched for a minute and back): cmux's main chrome stays on the terminal theme; the notification popover and Settings follow the system. Popover fill rgb(235,236,237), inner edge white, outer edge near-black (we use black 0.5: at 1x a 1 px line weighs twice a Retina hairline); Settings cards white on a white window, sidebar rgb(235,236,237). Menu light fill not captured cleanly (assumed = popover).
 - Browser bar (dark): omnibar 27 pt tall including its 1 pt border, fill ≈ the terminal background, accent border while focused; back/forward/reload are bare glyphs. `OMNIBAR_H` 22 → 27.
 - The Mac was left as found: dark mode back on, the browser tab and Settings closed.
+
+### Polish after side-by-side
+Compared our KDE build with cmux on macOS 27 and fixed four gaps:
+- Settings is client-decorated on Linux like the main window (`csd` buttons top-right, drag/zoom strip, resize grips, rounded corners). The sidebar runs to the top edge; a 28 px "Settings" strip (`TITLE_TEXT`, bold) sits over the content. No search field (out of scope).
+- Palette shortcuts are plain dimmed text; the badge fill and `BADGE_RADIUS` are gone. Row and field heights already used `PALETTE_ROW_H` / `PALETTE_FIELD_H`.
+- Omnibar fill is `Theme::field`: the background shifted 2/255 darker (dark) or 4% darker (light); border tokens unchanged.
+- Popover arrow: the 45 degree straight flanks are now one cubic per side, leaving the tip at about 56 degrees and arriving level with the base (bell shape). Checked by plotting the curve, not on screen.
+Not checked on screen; the controller screenshots next.
