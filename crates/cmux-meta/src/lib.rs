@@ -30,6 +30,8 @@ pub struct DirLine {
     pub display: String,
     pub branch: Option<String>,
     pub git_dir: Option<PathBuf>,
+    /// Tracked files changed (cmux's `branch*`).
+    pub dirty: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -90,11 +92,15 @@ pub fn collect(
                     Some((g, b)) => (Some(g), Some(b)),
                     None => (None, None),
                 };
+                let dirty = git_dir
+                    .as_deref()
+                    .is_some_and(|g| git::dirty(Path::new(path), g));
                 meta.dirs.push(DirLine {
                     path: path.to_string(),
                     display: path::display_dir(path, home),
                     branch,
                     git_dir,
+                    dirty,
                 });
             }
             let ports: BTreeSet<u16> = tty

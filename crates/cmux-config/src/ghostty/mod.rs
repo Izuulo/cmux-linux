@@ -104,6 +104,8 @@ pub struct Config {
     /// Confirm before pasting text with a newline (or a bracketed-paste end) unless the
     /// program enabled bracketed paste.
     pub clipboard_paste_protection: bool,
+    /// `scrollback-limit`: history bytes per terminal (Ghostty's default 10 MB).
+    pub scrollback_limit: usize,
 }
 
 impl Default for Config {
@@ -139,6 +141,7 @@ impl Default for Config {
             split_inherit_working_directory: true,
             tab_inherit_working_directory: true,
             clipboard_paste_protection: true,
+            scrollback_limit: 10_000_000,
         }
     }
 }
@@ -199,6 +202,11 @@ impl Config {
             }
             "tab-inherit-working-directory" => self.tab_inherit_working_directory = boolean(value)?,
             "clipboard-paste-protection" => self.clipboard_paste_protection = boolean(value)?,
+            "scrollback-limit" => {
+                self.scrollback_limit = value
+                    .parse()
+                    .map_err(|_| format!("expected a byte count: {value}"))?
+            }
             _ => {}
         }
         Ok(())
@@ -478,6 +486,17 @@ mod tests {
         assert!(cfg.split_inherit_working_directory);
         assert!(cfg.tab_inherit_working_directory);
         assert!(cfg.clipboard_paste_protection);
+    }
+
+    #[test]
+    fn scrollback_limit_is_bytes() {
+        assert_eq!(Config::default().scrollback_limit, 10_000_000);
+        assert_eq!(
+            parse("scrollback-limit = 50000000\n").0.scrollback_limit,
+            50_000_000
+        );
+        let (cfg, warnings) = parse("scrollback-limit = 10MB\n");
+        assert_eq!((cfg.scrollback_limit, warnings.len()), (10_000_000, 1));
     }
 
     #[test]

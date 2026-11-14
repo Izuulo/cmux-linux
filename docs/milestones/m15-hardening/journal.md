@@ -55,3 +55,12 @@
 - M7 review tests added (all passed first time, no bug): invalid JSON refused by setup and
   uninstall, uninstall refuses a non-object, `HOME` fallback, `--settings-file` beats
   `CLAUDE_CONFIG_DIR`, an app error during `feed.push` prints `{}`.
+- Task 6: keyboard workspace move scrolls the row into view (`scroll_to_selected`, shared
+  with `select`). Long rename: the text sits in a shrinkable end-aligned box, so a name
+  wider than the row loses its start, not the caret (layout not yet seen on screen). Dirty
+  `*`: `DirLine::dirty` from cmux's `git status --porcelain=v1 -z --untracked-files=no
+  --ignore-submodules=dirty --no-renames`, 2 s bound, `GIT_OPTIONAL_LOCKS=0`, cached per dir
+  and re-run when HEAD or index mtime changed or after 10 s (cmux re-probes on git-dir
+  file events; a plain edit touches neither, so we re-check on a timer too); sidebar shows
+  `branch*`. `scrollback-limit` (bytes) → `Session::spawn` → `Term::with_scrollback`; a
+  value Ghostty would reject (e.g. `10MB`) warns and keeps 10 MB. Applies to new terminals.

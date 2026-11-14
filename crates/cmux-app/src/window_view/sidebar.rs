@@ -116,7 +116,10 @@ pub(crate) fn row_model(title: &str, meta: &WorkspaceMeta, prs: &[(Pr, bool)]) -
         .iter()
         .map(|d| {
             (
-                d.branch.clone(),
+                // cmux's `branch*` for a dirty work tree.
+                d.branch
+                    .as_ref()
+                    .map(|b| if d.dirty { format!("{b}*") } else { b.clone() }),
                 Some(d.display.clone()).filter(|s| s != title && !s.is_empty()),
             )
         })
@@ -993,12 +996,14 @@ mod tests {
                     display: "~/api".into(),
                     branch: Some("feat".into()),
                     git_dir: None,
+                    dirty: true,
                 },
                 DirLine {
                     path: "/tmp".into(),
                     display: "/tmp".into(),
                     branch: None,
                     git_dir: None,
+                    dirty: false,
                 },
             ],
             ports: vec![3000, 5173],
@@ -1006,7 +1011,7 @@ mod tests {
         let r = row_model("~/api", &meta, &[]);
         assert_eq!(
             r.dirs,
-            vec![(Some("feat".into()), None), (None, Some("/tmp".into()))]
+            vec![(Some("feat*".into()), None), (None, Some("/tmp".into()))]
         );
         assert_eq!(r.ports, vec![3000, 5173]);
     }

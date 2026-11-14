@@ -445,12 +445,22 @@ impl WindowView {
         if let Some(view) = self.views.get(&id) {
             view.update(cx, |v, cx| v.focus_active(window, cx));
         }
-        let rows = self.workspaces.rows();
-        if let Some(ix) = rows.iter().position(|r| r.workspace() == id) {
-            self.sidebar_scroll.scroll_to_item(ix);
-        }
+        self.scroll_to_selected();
         self.read_selected(window, cx);
         cx.notify();
+    }
+
+    /// Keeps the selected workspace's sidebar row in view.
+    fn scroll_to_selected(&self) {
+        let id = self.workspaces.selected();
+        if let Some(ix) = self
+            .workspaces
+            .rows()
+            .iter()
+            .position(|r| r.workspace() == id)
+        {
+            self.sidebar_scroll.scroll_to_item(ix);
+        }
     }
 
     fn request_close(&mut self, id: WorkspaceId, window: &mut Window, cx: &mut Context<Self>) {
@@ -791,11 +801,15 @@ impl Render for WindowView {
             }))
             .on_action(cx.listener(|this, _: &MoveWorkspaceUp, _, cx| {
                 if this.workspaces.move_selected(-1) {
+                    // M15: a keyboard move follows the row out of view.
+                    this.scroll_to_selected();
                     cx.notify();
                 }
             }))
             .on_action(cx.listener(|this, _: &MoveWorkspaceDown, _, cx| {
                 if this.workspaces.move_selected(1) {
+                    // M15: a keyboard move follows the row out of view.
+                    this.scroll_to_selected();
                     cx.notify();
                 }
             }))

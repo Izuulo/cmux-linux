@@ -207,9 +207,19 @@ impl Render for RenameInput {
                     .child("Workspace name")
                     .into_any_element()
             } else {
+                // Short names sit at the left; a long one shrinks this box and, end-aligned,
+                // loses its start instead of the caret (M15).
                 div()
-                    .when(selected, |d| d.bg(Rgba { a: 0.3, ..st.text }))
-                    .child(self.state.text.clone())
+                    .flex()
+                    .justify_end()
+                    .min_w(px(0.))
+                    .overflow_hidden()
+                    .child(
+                        div()
+                            .flex_none()
+                            .when(selected, |d| d.bg(Rgba { a: 0.3, ..st.text }))
+                            .child(self.state.text.clone()),
+                    )
                     .into_any_element()
             })
             .child(div().flex_none().w(px(1.)).h(px(st.size)).bg(st.text))

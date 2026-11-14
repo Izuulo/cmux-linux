@@ -2,6 +2,7 @@
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
+use cmux_term::SCROLLBACK;
 use cmux_term::pty::{CommandBuilder, PtyEvent, Session};
 
 /// Runs `script` under `sh -c`, optionally typing `input`, and returns the screen text after exit.
@@ -22,6 +23,7 @@ fn run_with(script: &str, before: impl FnOnce(&Session)) -> String {
         cmd,
         80,
         24,
+        SCROLLBACK,
         |_| {},
         move |ev| {
             let _ = tx.send(matches!(ev, PtyEvent::Exited));
@@ -105,7 +107,7 @@ fn alive(pid: u32) -> bool {
 fn drop_returns_promptly_even_when_the_child_ignores_sighup() {
     let mut cmd = CommandBuilder::new("sh");
     cmd.args(["-c", "trap '' HUP; sleep 30"]);
-    let session = Session::spawn(cmd, 80, 24, |_| {}, |_| {}).unwrap();
+    let session = Session::spawn(cmd, 80, 24, SCROLLBACK, |_| {}, |_| {}).unwrap();
     let pid = session.process_id().unwrap();
     std::thread::sleep(Duration::from_millis(100)); // let sh install the trap
     let t = Instant::now();
@@ -135,6 +137,7 @@ fn no_events_after_drop() {
         cmd,
         80,
         24,
+        SCROLLBACK,
         |_| {},
         move |_| {
             c.fetch_add(1, SeqCst);
@@ -207,6 +210,7 @@ fn drop_releases_the_reader_even_if_a_setsid_grandchild_holds_the_pty() {
         cmd,
         80,
         24,
+        SCROLLBACK,
         |_| {},
         move |_| {
             let _keep = &held;
@@ -231,6 +235,7 @@ fn foreground_busy_tracks_a_running_job() {
         cmd,
         80,
         24,
+        SCROLLBACK,
         |_| {},
         move |ev| {
             let _ = tx.send(matches!(ev, PtyEvent::Exited));
@@ -258,6 +263,7 @@ fn spawned_shell_has_no_inherited_cmux_vars() {
         cmd,
         300,
         200,
+        SCROLLBACK,
         |_| {},
         move |ev| {
             let _ = tx.send(matches!(ev, PtyEvent::Exited));

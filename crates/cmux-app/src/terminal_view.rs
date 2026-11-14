@@ -149,6 +149,7 @@ impl TerminalView {
             cmd,
             80,
             24,
+            style.cfg.scrollback_limit,
             |term| style.apply_to(term),
             move |ev| {
                 let _ = tx.unbounded_send(ev);
