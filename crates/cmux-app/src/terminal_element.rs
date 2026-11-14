@@ -56,6 +56,8 @@ struct Run {
     style: TextRun,
     /// Drawn as quads by `underline_marks`, except curly (gpui's `wavy`, in `style`).
     underline: Option<VtUnderline>,
+    /// Index into `collect_cells`' faces (bit 0 bold, bit 1 italic), to extend a run cheaply.
+    face: usize,
     /// Narrow single-codepoint cells only. gpui's `force_width` moves glyph n to n * width, so
     /// wide and combining cells stand alone and get no `force_width` (a combining mark would
     /// otherwise land in the next column); each is painted at its own cell origin instead.
@@ -356,6 +358,13 @@ fn collect_cells(
         1.0
     };
     let at_cursor = info.cursor.map(|c| (c.x, c.y));
+    // Once per frame; cells index them by `face_i`.
+    let faces = [
+        face(&style.font, false, false),
+        face(&style.font, true, false),
+        face(&style.font, false, true),
+        face(&style.font, true, true),
+    ];
     let mut out = Cells::default();
     let _ = term.walk_rows(|row, cells| {
         let row = row as u16;
@@ -383,7 +392,7 @@ fn collect_cells(
             } else {
                 pre
             };
-            let font = face(&style.font, cell.bold, cell.italic);
+            let face_i = usize::from(cell.bold) | usize::from(cell.italic) << 1;
             if at_cursor == Some((col, row)) {
                 // The cursor picks its colours from the cell before selection, as Ghostty does.
                 // SGR 8 text stays hidden under a block cursor.
@@ -394,7 +403,7 @@ fn collect_cells(
                 };
                 out.under_cursor = Some(UnderCursor {
                     text,
-                    font: font.clone(),
+                    font: faces[face_i].clone(),
                     colors: pre,
                     span,
                 });
@@ -410,9 +419,26 @@ fn collect_cells(
             let underline = cell
                 .underline
                 .then(|| cell.underline_style.unwrap_or(VtUnderline::Single));
+            let batchable = span == 1 && cell.text.chars().count() == 1;
+            // Extend the last run in place when nothing changes: no TextRun, no Font clone.
+            if batchable
+                && let Some(last) = out.runs.last_mut()
+                && last.batchable
+                && last.row == row
+                && last.col + last.cells == col
+                && last.face == face_i
+                && last.style.color == fg
+                && last.underline == underline
+                && last.style.strikethrough.is_some() == cell.strikethrough
+            {
+                last.text.push_str(&cell.text);
+                last.style.len += cell.text.len();
+                last.cells += 1;
+                continue;
+            }
             let text_run = TextRun {
                 len: cell.text.len(),
-                font,
+                font: faces[face_i].clone(),
                 color: fg,
                 background_color: None,
                 underline: (underline == Some(VtUnderline::Curly)).then_some(UnderlineStyle {
@@ -425,7 +451,6 @@ fn collect_cells(
                     color: Some(fg),
                 }),
             };
-            let batchable = span == 1 && cell.text.chars().count() == 1;
             push_run(
                 &mut out.runs,
                 Run {
@@ -435,6 +460,7 @@ fn collect_cells(
                     text: cell.text.clone(),
                     style: text_run,
                     underline,
+                    face: face_i,
                     batchable,
                 },
             );
@@ -556,6 +582,7 @@ fn plan_cursor(
         },
         text: under.text,
         underline: None,
+        face: 0,
         batchable: false,
     });
     let paint = CursorPaint {
@@ -628,6 +655,7 @@ impl Frame {
             text: text.clone(),
             style,
             underline: None,
+            face: 0,
             batchable: false,
         };
         self.paint_run(&run, window, cx);
@@ -684,6 +712,7 @@ mod tests {
                 strikethrough: None,
             },
             underline: None,
+            face: 0,
             batchable,
         }
     }
