@@ -11,3 +11,4 @@
 # makepkg output
 /packaging/arch/*
 !/packaging/arch/PKGBUILD
+__pycache__/

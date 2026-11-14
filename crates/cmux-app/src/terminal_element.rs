@@ -12,13 +12,14 @@ use cmux_term::ghostty_vt::{
 use cmux_term::selection::range_contains;
 use cmux_term::{FrameInfo, Term};
 use gpui::{
-    App, BorderStyle, Bounds, Element, ElementId, ElementInputHandler, Entity, Font, FontStyle,
-    FontWeight, GlobalElementId, Hsla, InspectorElementId, IntoElement, LayoutId, Pixels, Point,
-    StrikethroughStyle, Style, TextRun, UnderlineStyle, Window, fill, outline, point, px, relative,
-    size,
+    App, BorderStyle, Bounds, DispatchPhase, Element, ElementId, ElementInputHandler, Entity, Font,
+    FontStyle, FontWeight, GlobalElementId, Hsla, InspectorElementId, IntoElement, LayoutId,
+    MouseButton, MouseMoveEvent, Pixels, Point, StrikethroughStyle, Style, TextRun, UnderlineStyle,
+    Window, fill, outline, point, px, relative, size,
 };
 
 use crate::colors::{self, CellColors};
+use crate::ime;
 use crate::style::{TermStyle, cell_size};
 use crate::terminal_view::{Geometry, TerminalView, snap_to_device};
 
@@ -54,6 +55,10 @@ struct Run {
     cells: u16,
     text: String,
     style: TextRun,
+    /// Drawn as quads by `underline_marks`, except curly (gpui's `wavy`, in `style`).
+    underline: Option<VtUnderline>,
+    /// Index into `collect_cells`' faces (bit 0 bold, bit 1 italic), to extend a run cheaply.
+    face: usize,
     /// Narrow single-codepoint cells only. gpui's `force_width` moves glyph n to n * width, so
     /// wide and combining cells stand alone and get no `force_width` (a combining mark would
     /// otherwise land in the next column); each is painted at its own cell origin instead.
@@ -75,6 +80,8 @@ pub struct Frame {
     cell_w: f32,
     cell_h: f32,
     font_size: Pixels,
+    /// Top of a single underline, from the cell top (where gpui puts its own underline).
+    underline_y: f32,
     rects: Vec<Rect>,
     runs: Vec<Run>,
     cursor: Option<CursorPaint>,
@@ -147,7 +154,7 @@ impl Element for TerminalElement {
         let marked_text = view.marked_text.clone();
 
         // Measure the grid; resize the terminal and PTY when it changes (Zed does this in prepaint too).
-        let geometry = measure(window, &style, bounds);
+        let (geometry, underline_y) = measure(window, &style, bounds);
         self.view.update(cx, |view, _| view.set_geometry(geometry));
 
         let mut term = term.lock().unwrap();
@@ -172,17 +179,21 @@ impl Element for TerminalElement {
                 focused,
                 blink_on,
                 marked_text,
+                cols: geometry.cols,
             };
             cursor = plan_cursor(&info, cells.under_cursor.take(), &style, state);
         }
         drop(term);
-        self.view.update(cx, |view, _| {
+        let preedit_cell = cursor.1.as_ref().map(|m| (m.col, m.row));
+        self.view.update(cx, |view, cx| {
             if selection_lost {
                 // Lost rows: drop it to release its tracked points (selection.rs `range`).
                 view.selection = None;
             }
             view.cursor_cell = cursor_cell;
+            view.preedit_cell = preedit_cell;
             view.cursor_blinks = cursor_blinks;
+            view.sync_blink(focused, cx);
         });
 
         Frame {
@@ -190,6 +201,7 @@ impl Element for TerminalElement {
             cell_w: geometry.cell_w,
             cell_h: geometry.cell_h,
             font_size: px(style.font_px),
+            underline_y,
             rects: cells.rects,
             runs: cells.runs,
             cursor: cursor.0,
@@ -213,6 +225,21 @@ impl Element for TerminalElement {
             ElementInputHandler::new(bounds, self.view.clone()),
             cx,
         );
+        // gpui sends on_mouse_move only while hovered; a selection drag that leaves the pane
+        // (autoscroll, other panes) still has to reach us.
+        let view = self.view.clone();
+        window.on_mouse_event(move |ev: &MouseMoveEvent, phase, _, cx| {
+            if phase == DispatchPhase::Bubble
+                && !bounds.contains(&ev.position)
+                && ev.pressed_button == Some(MouseButton::Left)
+            {
+                view.update(cx, |v, cx| {
+                    if v.dragging && !v.tracking() {
+                        v.drag_to(ev.position, cx);
+                    }
+                });
+            }
+        });
         let frame = &*frame;
         for r in &frame.rects {
             window.paint_quad(fill(frame.cell_bounds(r.col, r.row, r.cells), r.color));
@@ -232,8 +259,8 @@ impl Element for TerminalElement {
 }
 
 /// Grid geometry for `bounds`: cell size snapped to device pixels, whole cols/rows, and the
-/// origin on a device pixel.
-fn measure(window: &mut Window, style: &TermStyle, bounds: Bounds<Pixels>) -> Geometry {
+/// origin on a device pixel. Also the underline offset from the cell top.
+fn measure(window: &mut Window, style: &TermStyle, bounds: Bounds<Pixels>) -> (Geometry, f32) {
     let font_size = px(style.font_px);
     let scale = window.scale_factor();
     let ts = window.text_system();
@@ -257,7 +284,9 @@ fn measure(window: &mut Window, style: &TermStyle, bounds: Bounds<Pixels>) -> Ge
     );
     let cols = ((f32::from(bounds.size.width) / cell_w) as u16).max(1);
     let rows = ((f32::from(bounds.size.height) / cell_h) as u16).max(1);
-    Geometry {
+    // gpui's own underline position (text_system/line.rs): baseline + 0.618 descent.
+    let underline_y = (cell_h - ascent - descent) / 2.0 + ascent + descent * 0.618;
+    let g = Geometry {
         origin: point(
             px(snap_to_device(f32::from(bounds.origin.x), scale)),
             px(snap_to_device(f32::from(bounds.origin.y), scale)),
@@ -267,7 +296,8 @@ fn measure(window: &mut Window, style: &TermStyle, bounds: Bounds<Pixels>) -> Ge
         cols,
         rows,
         scale,
-    }
+    };
+    (g, underline_y)
 }
 
 /// The cell under the cursor, as the cursor needs it: text, face, pre-selection colours, width.
@@ -306,6 +336,7 @@ fn push_run(runs: &mut Vec<Run>, run: Run) {
                 && last.batchable
                 && last.row == run.row
                 && last.col + last.cells == run.col
+                && last.underline == run.underline
                 && same_style(&last.style, &run.style) =>
         {
             last.text.push_str(&run.text);
@@ -332,6 +363,13 @@ fn collect_cells(
         1.0
     };
     let at_cursor = info.cursor.map(|c| (c.x, c.y));
+    // Once per frame; cells index them by `face_i`.
+    let faces = [
+        face(&style.font, false, false),
+        face(&style.font, true, false),
+        face(&style.font, false, true),
+        face(&style.font, true, true),
+    ];
     let mut out = Cells::default();
     let _ = term.walk_rows(|row, cells| {
         let row = row as u16;
@@ -359,7 +397,7 @@ fn collect_cells(
             } else {
                 pre
             };
-            let font = face(&style.font, cell.bold, cell.italic);
+            let face_i = usize::from(cell.bold) | usize::from(cell.italic) << 1;
             if at_cursor == Some((col, row)) {
                 // The cursor picks its colours from the cell before selection, as Ghostty does.
                 // SGR 8 text stays hidden under a block cursor.
@@ -370,7 +408,7 @@ fn collect_cells(
                 };
                 out.under_cursor = Some(UnderCursor {
                     text,
-                    font: font.clone(),
+                    font: faces[face_i].clone(),
                     colors: pre,
                     span,
                 });
@@ -383,22 +421,41 @@ fn collect_cells(
                 continue;
             }
             let fg = colors::hsla(c.fg, c.fg_alpha);
+            let underline = cell
+                .underline
+                .then(|| cell.underline_style.unwrap_or(VtUnderline::Single));
+            let batchable = span == 1 && cell.text.chars().count() == 1;
+            // Extend the last run in place when nothing changes: no TextRun, no Font clone.
+            if batchable
+                && let Some(last) = out.runs.last_mut()
+                && last.batchable
+                && last.row == row
+                && last.col + last.cells == col
+                && last.face == face_i
+                && last.style.color == fg
+                && last.underline == underline
+                && last.style.strikethrough.is_some() == cell.strikethrough
+            {
+                last.text.push_str(&cell.text);
+                last.style.len += cell.text.len();
+                last.cells += 1;
+                continue;
+            }
             let text_run = TextRun {
                 len: cell.text.len(),
-                font,
+                font: faces[face_i].clone(),
                 color: fg,
                 background_color: None,
-                underline: cell.underline.then_some(UnderlineStyle {
+                underline: (underline == Some(VtUnderline::Curly)).then_some(UnderlineStyle {
                     thickness: px(1.),
                     color: Some(fg),
-                    wavy: cell.underline_style == Some(VtUnderline::Curly),
+                    wavy: true,
                 }),
                 strikethrough: cell.strikethrough.then_some(StrikethroughStyle {
                     thickness: px(1.),
                     color: Some(fg),
                 }),
             };
-            let batchable = span == 1 && cell.text.chars().count() == 1;
             push_run(
                 &mut out.runs,
                 Run {
@@ -407,6 +464,8 @@ fn collect_cells(
                     cells: span,
                     text: cell.text.clone(),
                     style: text_run,
+                    underline,
+                    face: face_i,
                     batchable,
                 },
             );
@@ -415,14 +474,67 @@ fn collect_cells(
     out
 }
 
+/// Ghostty's underline sprites (font/sprite/draw/special.zig) as quads with a corner radius:
+/// `y` is the top of a single bar, `t` its thickness. Curly is drawn by gpui (`wavy`).
+fn underline_marks(
+    style: VtUnderline,
+    x: f32,
+    w: f32,
+    y: f32,
+    t: f32,
+) -> Vec<(Bounds<Pixels>, f32)> {
+    let bar =
+        |bx: f32, by: f32, bw: f32| (Bounds::new(point(px(bx), px(by)), size(px(bw), px(t))), 0.0);
+    match style {
+        VtUnderline::Double => vec![bar(x, y - t, w), bar(x, y + t, w)],
+        VtUnderline::Dashed => {
+            let dash = (w / 3.0).floor() + 1.0;
+            let count = (w / dash).floor() as u32 + 1;
+            (0..count)
+                .step_by(2)
+                .map(|i| i as f32 * dash)
+                .filter(|dx| *dx < w)
+                .map(|dx| bar(x + dx, y, dash.min(w - dx)))
+                .collect()
+        }
+        VtUnderline::Dotted => {
+            // Dots of diameter sqrt(2) * t, as many as fit with gaps of about one diameter.
+            let r = std::f32::consts::FRAC_1_SQRT_2 * t;
+            let n = (w / (4.0 * r))
+                .ceil()
+                .min((w / (3.0 * r)).floor())
+                .min((w / (2.0 * r + 1.0)).floor())
+                .max(1.0);
+            let gap = w / n;
+            (0..n as u32)
+                .map(|i| {
+                    let cx = x + gap * (i as f32 + 0.5);
+                    let origin = point(px(cx - r), px(y + t / 2.0 - r));
+                    (Bounds::new(origin, size(px(2.0 * r), px(2.0 * r))), r)
+                })
+                .collect()
+        }
+        VtUnderline::Single | VtUnderline::Curly => vec![bar(x, y, w)],
+    }
+}
+
 /// What the cursor depends on besides the terminal.
 struct CursorState {
     focused: bool,
     blink_on: bool,
     marked_text: String,
+    cols: u16,
 }
 
-type Marked = (u16, u16, String, Hsla);
+/// The IME preedit as placed by `ime::preedit_range`.
+struct Marked {
+    col: u16,
+    row: u16,
+    cells: u16,
+    text: String,
+    color: Hsla,
+    bg: Hsla,
+}
 
 /// The cursor to paint (none while blinked off or composing) and the IME preedit, if any.
 fn plan_cursor(
@@ -451,7 +563,17 @@ fn plan_cursor(
     if !state.marked_text.is_empty() {
         // While composing, the preedit replaces the cursor (Zed does the same).
         let color = colors::hsla(under.colors.fg, 1.0);
-        return (None, Some((c.x, c.y, state.marked_text, color)));
+        let (col, offset, cells) = ime::preedit_range(&state.marked_text, c.x, state.cols);
+        let marked = Marked {
+            col,
+            row: c.y,
+            cells,
+            text: state.marked_text[offset..].to_string(),
+            color,
+            // Opaque: Ghostty draws none of the terminal's cells under the preedit.
+            bg: colors::hsla(dbg, 1.0),
+        };
+        return (None, Some(marked));
     }
     if c.blinking && !state.blink_on && state.focused {
         return (None, None);
@@ -483,6 +605,8 @@ fn plan_cursor(
             strikethrough: None,
         },
         text: under.text,
+        underline: None,
+        face: 0,
         batchable: false,
     });
     let paint = CursorPaint {
@@ -533,9 +657,17 @@ impl Frame {
         }
     }
 
-    /// The IME preedit at the cursor, underlined in the cell's foreground.
+    /// The IME preedit over blanked cells, underlined in the cursor cell's foreground.
     fn paint_marked(&self, marked: &Marked, font: Font, window: &mut Window, cx: &mut App) {
-        let (col, row, text, color) = marked;
+        let Marked {
+            col,
+            row,
+            cells,
+            text,
+            color,
+            bg,
+        } = marked;
+        window.paint_quad(fill(self.cell_bounds(*col, *row, *cells), *bg));
         let style = TextRun {
             len: text.len(),
             font,
@@ -551,9 +683,11 @@ impl Frame {
         let run = Run {
             row: *row,
             col: *col,
-            cells: 1,
+            cells: *cells,
             text: text.clone(),
             style,
+            underline: None,
+            face: 0,
             batchable: false,
         };
         self.paint_run(&run, window, cx);
@@ -568,6 +702,19 @@ impl Frame {
             run_force_width(run.batchable, self.cell_w),
         );
         let _ = line.paint(origin, px(self.cell_h), window, cx);
+        if let Some(u) = run.underline.filter(|u| *u != VtUnderline::Curly) {
+            let cell = self.cell_bounds(run.col, run.row, run.cells);
+            let marks = underline_marks(
+                u,
+                f32::from(cell.origin.x),
+                f32::from(cell.size.width),
+                f32::from(cell.origin.y) + self.underline_y,
+                1.0,
+            );
+            for (b, r) in marks {
+                window.paint_quad(fill(b, run.style.color).corner_radii(px(r)));
+            }
+        }
     }
 }
 
@@ -596,8 +743,47 @@ mod tests {
                 underline: None,
                 strikethrough: None,
             },
+            underline: None,
+            face: 0,
             batchable,
         }
+    }
+
+    fn ys(m: &[(Bounds<Pixels>, f32)]) -> Vec<f32> {
+        m.iter().map(|(b, _)| f32::from(b.origin.y)).collect()
+    }
+
+    #[test]
+    fn single_and_double_bars() {
+        let single = underline_marks(VtUnderline::Single, 0., 10., 14., 1.);
+        assert_eq!(ys(&single), vec![14.]);
+        let double = underline_marks(VtUnderline::Double, 0., 10., 14., 1.);
+        assert_eq!(ys(&double), vec![13., 15.]);
+    }
+
+    #[test]
+    fn dashes_follow_ghostty_widths() {
+        // w = 10: dash 4 px, count 3, every other one: at 0 and 8, the last clipped to w.
+        let m = underline_marks(VtUnderline::Dashed, 0., 10., 14., 1.);
+        let xs: Vec<_> = m
+            .iter()
+            .map(|(b, _)| (f32::from(b.origin.x), f32::from(b.size.width)))
+            .collect();
+        assert_eq!(xs, vec![(0., 4.), (8., 2.)]);
+    }
+
+    #[test]
+    fn dots_are_round_and_at_least_one() {
+        let m = underline_marks(VtUnderline::Dotted, 0., 10., 14., 1.);
+        assert!(!m.is_empty());
+        assert!(
+            m.iter()
+                .all(|(b, r)| (r * 2. - f32::from(b.size.width)).abs() < 1e-5)
+        );
+        assert_eq!(
+            underline_marks(VtUnderline::Dotted, 0., 1., 14., 1.).len(),
+            1
+        );
     }
 
     #[test]

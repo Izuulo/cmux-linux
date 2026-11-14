@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use cmux_meta::remote;
 use cmux_term::TermEvent;
-use cmux_term::ghostty_vt::{KeyAction, KeyEncoder, MouseEncoders};
+use cmux_term::ghostty_vt::{KeyAction, KeyEncoder, MouseEncoders, SelectionPoint};
 use cmux_term::input::{encode_focus, encode_paste, paste_needs_confirmation};
 use cmux_term::pty::{PtyEvent, Session};
 use cmux_term::selection::Selection;
@@ -87,6 +87,12 @@ pub enum TerminalEvent {
     OpenLink(String),
 }
 
+/// An unfocused cursor is drawn hollow and never blinks, and we draw no SGR 5 text blink, so
+/// the timer is needed only for a focused blinking cursor.
+pub(crate) fn blink_wanted(focused: bool, cursor_blinks: bool) -> bool {
+    focused && cursor_blinks
+}
+
 pub struct TerminalView {
     pub(crate) session: Session,
     pub(crate) style: Rc<TermStyle>,
@@ -99,16 +105,29 @@ pub struct TerminalView {
     pub(crate) marked_text: String,
     /// Viewport cursor cell from the last prepaint, for IME placement.
     pub(crate) cursor_cell: Option<(u16, u16)>,
+    /// Viewport cell where the IME preedit starts, while composing.
+    pub(crate) preedit_cell: Option<(u16, u16)>,
     pub(crate) cursor_blinks: bool,
     pub(crate) blink_on: bool,
+    /// Flips `blink_on` every 600 ms; only alive while `blink_wanted` (an idle app sleeps).
+    pub(crate) blink_task: Option<Task<()>>,
     key_encoder: KeyEncoder,
     pub(crate) mouse: MouseEncoders,
     /// A local selection drag is in progress.
     pub(crate) dragging: bool,
+    /// Cell and in-cell x fraction of the last left press; kept after release so Shift-click
+    /// can continue the gesture (Ghostty).
+    pub(crate) press: Option<(SelectionPoint, f32)>,
+    /// Last pointer position of a selection drag, for autoscroll ticks.
+    pub(crate) drag_pos: Point<Pixels>,
+    /// Scrolls the viewport while a selection drag is above or below the grid.
+    pub(crate) autoscroll_task: Option<Task<()>>,
     /// The press opened a link: its release goes nowhere.
     pub(crate) link_press: bool,
     /// Wheel pixels not yet turned into whole lines.
     pub(crate) scroll_px: f32,
+    /// Horizontal wheel pixels not yet turned into whole reports.
+    pub(crate) scroll_px_x: f32,
     /// `Keystroke.key` of presses that went to the PTY, so their release goes there too even
     /// when a binding (a Copy with nothing selected) let the press through.
     forwarded_keys: HashSet<String>,
@@ -188,23 +207,6 @@ impl TerminalView {
                 }
             }
         });
-        let blink_task = cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(600))
-                    .await;
-                let alive = this.update(cx, |view, cx| {
-                    view.blink_on = !view.blink_on;
-                    if view.cursor_blinks {
-                        cx.notify();
-                    }
-                });
-                if alive.is_err() {
-                    break;
-                }
-            }
-        });
-
         let focus = cx.focus_handle();
         let subscriptions = vec![
             cx.on_focus_in(&focus, window, |view, _, cx| view.focus_changed(true, cx)),
@@ -220,13 +222,19 @@ impl TerminalView {
             selection: None,
             marked_text: String::new(),
             cursor_cell: None,
+            preedit_cell: None,
             cursor_blinks: false,
             blink_on: true,
+            blink_task: None,
             key_encoder: KeyEncoder::new().expect("libghostty-vt key encoder"),
             mouse: MouseEncoders::new().expect("libghostty-vt mouse encoders"),
             dragging: false,
+            press: None,
+            drag_pos: Point::default(),
+            autoscroll_task: None,
             link_press: false,
             scroll_px: 0.0,
+            scroll_px_x: 0.0,
             forwarded_keys: HashSet::new(),
             title: None,
             cwd: None,
@@ -235,7 +243,7 @@ impl TerminalView {
             trace_latency: std::env::var_os("CMUX_TRACE_LATENCY").is_some(),
             key_at: None,
             echo_at: None,
-            _tasks: vec![pty_task, blink_task],
+            _tasks: vec![pty_task],
             _subscriptions: subscriptions,
         }
     }
@@ -395,6 +403,7 @@ impl TerminalView {
         self.forwarded_keys.clear();
         // A release lost while unfocused would otherwise keep clicks local on a tracking TUI.
         self.dragging = false;
+        self.autoscroll_task = None;
         // The IME is disabled on leave and never ends the preedit itself.
         if !focused {
             self.marked_text.clear();
@@ -402,7 +411,31 @@ impl TerminalView {
         if self.session.term.lock().unwrap().vt().mode(1004, false) {
             self.session.write(encode_focus(focused));
         }
+        self.sync_blink(focused, cx);
         cx.notify();
+    }
+
+    /// Starts or stops the blink timer to match the focus and the cursor's blink mode.
+    pub(crate) fn sync_blink(&mut self, focused: bool, cx: &mut Context<Self>) {
+        if !blink_wanted(focused, self.cursor_blinks) {
+            self.blink_task = None;
+            self.blink_on = true;
+        } else if self.blink_task.is_none() {
+            self.blink_task = Some(cx.spawn(async move |this, cx| {
+                loop {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(600))
+                        .await;
+                    let alive = this.update(cx, |view, cx| {
+                        view.blink_on = !view.blink_on;
+                        cx.notify();
+                    });
+                    if alive.is_err() {
+                        break;
+                    }
+                }
+            }));
+        }
     }
 
     pub(crate) fn set_geometry(&mut self, g: Geometry) {
@@ -578,6 +611,13 @@ impl Render for TerminalView {
 mod tests {
     use super::*;
     use gpui::point;
+
+    #[test]
+    fn blink_timer_runs_only_for_a_focused_blinking_cursor() {
+        assert!(blink_wanted(true, true));
+        assert!(!blink_wanted(false, true));
+        assert!(!blink_wanted(true, false));
+    }
 
     #[test]
     fn cell_at_maps_and_clamps_positions() {

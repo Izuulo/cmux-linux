@@ -84,6 +84,9 @@ serde_json (crates.io 1, https://github.com/serde-rs/json), used by cmux-config,
 uuid (crates.io 1, https://github.com/uuid-rs/uuid), used by cmux-ipc for socket handles.
   MIT OR Apache-2.0. Already a dependency of gpui.
 
+unicode-width (crates.io 0.2, https://github.com/unicode-rs/unicode-width), used by cmux-app
+  to place the IME preedit. MIT OR Apache-2.0. Already in the tree through gpui's dependencies.
+
 zbus (crates.io 5.19, https://github.com/dbus2/zbus), used by cmux-app on Linux for
   desktop notifications. MIT. Already a dependency of gpui (through ashpd).
 

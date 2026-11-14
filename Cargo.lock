@@ -1021,6 +1021,7 @@ dependencies = [
  "raw-window-handle",
  "serde_json",
  "smallvec",
+ "unicode-width",
  "wayland-backend",
  "wayland-client",
  "wayland-protocols 0.32.13",

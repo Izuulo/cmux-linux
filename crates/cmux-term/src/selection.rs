@@ -111,6 +111,22 @@ impl Selection {
         })
     }
 
+    /// A cell-mode selection of `[start, end]` (ordered, inclusive): a drag that crossed the
+    /// threshold (`gesture::cell_span`). `None` when a point is outside the grid.
+    pub fn cells(term: &mut Term, start: SelectionPoint, end: SelectionPoint) -> Option<Self> {
+        let r = SelectionRange { start, end };
+        Some(Self {
+            mode: SelectMode::Cell,
+            epoch: term.epoch(),
+            anchor: track(term, r)?,
+            range: track(term, r)?,
+        })
+    }
+
+    pub fn mode(&self) -> SelectMode {
+        self.mode
+    }
+
     /// Drag to `point`: the selection spans the anchor and the unit under `point`. The head
     /// may be before the anchor; the whole anchor unit stays selected. Does nothing if the
     /// anchor was lost.
@@ -138,13 +154,6 @@ impl Selection {
             return None;
         }
         resolve(term, &self.range)
-    }
-
-    /// A plain click that never dragged: not a selection. True only for a cell-mode selection
-    /// covering a single cell (including a drag that came back to its start). Word and line
-    /// clicks always select something, so they are never empty.
-    pub fn is_empty_click(&self, term: &Term) -> bool {
-        self.mode == SelectMode::Cell && self.range(term).is_some_and(|r| r.start == r.end)
     }
 
     /// Per-cell test; for a whole frame call [`Selection::range`] once and use [`range_contains`].
@@ -262,15 +271,11 @@ mod tests {
     }
 
     #[test]
-    fn click_without_drag_is_empty() {
-        let mut t = term(b"hello");
-        let mut s = sel(&mut t, p(1, 0), SelectMode::Cell);
-        assert!(s.is_empty_click(&t));
-        s.extend(&mut t, p(3, 0));
-        assert!(!s.is_empty_click(&t));
-        s.extend(&mut t, p(1, 0));
-        assert!(s.is_empty_click(&t));
-        assert!(!sel(&mut t, p(1, 0), SelectMode::Word).is_empty_click(&t));
+    fn cells_selects_the_given_range() {
+        let mut t = term(b"hello world");
+        let s = Selection::cells(&mut t, p(6, 0), p(10, 0)).unwrap();
+        assert_eq!(s.text(&mut t).as_deref(), Some("world"));
+        assert_eq!(s.mode(), SelectMode::Cell);
     }
 
     #[test]

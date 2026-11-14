@@ -4,8 +4,8 @@
      current version to docs/status-archive.md. -->
 
 **Updated:** 2026-11-14
-**Current milestone:** M15 hardening (PR #25, branch `m15-hardening`): all 8 plan tasks built; exits 1–5 checked on KDE (journal). `scripts/click-through.py` runs 13 UI checks in a headless KWin, all pass.
-**Next action:** owner: review PR #25 (note the vendored gpui, `vendor/gpui/PATCHED.md`), say "done" to merge. Shells opened before this build carry the old `CMUX_LINUX=1`: reopen terminals running Claude for hooks to work. Older owner checks (real Claude runs, tmux, `makepkg -si`, touchpad, IME, blur by eye) are in `docs/status-archive.md` (2026-11-14 — before M15).
+**Current milestone:** M16 input polish (branch `m16-input-polish`): plan Tasks 1–9 built; exits 1–5 pass by script and unit test; `scripts/click-through.py` 17/17 in headless KWin.
+**Next action:** owner: review the M16 PR, say "done" to merge. At the desk (not gating): touchpad scroll feel vs Ghostty, a real fcitx/ibus preedit, the new underline styles by eye (`printf '\e[4:2mdouble \e[4:3mcurly \e[4:4mdotted \e[4:5mdashed\e[0m\n'`). Older owner checks: `docs/status-archive.md` (2026-11-14 — before M15).
 
 ## Where things are
 - Design and milestone table: `docs/design.md`; milestone docs: `docs/milestones/<id>/`
@@ -30,7 +30,8 @@
 | M12 settings | done; exits by script on KDE (writer calls + armed recorder); UI scale, blur, cursor style, a text field clicked by script (M15) |
 | M13 browser | done; CEF off-screen rendering; exits by script on KDE; mouse/IME in pages unverified |
 | M14 mac-look | merged (PR #23); built and calibrated against cmux on macOS 27 (dark + light); popover, palette, Settings, title bar, browser bar seen on KDE side by side; clicks/hovers and the context menu on screen pending |
-| M15 hardening | built (PR #25); exits 1–5 checked on KDE; click-through 13/13 in headless KWin |
+| M15 hardening | merged (PR #25); exits 1–5 checked on KDE; click-through 13/13 in headless KWin |
+| M16 input-polish | built; Ghostty selection threshold, Shift-click, autoscroll, horizontal wheel, touchpad rate, underlines, IME placement, blink timer; exits by script |
 
 ## Decisions so far
 - Port from source (cmux is GPL-3.0-or-later); REA not needed. Our license: GPL-3.0-or-later.
@@ -66,6 +67,7 @@
 - `cmux-app`: gpui `TerminalView` + `TerminalElement`, keys, colours, style, mouse, IME; M2 adds `actions`, `chrome`, `workspace`, `workspace/tab_strip`, `assets`; M3 adds `window_view` (root, pollers), `window_view/sidebar`, `window_view/rename`, `blur` (Linux); M4 adds `attention` (ring, flash), `window_view/notify` (rules wiring, jump), `window_view/panel`, `desktop_notify` (zbus, Linux), `activation` + `wayland` (Linux).
 
 ## Open risks
+- M16: the sidebar resize grip overlaps terminal column 0 by a few px (a press there drags the sidebar). Underline position/thickness are gpui's, not font metrics. `debug.terminal.state` (debug builds) reads a terminal for scripts.
 - M15: scripted UI checks run in `kwin_wayland --virtual` (`scripts/click-through.py`); a dev window behind the owner's windows draws no frames, so never script clicks on the owner's session, and never `spectacle -a` there. Not covered by script: trust prompt, browser chrome, Feed plan/question cards and feedback field, drags, hover, long-rename caret layout. Dirty `*` re-checks a plain file edit only every 10 s. `debug.ui.bounds` exists in debug builds only. M14: fades restart from 0 on reopen.
 - M13: CEF 156 (`cef =156.4.0`) off-screen, frames as gpui images (full upload per frame; video heavy); HiDPI via page zoom (CEF ignores the scale on Linux); every restored browser tab starts CEF at launch; physical mouse, IME and popups unverified.
 - M12: Agent edits write every field (`argv_option = ""`); removing the first of two same-id agents keeps the first entry's extras; 819 theme cards rebuild per keystroke (frame time unmeasured); one recorded chord replaces all of an action's chords.
@@ -90,9 +92,7 @@
 - M3 deferred: drop line 1 px off/unclipped when scrolled; `run_with_deadline` drain join unbounded if a grandchild holds the pipe; shell-integration kicks (M5). Plasma ≤6.6 blur (`org_kde_kwin_blur`) only if needed. libghostty idle compression not driven.
 - M5 deferred minors: denial text can become "Socket closed before reply"; hidden new workspace splits measured at full width; no CLI tests for denial/timeout texts. Not in M6 spec (owner may add): `identify`, `rpc`, `list-notifications`, `clear-notifications`, capability tokens, socket settings UI.
 - **M1 exit criteria 2–3:** take the screenshot pair and run `CMUX_TRACE_LATENCY=1` next time the user is at the desktop.
-- Mouse: touchpad may scroll ~3× Ghostty's rate; no drag threshold, shift-click extend, autoscroll, horizontal wheel; mouse glue untested.
-- Render: underline styles simplified; per-cell Font clone in prepaint; blink task always wakes; PTY: `resize` locks on GUI thread; Term: epoch over-invalidates on any ESC[3J; title/bell coalesced per feed.
-- IME: preedit has no background and isn't clamped; `bounds_for_range` approximate; real IME (fcitx/ibus) unverified.
+- Input/render: touchpad feel and real IME (fcitx/ibus) unverified on hardware; no rectangle (Alt) selection; Term epoch over-invalidates on any ESC[3J; title/bell coalesced per feed.
 - Config: quoted `?` path handling; theme files' own `theme`/`config-file` lines ignored.
 - CI: fmt `-p` list hand-maintained; clippy excludes vendored crates. Packaging: crate licence texts (`cargo about`) not shipped yet, before AUR publish; `-git` PKGBUILD only, no release tag; makepkg's Ghostty source still clones from GitHub.
 

@@ -7,14 +7,17 @@
 use cmux_term::ghostty_vt::{
     KeyAction, MouseAction, MouseButton as VtButton, MouseInput, Screen, SelectionPoint,
 };
+use std::time::Duration;
+
+use cmux_term::gesture::{self, Autoscroll};
 use cmux_term::selection::{SelectMode, Selection};
 use gpui::{
     Context, Keystroke, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    Pixels, Point, ScrollWheelEvent, Window, px,
+    Pixels, Point, ScrollDelta, ScrollWheelEvent, Window, px,
 };
 
 use crate::keys;
-use crate::terminal_view::{TerminalEvent, TerminalView};
+use crate::terminal_view::{Geometry, TerminalEvent, TerminalView};
 
 fn vt_button(b: MouseButton) -> Option<VtButton> {
     match b {
@@ -35,9 +38,33 @@ fn select_mode(click_count: usize) -> SelectMode {
     }
 }
 
+/// Where inside its cell the pointer is, `0..1`; clamped to the grid like `Geometry::cell_at`.
+fn cell_frac(g: &Geometry, pos: Point<Pixels>) -> f32 {
+    let x = (f32::from(pos.x - g.origin.x) / g.cell_w).clamp(0.0, f32::from(g.cols) - 1e-3);
+    x.fract()
+}
+
 /// Absolute screen row of a viewport row, given the scrollbar offset of the viewport top.
 fn absolute_row(offset: u64, viewport_row: u16) -> u32 {
     (offset + u64::from(viewport_row)) as u32
+}
+
+/// gpui's Wayland backend triples touchpad pixels and makes a notch 3 lines on both axes
+/// (vendor/gpui wayland/client.rs); Ghostty uses touchpad pixels as they come and sends one
+/// report per horizontal notch (Surface.zig `scrollCallback`).
+const GPUI_AXIS_FACTOR: f32 = if cfg!(target_os = "linux") { 3.0 } else { 1.0 };
+
+/// `(x, y)` wheel pixels in Ghostty's units: y one cell height per line (3 per notch), x one
+/// cell width per report.
+fn wheel_px(delta: ScrollDelta, cell_w: f32, cell_h: f32) -> (f32, f32) {
+    let x = f32::from(delta.pixel_delta(px(cell_w)).x) / GPUI_AXIS_FACTOR;
+    let y = f32::from(delta.pixel_delta(px(cell_h)).y);
+    let y = if matches!(delta, ScrollDelta::Pixels(_)) {
+        y / GPUI_AXIS_FACTOR
+    } else {
+        y
+    };
+    (x, y)
 }
 
 /// Adds `delta_px` (positive = wheel up) to the pending pixels and splits off whole lines.
@@ -49,7 +76,7 @@ fn wheel_lines(pending_px: f32, delta_px: f32, cell_h: f32) -> (i32, f32) {
 }
 
 impl TerminalView {
-    fn tracking(&self) -> bool {
+    pub(crate) fn tracking(&self) -> bool {
         self.session.term.lock().unwrap().vt().mouse_tracking()
     }
 
@@ -160,14 +187,28 @@ impl TerminalView {
         }
         match ev.button {
             MouseButton::Left => {
-                let Some(point) = self.point_at(ev.position) else {
+                let (Some(g), Some(point)) = (self.geometry, self.point_at(ev.position)) else {
                     return;
                 };
+                // Ghostty: Shift-click continues the last gesture as a drag to the press, unless
+                // it is a quick repeat (Surface.zig ~5801).
+                if ev.modifiers.shift
+                    && ev.click_count == 1
+                    && self.selection.is_some()
+                    && self.press.is_some()
+                {
+                    self.dragging = true;
+                    self.drag_to(ev.position, cx);
+                    return;
+                }
                 let mode = select_mode(ev.click_count);
-                let mut term = self.session.term.lock().unwrap();
-                self.selection = Selection::new(&mut term, point, mode);
-                drop(term);
-                self.dragging = self.selection.is_some();
+                self.press = Some((point, cell_frac(&g, ev.position)));
+                self.selection = match mode {
+                    // A cell selection starts only once a drag crosses the threshold.
+                    SelectMode::Cell => None,
+                    _ => Selection::new(&mut self.session.term.lock().unwrap(), point, mode),
+                };
+                self.dragging = true;
                 cx.notify();
             }
             // Middle click pastes the primary selection (X11/Wayland convention).
@@ -195,14 +236,67 @@ impl TerminalView {
             self.report(MouseAction::Motion, button, ev.position, &ev.modifiers);
             return;
         }
-        if self.dragging
-            && ev.pressed_button == Some(MouseButton::Left)
-            && let Some(point) = self.point_at(ev.position)
-            && let Some(selection) = self.selection.as_mut()
-        {
-            selection.extend(&mut self.session.term.lock().unwrap(), point);
-            cx.notify();
+        if self.dragging && ev.pressed_button == Some(MouseButton::Left) {
+            self.drag_to(ev.position, cx);
         }
+    }
+
+    /// One drag step to `pos`: word and line selections grow by units from their anchor, cell
+    /// selections follow Ghostty's within-cell threshold from the press.
+    pub(crate) fn drag_to(&mut self, pos: Point<Pixels>, cx: &mut Context<Self>) {
+        let (Some(g), Some(point), Some((anchor, frac))) =
+            (self.geometry, self.point_at(pos), self.press)
+        else {
+            return;
+        };
+        let mut term = self.session.term.lock().unwrap();
+        match self.selection.as_mut() {
+            Some(s) if s.mode() != SelectMode::Cell => s.extend(&mut term, point),
+            _ => {
+                self.selection =
+                    gesture::cell_span(anchor, frac, point, cell_frac(&g, pos), g.cols)
+                        .and_then(|(s, e)| Selection::cells(&mut term, s, e));
+            }
+        }
+        drop(term);
+        self.drag_pos = pos;
+        let dir = gesture::autoscroll(f32::from(pos.y - g.origin.y), f32::from(g.rows) * g.cell_h);
+        if dir == Autoscroll::None {
+            self.autoscroll_task = None;
+        } else if self.autoscroll_task.is_none() {
+            self.autoscroll_task = Some(cx.spawn(async move |this, cx| {
+                // Ghostty: one row per 15 ms tick (termio/Thread.zig), then the drag re-runs at
+                // the last pointer position.
+                loop {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(15))
+                        .await;
+                    let go = this.update(cx, |view, cx| view.autoscroll_tick(cx));
+                    if !matches!(go, Ok(true)) {
+                        let _ = this.update(cx, |view, _| view.autoscroll_task = None);
+                        break;
+                    }
+                }
+            }));
+        }
+        cx.notify();
+    }
+
+    /// One autoscroll step; false once the drag ended or came back inside the grid.
+    fn autoscroll_tick(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(g) = self.geometry else { return false };
+        let y = f32::from(self.drag_pos.y - g.origin.y);
+        let lines = match gesture::autoscroll(y, f32::from(g.rows) * g.cell_h) {
+            Autoscroll::Up => -1,
+            Autoscroll::Down => 1,
+            Autoscroll::None => return false,
+        };
+        if !self.dragging {
+            return false;
+        }
+        self.session.term.lock().unwrap().scroll(lines);
+        self.drag_to(self.drag_pos, cx);
+        true
     }
 
     pub(crate) fn mouse_up(&mut self, ev: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
@@ -222,14 +316,8 @@ impl TerminalView {
             return;
         }
         self.dragging = false;
+        self.autoscroll_task = None;
         let mut term = self.session.term.lock().unwrap();
-        if self
-            .selection
-            .as_ref()
-            .is_some_and(|s| s.is_empty_click(&term))
-        {
-            self.selection = None;
-        }
         let text = self.selection.as_ref().and_then(|s| s.text(&mut term));
         drop(term);
         // Ghostty's copy-on-select default on Linux: the selection goes to PRIMARY. Never with
@@ -250,15 +338,12 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         let Some(g) = self.geometry else { return };
-        // gpui's Wayland backend already turns one wheel notch into 3 lines (SCROLL_LINES in
-        // platform/linux/platform.rs), Ghostty's discrete default, so no multiplier here.
-        let (lines, rest) = wheel_lines(
-            self.scroll_px,
-            f32::from(ev.delta.pixel_delta(px(g.cell_h)).y),
-            g.cell_h,
-        );
+        let (dx, dy) = wheel_px(ev.delta, g.cell_w, g.cell_h);
+        let (lines, rest) = wheel_lines(self.scroll_px, dy, g.cell_h);
         self.scroll_px = rest;
-        if lines == 0 {
+        let (cols, rest_x) = wheel_lines(self.scroll_px_x, dx, g.cell_w);
+        self.scroll_px_x = rest_x;
+        if lines == 0 && cols == 0 {
             return;
         }
         // gpui: positive y is wheel-up, toward history.
@@ -281,6 +366,17 @@ impl TerminalView {
             for _ in 0..lines.unsigned_abs() {
                 self.report(MouseAction::Press, Some(button), ev.position, &ev.modifiers);
             }
+            // Horizontal goes only to the app (buttons 6/7); gpui's positive x is wheel-left.
+            let button = if cols > 0 {
+                VtButton::WheelLeft
+            } else {
+                VtButton::WheelRight
+            };
+            for _ in 0..cols.unsigned_abs() {
+                self.report(MouseAction::Press, Some(button), ev.position, &ev.modifiers);
+            }
+        } else if lines == 0 {
+            // Ghostty has no horizontal scrollback.
         } else if alternate_scroll {
             // Mode 1007 is not handled by libghostty-vt (Ghostty does it in Surface.zig
             // scrollCallback), so full-screen apps such as less get arrow keys here.
@@ -314,9 +410,47 @@ mod tests {
     }
 
     #[test]
+    fn cell_frac_is_the_position_inside_the_cell() {
+        let g = Geometry {
+            origin: gpui::point(px(2.), px(0.)),
+            cell_w: 10.0,
+            cell_h: 20.0,
+            cols: 80,
+            rows: 24,
+            scale: 1.0,
+        };
+        assert_eq!(cell_frac(&g, gpui::point(px(2.), px(5.))), 0.0);
+        assert!((cell_frac(&g, gpui::point(px(29.), px(5.))) - 0.7).abs() < 1e-5);
+        assert_eq!(cell_frac(&g, gpui::point(px(-9.), px(5.))), 0.0);
+        assert!(cell_frac(&g, gpui::point(px(5000.), px(5.))) > 0.99);
+    }
+
+    #[test]
     fn viewport_rows_become_absolute_through_the_scroll_offset() {
         assert_eq!(absolute_row(0, 5), 5);
         assert_eq!(absolute_row(120, 5), 125);
+    }
+
+    #[test]
+    fn wheel_px_undoes_gpuis_wayland_factor() {
+        use gpui::point;
+        // One notch: gpui's 3 lines stay 3 lines vertically and become 1 report horizontally.
+        assert_eq!(
+            wheel_px(ScrollDelta::Lines(point(0., 3.)), 8., 16.),
+            (0., 48.)
+        );
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(
+                wheel_px(ScrollDelta::Lines(point(3., 0.)), 8., 16.),
+                (8., 0.)
+            );
+            // Touchpad: gpui triples pixels on Linux; Ghostty uses them as they come.
+            assert_eq!(
+                wheel_px(ScrollDelta::Pixels(point(px(24.), px(30.))), 8., 16.),
+                (8., 10.)
+            );
+        }
     }
 
     #[test]
