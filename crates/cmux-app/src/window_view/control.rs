@@ -374,7 +374,9 @@ impl WindowView {
                 let filter = params.get("match").and_then(Value::as_str).unwrap_or("");
                 let other = cx.active_window().filter(|w| *w != window.window_handle());
                 let all = match other {
-                    Some(w) => w.update(cx, |_, w, _| w.debug_element_bounds()).unwrap_or_default(),
+                    Some(w) => w
+                        .update(cx, |_, w, _| w.debug_element_bounds())
+                        .unwrap_or_default(),
                     None => window.debug_element_bounds(),
                 };
                 let rows: Vec<Value> = all
