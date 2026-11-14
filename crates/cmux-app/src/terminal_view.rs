@@ -99,6 +99,8 @@ pub struct TerminalView {
     pub(crate) marked_text: String,
     /// Viewport cursor cell from the last prepaint, for IME placement.
     pub(crate) cursor_cell: Option<(u16, u16)>,
+    /// Viewport cell where the IME preedit starts, while composing.
+    pub(crate) preedit_cell: Option<(u16, u16)>,
     pub(crate) cursor_blinks: bool,
     pub(crate) blink_on: bool,
     key_encoder: KeyEncoder,
@@ -229,6 +231,7 @@ impl TerminalView {
             selection: None,
             marked_text: String::new(),
             cursor_cell: None,
+            preedit_cell: None,
             cursor_blinks: false,
             blink_on: true,
             key_encoder: KeyEncoder::new().expect("libghostty-vt key encoder"),

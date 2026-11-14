@@ -16,6 +16,8 @@ use gpui::{
     Bounds, Context, EntityInputHandler, Pixels, Point, UTF16Selection, Window, point, px, size,
 };
 
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
 use crate::terminal_view::TerminalView;
 
 /// Ends composition and returns the bytes the committed text sends. An empty commit (gpui's
@@ -23,6 +25,29 @@ use crate::terminal_view::TerminalView;
 pub(crate) fn commit(marked: &mut String, text: &str) -> Vec<u8> {
     marked.clear();
     text.as_bytes().to_vec()
+}
+
+/// Ghostty's `Preedit.range` (renderer/State.zig): the preedit starts at the cursor, shifted
+/// left so it ends by the last column; wider than the row, its leading characters are dropped.
+/// Returns (start column, byte offset of the first drawn character, width in cells).
+pub(crate) fn preedit_range(text: &str, cursor_col: u16, cols: u16) -> (u16, usize, u16) {
+    let mut w = 0u16;
+    let mut offset = 0;
+    for (i, ch) in text.char_indices().rev() {
+        let cw = ch.width().unwrap_or(0).max(1) as u16;
+        if w + cw > cols {
+            offset = i + ch.len_utf8();
+            break;
+        }
+        w += cw;
+    }
+    (cursor_col.min(cols.saturating_sub(w)), offset, w)
+}
+
+/// Cells taken by the first `utf16` code units of `text`.
+fn utf16_cells(text: &str, utf16: usize) -> usize {
+    let prefix: Vec<u16> = text.encode_utf16().take(utf16).collect();
+    String::from_utf16_lossy(&prefix).width()
 }
 
 impl EntityInputHandler for TerminalView {
@@ -86,7 +111,8 @@ impl EntityInputHandler for TerminalView {
         cx.notify();
     }
 
-    /// The candidate window sits at the cursor cell (offset by `range.start` cells).
+    /// The cell of the preedit character at `range.start` (the cursor cell when not composing),
+    /// so the candidate window sits under the text being composed.
     fn bounds_for_range(
         &mut self,
         range: Range<usize>,
@@ -95,8 +121,8 @@ impl EntityInputHandler for TerminalView {
         _: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
         let g = self.geometry?;
-        let (col, row) = self.cursor_cell?;
-        let x = (f32::from(col) + range.start as f32) * g.cell_w;
+        let (col, row) = self.preedit_cell.or(self.cursor_cell)?;
+        let x = (f32::from(col) + utf16_cells(&self.marked_text, range.start) as f32) * g.cell_w;
         let origin = point(
             g.origin.x + px(x),
             g.origin.y + px(f32::from(row) * g.cell_h),
@@ -127,6 +153,29 @@ mod tests {
             key: key.into(),
             key_char: key_char.map(Into::into),
         }
+    }
+
+    #[test]
+    fn preedit_sits_at_the_cursor_when_it_fits() {
+        assert_eq!(preedit_range("ab", 2, 10), (2, 0, 2));
+    }
+
+    #[test]
+    fn preedit_shifts_left_at_the_right_edge() {
+        // "かん" is 4 cells; from column 8 of 10 it would end at 11, so it starts at 6.
+        assert_eq!(preedit_range("かん", 8, 10), (6, 0, 4));
+    }
+
+    #[test]
+    fn preedit_wider_than_the_row_drops_leading_chars() {
+        // 6 cells into a 4-column row: the last 4 cells ("んじ") from byte 3.
+        assert_eq!(preedit_range("かんじ", 1, 4), (0, 3, 4));
+    }
+
+    #[test]
+    fn candidate_offset_counts_cells_not_code_units() {
+        assert_eq!(utf16_cells("かんa", 2), 4);
+        assert_eq!(utf16_cells("ab", 1), 1);
     }
 
     #[test]

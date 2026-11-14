@@ -19,6 +19,7 @@ serde_json.workspace = true
 gpui.workspace = true
 futures.workspace = true
 libc.workspace = true
+unicode-width = "0.2"
 cef = { workspace = true, optional = true }
 image = { workspace = true, optional = true }
 smallvec = { workspace = true, optional = true }

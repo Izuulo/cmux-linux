@@ -19,6 +19,7 @@ use gpui::{
 };
 
 use crate::colors::{self, CellColors};
+use crate::ime;
 use crate::style::{TermStyle, cell_size};
 use crate::terminal_view::{Geometry, TerminalView, snap_to_device};
 
@@ -178,16 +179,19 @@ impl Element for TerminalElement {
                 focused,
                 blink_on,
                 marked_text,
+                cols: geometry.cols,
             };
             cursor = plan_cursor(&info, cells.under_cursor.take(), &style, state);
         }
         drop(term);
+        let preedit_cell = cursor.1.as_ref().map(|m| (m.col, m.row));
         self.view.update(cx, |view, _| {
             if selection_lost {
                 // Lost rows: drop it to release its tracked points (selection.rs `range`).
                 view.selection = None;
             }
             view.cursor_cell = cursor_cell;
+            view.preedit_cell = preedit_cell;
             view.cursor_blinks = cursor_blinks;
         });
 
@@ -518,9 +522,18 @@ struct CursorState {
     focused: bool,
     blink_on: bool,
     marked_text: String,
+    cols: u16,
 }
 
-type Marked = (u16, u16, String, Hsla);
+/// The IME preedit as placed by `ime::preedit_range`.
+struct Marked {
+    col: u16,
+    row: u16,
+    cells: u16,
+    text: String,
+    color: Hsla,
+    bg: Hsla,
+}
 
 /// The cursor to paint (none while blinked off or composing) and the IME preedit, if any.
 fn plan_cursor(
@@ -549,7 +562,17 @@ fn plan_cursor(
     if !state.marked_text.is_empty() {
         // While composing, the preedit replaces the cursor (Zed does the same).
         let color = colors::hsla(under.colors.fg, 1.0);
-        return (None, Some((c.x, c.y, state.marked_text, color)));
+        let (col, offset, cells) = ime::preedit_range(&state.marked_text, c.x, state.cols);
+        let marked = Marked {
+            col,
+            row: c.y,
+            cells,
+            text: state.marked_text[offset..].to_string(),
+            color,
+            // Opaque: Ghostty draws none of the terminal's cells under the preedit.
+            bg: colors::hsla(dbg, 1.0),
+        };
+        return (None, Some(marked));
     }
     if c.blinking && !state.blink_on && state.focused {
         return (None, None);
@@ -633,9 +656,17 @@ impl Frame {
         }
     }
 
-    /// The IME preedit at the cursor, underlined in the cell's foreground.
+    /// The IME preedit over blanked cells, underlined in the cursor cell's foreground.
     fn paint_marked(&self, marked: &Marked, font: Font, window: &mut Window, cx: &mut App) {
-        let (col, row, text, color) = marked;
+        let Marked {
+            col,
+            row,
+            cells,
+            text,
+            color,
+            bg,
+        } = marked;
+        window.paint_quad(fill(self.cell_bounds(*col, *row, *cells), *bg));
         let style = TextRun {
             len: text.len(),
             font,
@@ -651,7 +682,7 @@ impl Frame {
         let run = Run {
             row: *row,
             col: *col,
-            cells: 1,
+            cells: *cells,
             text: text.clone(),
             style,
             underline: None,
