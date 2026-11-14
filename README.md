@@ -342,7 +342,8 @@ If you don't answer within 115 s the card dims and Claude shows its own prompt a
 Closing the workspace ends the wait at once. A card also rings and notifies like any other
 notification (see above).
 
-The hook acts only inside cmux-linux terminals (they set `CMUX_LINUX=1`). Anywhere else, such
+The hook acts only inside cmux-linux terminals (they set `CMUX_LINUX` to the app's socket path,
+and the hook checks it still matches `CMUX_SOCKET_PATH`). Anywhere else, such
 as a Mac terminal of cmux.app, it prints `{}` and does nothing, so it is safe to leave
 installed.
 

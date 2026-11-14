@@ -3,10 +3,15 @@ mod support;
 use std::collections::HashMap;
 
 use cmux_ipc::feed::push_params;
+use cmux_ipc::wire::RpcError;
 use serde_json::{Value, json};
 use support::T;
 
-const LINUX: (&str, &str) = ("CMUX_LINUX", "1");
+/// A hook run whose app is down: `CMUX_LINUX` matches the socket, which isn't there.
+const DOWN: [(&str, &str); 2] = [
+    ("CMUX_LINUX", "/nonexistent/cmux.sock"),
+    ("CMUX_SOCKET_PATH", "/nonexistent/cmux.sock"),
+];
 
 fn t(result: Value) -> T {
     T::new(HashMap::new()).with_feed(result)
@@ -25,7 +30,7 @@ const BASH: &str =
 #[test]
 fn feed_hook_allow_once() {
     let t = t(json!({"status":"resolved","decision":{"kind":"permission","mode":"once"}}));
-    let (_, v) = hook(&t, BASH, &[LINUX]);
+    let (_, v) = hook(&t, BASH, &[t.linux()]);
     assert_eq!(
         v,
         json!({"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}})
@@ -45,7 +50,7 @@ fn feed_hook_allow_once() {
 fn feed_hook_plan_auto() {
     let t = t(json!({"status":"resolved","decision":{"kind":"exit_plan","mode":"autoAccept"}}));
     let stdin = r#"{"tool_name":"ExitPlanMode","tool_input":{"plan":"p"}}"#;
-    let (_, v) = hook(&t, stdin, &[LINUX]);
+    let (_, v) = hook(&t, stdin, &[t.linux()]);
     let d = &v["hookSpecificOutput"]["decision"];
     assert_eq!(d["behavior"], json!("allow"));
     assert_eq!(d["updatedInput"], json!({"plan":"p"}));
@@ -61,7 +66,7 @@ fn feed_hook_question_with_non_object_tool_input() {
     let (_, v) = hook(
         &t,
         r#"{"tool_name":"AskUserQuestion","tool_input":"x"}"#,
-        &[LINUX],
+        &[t.linux()],
     );
     assert_eq!(
         v,
@@ -73,7 +78,7 @@ fn feed_hook_question_with_non_object_tool_input() {
 #[test]
 fn feed_hook_timed_out_prints_empty() {
     let t = t(json!({"status":"timed_out"}));
-    assert_eq!(hook(&t, BASH, &[LINUX]).1, json!({}));
+    assert_eq!(hook(&t, BASH, &[t.linux()]).1, json!({}));
     assert_eq!(t.last().0, "feed.push");
 }
 
@@ -85,7 +90,7 @@ fn feed_hook_outside_cmux_linux_prints_empty() {
     assert!(t.fake.requests().is_empty());
     let (code, out, _) = t.run_with_stdin(
         &["hooks", "feed", "--source", "claude"],
-        &[LINUX, ("CMUX_SURFACE_ID", "nope")],
+        &[t.linux(), ("CMUX_SURFACE_ID", "nope")],
         BASH,
     );
     assert_eq!((code, out.trim()), (0, "{}"));
@@ -95,20 +100,28 @@ fn feed_hook_outside_cmux_linux_prints_empty() {
 #[test]
 fn feed_hook_without_socket_prints_empty() {
     let t = t(json!({}));
-    let (_, v) = hook(
-        &t,
-        BASH,
-        &[LINUX, ("CMUX_SOCKET_PATH", "/nonexistent/cmux.sock")],
-    );
+    let (_, v) = hook(&t, BASH, &DOWN);
     assert_eq!(v, json!({}));
     assert!(t.fake.requests().is_empty());
+}
+
+/// M15 (M7 review): an error from the app ends the hook quietly; Claude asks as usual.
+#[test]
+fn feed_hook_app_error_prints_empty() {
+    let t = T::new(HashMap::from([(
+        "feed.push",
+        Err(RpcError::new("internal_error", "boom")),
+    )]));
+    let (_, v) = hook(&t, BASH, &[t.linux()]);
+    assert_eq!(v, json!({}));
+    assert_eq!(t.last().0, "feed.push");
 }
 
 #[test]
 fn feed_hook_bad_stdin_prints_empty() {
     let t = t(json!({"status":"timed_out"}));
     for s in ["", "not json", "[1]", "\"x\""] {
-        assert_eq!(hook(&t, s, &[LINUX]).1, json!({}));
+        assert_eq!(hook(&t, s, &[t.linux()]).1, json!({}));
     }
     assert!(t.fake.requests().is_empty());
 }
@@ -116,7 +129,8 @@ fn feed_hook_bad_stdin_prints_empty() {
 #[test]
 fn feed_hook_other_source_prints_empty() {
     let t = t(json!({"status":"timed_out"}));
-    let (code, out, _) = t.run_with_stdin(&["hooks", "feed", "--source", "codex"], &[LINUX], BASH);
+    let (code, out, _) =
+        t.run_with_stdin(&["hooks", "feed", "--source", "codex"], &[t.linux()], BASH);
     assert_eq!((code, out.trim()), (0, "{}"));
     assert!(t.fake.requests().is_empty());
 }
@@ -124,7 +138,7 @@ fn feed_hook_other_source_prints_empty() {
 #[test]
 fn feed_hook_requires_source() {
     let t = t(json!({}));
-    let (code, _, err) = t.run_with_stdin(&["hooks", "feed"], &[LINUX], BASH);
+    let (code, _, err) = t.run_with_stdin(&["hooks", "feed"], &[t.linux()], BASH);
     assert_eq!(code, 1);
     assert_eq!(
         err,
@@ -315,6 +329,56 @@ mod setup {
         }
     }
 
+    /// M15 (M7 review): broken JSON is refused by both commands and left as it was.
+    #[test]
+    fn invalid_json_is_refused_by_setup_and_uninstall() {
+        for sub in ["setup", "uninstall"] {
+            let f = temp_dir().join("s.json");
+            std::fs::write(&f, "{not json").unwrap();
+            let (code, _, err) = run(sub, &f);
+            assert_eq!(code, 1, "{sub}");
+            assert!(err.contains(f.to_str().unwrap()), "{sub}: {err}");
+            assert_eq!(std::fs::read_to_string(&f).unwrap(), "{not json");
+        }
+    }
+
+    /// M15 (M7 review): uninstall refuses a settings file it cannot read as an object.
+    #[test]
+    fn uninstall_refuses_non_object() {
+        let f = temp_dir().join("s.json");
+        std::fs::write(&f, "[]").unwrap();
+        let (code, _, err) = run("uninstall", &f);
+        assert_eq!(code, 1);
+        assert!(err.contains("is not a JSON object"), "{err}");
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), "[]");
+    }
+
+    /// M15 (M7 review): without `CLAUDE_CONFIG_DIR`, `~/.claude/settings.json`.
+    #[test]
+    fn home_is_the_fallback() {
+        let home = temp_dir();
+        let mut c = support::ctx(&[("HOME", home.to_str().unwrap())]);
+        c.exe = Some("/opt/cmux".into());
+        let o = support::cli(&["hooks", "setup"], &c);
+        assert_eq!(o.code, 0, "{}", o.stderr);
+        assert!(home.join(".claude/settings.json").exists());
+    }
+
+    /// M15 (M7 review): `--settings-file` wins over `CLAUDE_CONFIG_DIR`.
+    #[test]
+    fn settings_file_wins_over_config_dir() {
+        let (d, f) = (temp_dir(), temp_dir().join("mine.json"));
+        let mut c = support::ctx(&[("CLAUDE_CONFIG_DIR", d.to_str().unwrap())]);
+        c.exe = Some("/opt/cmux".into());
+        let o = support::cli(
+            &["hooks", "setup", "--settings-file", f.to_str().unwrap()],
+            &c,
+        );
+        assert_eq!(o.code, 0, "{}", o.stderr);
+        assert!(f.exists());
+        assert!(!d.join("settings.json").exists());
+    }
+
     #[test]
     fn claude_config_dir_is_used() {
         let d = temp_dir();
@@ -371,7 +435,7 @@ fn message_hook_attaches_mail_to_a_prompt_or_tool_result() {
     let t = mail("[cmux agent message] from a");
     for event in ["UserPromptSubmit", "PostToolUse"] {
         assert_eq!(
-            message_hook(&t, event, &[LINUX]),
+            message_hook(&t, event, &[t.linux()]),
             json!({"hookSpecificOutput": {
                 "hookEventName": event, "additionalContext": "[cmux agent message] from a"}})
         );
@@ -388,12 +452,13 @@ fn message_hook_attaches_mail_to_a_prompt_or_tool_result() {
 fn message_hook_continues_a_stopping_turn_and_ends_the_last_one() {
     let t = mail("[cmux agent message] from a");
     assert_eq!(
-        message_hook(&t, "Stop", &[LINUX]),
+        message_hook(&t, "Stop", &[t.linux()]),
         json!({"decision": "block", "reason": "[cmux agent message] from a"})
     );
     assert_eq!(t.last().1["mark_delivered_read"], json!(true));
     // No mail: the turn just ends.
-    assert_eq!(message_hook(&mail(""), "Stop", &[LINUX]), json!({}));
+    let m = mail("");
+    assert_eq!(message_hook(&m, "Stop", &[m.linux()]), json!({}));
 }
 
 #[test]
@@ -402,7 +467,7 @@ fn stop_reports_the_transcript_for_auto_naming() {
     let run = |event: &str| {
         let stdin = json!({"hook_event_name": event, "transcript_path": "/t/s.jsonl"}).to_string();
         let args = ["hooks", "message", "--source", "claude"];
-        t.run_with_stdin(&args, &[LINUX], &stdin).1
+        t.run_with_stdin(&args, &[t.linux()], &stdin).1
     };
     // The app doesn't know the method here: the hook still ends the turn quietly.
     assert_eq!(run("Stop"), "{}\n");
@@ -422,19 +487,57 @@ fn stop_reports_the_transcript_for_auto_naming() {
 fn message_hook_stays_silent_when_it_should() {
     let t = mail("x");
     let asked = || t.fake.requests().len();
-    assert_eq!(message_hook(&t, "SubagentStop", &[LINUX]), json!({}));
+    assert_eq!(message_hook(&t, "SubagentStop", &[t.linux()]), json!({}));
     assert_eq!(message_hook(&t, "Stop", &[("CMUX_LINUX", "0")]), json!({}));
+    // M15: the old `1`, or a `CMUX_LINUX` naming another socket than `CMUX_SOCKET_PATH` (a
+    // cmux.app started from our terminal sets its own), is not ours.
+    assert_eq!(message_hook(&t, "Stop", &[("CMUX_LINUX", "1")]), json!({}));
+    let theirs = [("CMUX_LINUX", "/elsewhere/cmux.sock")];
+    assert_eq!(message_hook(&t, "Stop", &theirs), json!({}));
     assert_eq!(
-        message_hook(&t, "Stop", &[LINUX, ("CMUX_SURFACE_ID", "nope")]),
+        message_hook(&t, "Stop", &[t.linux(), ("CMUX_SURFACE_ID", "nope")]),
         json!({})
     );
     assert_eq!(asked(), 0, "nothing was claimed");
     let (_, out, _) = t.run_with_stdin(
         &["hooks", "message", "--source", "claude"],
-        &[LINUX],
+        &[t.linux()],
         "junk",
     );
     assert_eq!(out, "{}\n");
-    let down = [LINUX, ("CMUX_SOCKET_PATH", "/nonexistent/cmux.sock")];
-    assert_eq!(message_hook(&t, "Stop", &down), json!({}));
+    assert_eq!(message_hook(&t, "Stop", &DOWN), json!({}));
+}
+
+/// M15: a hook whose stdin never ends gives up instead of hanging the agent.
+#[test]
+fn hook_with_open_stdin_does_not_hang() {
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+    let id = "0000AAAA-0000-4000-8000-00000000000F";
+    let mut child = Command::new(env!("CARGO_BIN_EXE_cmux"))
+        .args(["hooks", "feed", "--source", "claude"])
+        .env_clear()
+        .envs(DOWN)
+        .env("CMUX_WORKSPACE_ID", id)
+        .env("CMUX_SURFACE_ID", id)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let _open = child.stdin.take();
+    let start = Instant::now();
+    loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            assert!(status.success());
+            break;
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "hook hung on stdin"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let mut out = String::new();
+    std::io::Read::read_to_string(&mut child.stdout.take().unwrap(), &mut out).unwrap();
+    assert_eq!(out, "{}\n");
 }

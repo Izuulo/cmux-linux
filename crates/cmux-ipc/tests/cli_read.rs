@@ -271,3 +271,29 @@ fn list_panes_from_a_dock_shell() {
         "* pane:4  [1 surface]  [focused]  [dock:global]\n"
     );
 }
+
+/// M15: an unusable response timeout falls back to the default instead of panicking.
+#[test]
+fn odd_response_timeouts_do_not_panic() {
+    let t = T::new(HashMap::new());
+    for v in ["inf", "NaN", "1e300", "-1", "x"] {
+        let out = t.run_env(&["list-panes"], &[("CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC", v)]);
+        assert_eq!(out.0, 0, "{v}: {out:?}");
+    }
+}
+
+/// M15: the binary refuses a non-UTF-8 argument with an error, not a panic.
+#[test]
+fn non_utf8_args_are_refused() {
+    use std::os::unix::ffi::OsStrExt;
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_cmux"))
+        .arg(std::ffi::OsStr::from_bytes(b"\xff"))
+        .env_clear()
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        "Error: arguments must be valid UTF-8\n"
+    );
+}

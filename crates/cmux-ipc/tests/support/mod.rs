@@ -204,6 +204,11 @@ impl T {
         self.with(HashMap::from([("feed.push", Ok(result))]))
     }
 
+    /// `CMUX_LINUX` as our terminals set it: this fake's socket path (M15).
+    pub fn linux(&self) -> (&'static str, &str) {
+        ("CMUX_LINUX", self.fake.path.to_str().unwrap())
+    }
+
     pub fn a(&self) -> String {
         self.s.workspaces[0].handle.id.clone()
     }

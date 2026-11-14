@@ -9,7 +9,6 @@ use std::path::Path;
 
 use serde_json::{Map, Value};
 
-use super::commands::parse_bool;
 use super::{CliError, Cmd, fail};
 use crate::paths;
 
@@ -422,7 +421,7 @@ fn write_shim(dir: &Path, exe: &Path) -> std::io::Result<()> {
 
 /// `cmux claude-teams [claude-args...]` (plan T1). Replaces this process with `claude`.
 pub(crate) fn claude_teams(cmd: &mut Cmd) -> Result<String, CliError> {
-    let linux = cmd.env("CMUX_LINUX").and_then(parse_bool) == Some(true);
+    let linux = cmd.in_our_terminal();
     if !linux || cmd.env("CMUX_SURFACE_ID").is_none() {
         return fail("cmux claude-teams must be run in a cmux-linux terminal");
     }

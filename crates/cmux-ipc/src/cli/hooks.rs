@@ -10,7 +10,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use super::client::Client;
-use super::commands::{is_uuid, parse_bool};
+use super::commands::is_uuid;
 use super::{CliError, Cmd, fail};
 use crate::feed;
 
@@ -252,7 +252,7 @@ fn feed_hook(cmd: &mut Cmd) -> Result<String, CliError> {
     if source != "claude" {
         return empty();
     }
-    let linux = cmd.env("CMUX_LINUX").and_then(parse_bool) == Some(true);
+    let linux = cmd.in_our_terminal();
     let ids = (cmd.env("CMUX_WORKSPACE_ID"), cmd.env("CMUX_SURFACE_ID"));
     let (true, (Some(ws), Some(surf))) = (linux, ids) else {
         return empty();
@@ -260,14 +260,7 @@ fn feed_hook(cmd: &mut Cmd) -> Result<String, CliError> {
     if !is_uuid(ws) || !is_uuid(surf) {
         return empty();
     }
-    let raw = match &cmd.ctx.stdin {
-        Some(s) => s.clone(),
-        None => {
-            let mut s = String::new();
-            let _ = std::io::stdin().read_to_string(&mut s);
-            s
-        }
-    };
+    let raw = read_stdin(cmd);
     let Ok(stdin @ Value::Object(_)) = serde_json::from_str::<Value>(&raw) else {
         return empty();
     };
@@ -295,7 +288,7 @@ fn message_hook(cmd: &mut Cmd) -> Result<String, CliError> {
     {
         return empty();
     }
-    let linux = cmd.env("CMUX_LINUX").and_then(parse_bool) == Some(true);
+    let linux = cmd.in_our_terminal();
     let Some(surf) = cmd.env("CMUX_SURFACE_ID").filter(|s| linux && is_uuid(s)) else {
         return empty();
     };
@@ -336,16 +329,28 @@ fn message_hook(cmd: &mut Cmd) -> Result<String, CliError> {
     Ok(format!("{out}\n"))
 }
 
+/// How long a hook waits for its input to end. Agents write it at once and close the pipe;
+/// a pipe left open must not hang the agent (M15).
+const STDIN_WAIT: Duration = Duration::from_secs(3);
+
+/// The hook's whole stdin, or "" if it doesn't end within `STDIN_WAIT`.
+fn read_stdin(cmd: &Cmd) -> String {
+    if let Some(s) = &cmd.ctx.stdin {
+        return s.clone();
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    // The reader stays blocked on a pipe that never ends; the process exits without it.
+    std::thread::spawn(move || {
+        let mut s = String::new();
+        let _ = std::io::stdin().read_to_string(&mut s);
+        let _ = tx.send(s);
+    });
+    rx.recv_timeout(STDIN_WAIT).unwrap_or_default()
+}
+
 /// The hook's stdin as JSON (`Null` if it isn't).
 fn stdin_json(cmd: &Cmd) -> Value {
-    let raw = match &cmd.ctx.stdin {
-        Some(s) => s.clone(),
-        None => {
-            let mut s = String::new();
-            let _ = std::io::stdin().read_to_string(&mut s);
-            s
-        }
-    };
+    let raw = read_stdin(cmd);
     serde_json::from_str(&raw).unwrap_or(Value::Null)
 }
 
@@ -378,7 +383,7 @@ fn session_hook(cmd: &mut Cmd) -> Result<String, CliError> {
         .args
         .iter()
         .any(|a| a == "claude" || a == "--source=claude");
-    let linux = cmd.env("CMUX_LINUX").and_then(parse_bool) == Some(true);
+    let linux = cmd.in_our_terminal();
     let surf = cmd.env("CMUX_SURFACE_ID").filter(|s| linux && is_uuid(s));
     if let (true, Some(surf)) = (claude, surf) {
         let stdin = stdin_json(cmd);

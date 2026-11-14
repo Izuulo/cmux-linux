@@ -3,13 +3,13 @@
 
 use std::fs::Permissions;
 use std::io::{self, BufRead, BufReader, ErrorKind, Read, Write};
-use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
+use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, SyncSender, sync_channel};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 use serde_json::{Map, Value, json};
@@ -63,9 +63,15 @@ pub struct Request {
     pub method: String,
     pub params: Map<String, Value>,
     reply: SyncSender<Reply>,
+    expires: Instant,
 }
 
 impl Request {
+    /// The client already got a timeout: the app must not act on it any more (M15).
+    pub fn expired(&self) -> bool {
+        Instant::now() >= self.expires
+    }
+
     pub fn respond(self, reply: Reply) {
         let _ = self.reply.send(reply);
     }
@@ -75,6 +81,9 @@ pub struct Server {
     path: PathBuf,
     ino: u64,
     stop: Arc<AtomicBool>,
+    /// `<path>.lock`, flocked while this server lives (M15): two starts at once must not both
+    /// judge an old socket dead and remove each other's.
+    _lock: std::fs::File,
 }
 
 impl Server {
@@ -92,6 +101,7 @@ impl Server {
             std::fs::create_dir_all(dir)?;
             std::fs::set_permissions(dir, Permissions::from_mode(0o700))?;
         }
+        let lock = lock_beside(path)?;
         clear_stale(path)?;
         let listener = UnixListener::bind(path)?;
         let mode = if access == Access::AllowAll {
@@ -126,6 +136,7 @@ impl Server {
                 path: path.to_path_buf(),
                 ino,
                 stop,
+                _lock: lock,
             },
             rx,
         ))
@@ -145,6 +156,30 @@ impl Drop for Server {
             let _ = std::fs::remove_file(&self.path);
         }
     }
+}
+
+/// An exclusive lock on `<path>.lock`; `AddrInUse` while another server holds it.
+fn lock_beside(path: &Path) -> io::Result<std::fs::File> {
+    use std::os::fd::AsRawFd;
+    let mut name = path.as_os_str().to_owned();
+    name.push(".lock");
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .mode(0o600)
+        .open(PathBuf::from(name))?;
+    // SAFETY: a valid open fd; the lock goes with the file when it closes.
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        return Err(io::Error::new(
+            ErrorKind::AddrInUse,
+            format!(
+                "another server is starting or running on {}",
+                path.display()
+            ),
+        ));
+    }
+    Ok(file)
 }
 
 fn clear_stale(path: &Path) -> io::Result<()> {
@@ -329,6 +364,7 @@ fn ask_app(
             method,
             params,
             reply,
+            expires: Instant::now() + deadline,
         })
         .is_err()
     {

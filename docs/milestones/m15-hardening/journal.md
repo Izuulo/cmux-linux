@@ -43,3 +43,15 @@
   `* pane:2 [1 surface] [focused]`; `surface.send_text` to it works.
 - Found by that check: a scripted click right after the move missed (hit test uses the last
   drawn frame). `debug.mouse.simulate` now sends one event per frame (`dispatch_paced`).
+- Task 5, CLI/socket minors, each with a test that failed first where a bug existed:
+  `CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC` = inf/NaN/1e300 → default 15 s (`try_from_secs_f64`);
+  non-UTF-8 args → "Error: arguments must be valid UTF-8", exit 1; non-UTF-8 env vars are
+  skipped. `Request::expired()`: the app skips a request its client already got a timeout
+  for. `<socket>.lock` flock held by `Server` (two starts can no longer both judge an old
+  socket dead and remove each other's); the app's existing fallback (own `cmux-<pid>.sock`)
+  covers a held lock too. Hook stdin waits at most 3 s. `CMUX_LINUX` is now the socket path
+  and hooks act only while it equals `CMUX_SOCKET_PATH` (`Cmd::in_our_terminal`); shells
+  started before this build carry `1` and their hooks go quiet until reopened.
+- M7 review tests added (all passed first time, no bug): invalid JSON refused by setup and
+  uninstall, uninstall refuses a non-object, `HOME` fallback, `--settings-file` beats
+  `CLAUDE_CONFIG_DIR`, an app error during `feed.push` prints `{}`.

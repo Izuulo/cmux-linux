@@ -167,11 +167,14 @@ fn unanswered_request_times_out() {
         Server::start(&path, Access::AllowAll, Duration::from_millis(100)).unwrap();
     let client =
         std::thread::spawn(move || Conn::open(&path).ask(r#"{"id":1,"method":"pane.list"}"#));
-    let _held = next(&mut rx);
+    let held = next(&mut rx);
+    assert!(!held.expired(), "fresh request");
     assert_eq!(
         client.join().unwrap(),
         r#"{"id":1,"ok":false,"error":{"code":"timeout","message":"Timed out waiting for the app","data":{"deadline_ms":100,"retryable":true,"stage":"main_actor"}}}"#
     );
+    // M15: after the client's timeout the app sees it as expired and skips it.
+    assert!(held.expired());
 }
 
 #[test]
@@ -207,6 +210,26 @@ fn live_socket_is_not_stolen() {
         .unwrap();
     assert_eq!(err.kind(), std::io::ErrorKind::AddrInUse);
     assert_eq!(Conn::open(first.path()).ask("ping"), "PONG");
+}
+
+/// M15: an instance between "the old socket is dead" and its bind holds the lock; a second
+/// start then refuses instead of removing what the first is about to bind.
+#[test]
+fn a_starting_instance_is_not_raced() {
+    use std::os::fd::AsRawFd;
+    let path = temp_dir().join("cmux.sock");
+    let lock = std::fs::File::create(path.with_file_name("cmux.sock.lock")).unwrap();
+    assert_eq!(
+        unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
+        0
+    );
+    let err = Server::start(&path, Access::AllowAll, DEADLINE)
+        .err()
+        .unwrap();
+    assert_eq!(err.kind(), std::io::ErrorKind::AddrInUse);
+    drop(lock);
+    let (server, _rx) = Server::start(&path, Access::AllowAll, DEADLINE).unwrap();
+    assert_eq!(Conn::open(server.path()).ask("ping"), "PONG");
 }
 
 #[test]

@@ -261,6 +261,10 @@ impl WindowView {
                         }
                         continue;
                     }
+                    // Its client was already told it timed out: doing it now would surprise.
+                    if req.expired() {
+                        continue;
+                    }
                     let reply = this.update_in(cx, |this, window, cx| {
                         this.control(&req.method, &req.params, window, cx)
                     });
