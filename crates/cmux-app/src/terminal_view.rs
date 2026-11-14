@@ -108,6 +108,10 @@ pub struct TerminalView {
     /// Cell and in-cell x fraction of the last left press; kept after release so Shift-click
     /// can continue the gesture (Ghostty).
     pub(crate) press: Option<(SelectionPoint, f32)>,
+    /// Last pointer position of a selection drag, for autoscroll ticks.
+    pub(crate) drag_pos: Point<Pixels>,
+    /// Scrolls the viewport while a selection drag is above or below the grid.
+    pub(crate) autoscroll_task: Option<Task<()>>,
     /// The press opened a link: its release goes nowhere.
     pub(crate) link_press: bool,
     /// Wheel pixels not yet turned into whole lines.
@@ -229,6 +233,8 @@ impl TerminalView {
             mouse: MouseEncoders::new().expect("libghostty-vt mouse encoders"),
             dragging: false,
             press: None,
+            drag_pos: Point::default(),
+            autoscroll_task: None,
             link_press: false,
             scroll_px: 0.0,
             forwarded_keys: HashSet::new(),
@@ -399,6 +405,7 @@ impl TerminalView {
         self.forwarded_keys.clear();
         // A release lost while unfocused would otherwise keep clicks local on a tracking TUI.
         self.dragging = false;
+        self.autoscroll_task = None;
         // The IME is disabled on leave and never ends the preedit itself.
         if !focused {
             self.marked_text.clear();

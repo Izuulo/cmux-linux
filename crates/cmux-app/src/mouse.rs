@@ -7,7 +7,9 @@
 use cmux_term::ghostty_vt::{
     KeyAction, MouseAction, MouseButton as VtButton, MouseInput, Screen, SelectionPoint,
 };
-use cmux_term::gesture;
+use std::time::Duration;
+
+use cmux_term::gesture::{self, Autoscroll};
 use cmux_term::selection::{SelectMode, Selection};
 use gpui::{
     Context, Keystroke, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
@@ -56,7 +58,7 @@ fn wheel_lines(pending_px: f32, delta_px: f32, cell_h: f32) -> (i32, f32) {
 }
 
 impl TerminalView {
-    fn tracking(&self) -> bool {
+    pub(crate) fn tracking(&self) -> bool {
         self.session.term.lock().unwrap().vt().mouse_tracking()
     }
 
@@ -239,7 +241,44 @@ impl TerminalView {
             }
         }
         drop(term);
+        self.drag_pos = pos;
+        let dir = gesture::autoscroll(f32::from(pos.y - g.origin.y), f32::from(g.rows) * g.cell_h);
+        if dir == Autoscroll::None {
+            self.autoscroll_task = None;
+        } else if self.autoscroll_task.is_none() {
+            self.autoscroll_task = Some(cx.spawn(async move |this, cx| {
+                // Ghostty: one row per 15 ms tick (termio/Thread.zig), then the drag re-runs at
+                // the last pointer position.
+                loop {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(15))
+                        .await;
+                    let go = this.update(cx, |view, cx| view.autoscroll_tick(cx));
+                    if !matches!(go, Ok(true)) {
+                        let _ = this.update(cx, |view, _| view.autoscroll_task = None);
+                        break;
+                    }
+                }
+            }));
+        }
         cx.notify();
+    }
+
+    /// One autoscroll step; false once the drag ended or came back inside the grid.
+    fn autoscroll_tick(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(g) = self.geometry else { return false };
+        let y = f32::from(self.drag_pos.y - g.origin.y);
+        let lines = match gesture::autoscroll(y, f32::from(g.rows) * g.cell_h) {
+            Autoscroll::Up => -1,
+            Autoscroll::Down => 1,
+            Autoscroll::None => return false,
+        };
+        if !self.dragging {
+            return false;
+        }
+        self.session.term.lock().unwrap().scroll(lines);
+        self.drag_to(self.drag_pos, cx);
+        true
     }
 
     pub(crate) fn mouse_up(&mut self, ev: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
@@ -259,6 +298,7 @@ impl TerminalView {
             return;
         }
         self.dragging = false;
+        self.autoscroll_task = None;
         let mut term = self.session.term.lock().unwrap();
         let text = self.selection.as_ref().and_then(|s| s.text(&mut term));
         drop(term);

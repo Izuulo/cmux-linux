@@ -12,10 +12,10 @@ use cmux_term::ghostty_vt::{
 use cmux_term::selection::range_contains;
 use cmux_term::{FrameInfo, Term};
 use gpui::{
-    App, BorderStyle, Bounds, Element, ElementId, ElementInputHandler, Entity, Font, FontStyle,
-    FontWeight, GlobalElementId, Hsla, InspectorElementId, IntoElement, LayoutId, Pixels, Point,
-    StrikethroughStyle, Style, TextRun, UnderlineStyle, Window, fill, outline, point, px, relative,
-    size,
+    App, BorderStyle, Bounds, DispatchPhase, Element, ElementId, ElementInputHandler, Entity, Font,
+    FontStyle, FontWeight, GlobalElementId, Hsla, InspectorElementId, IntoElement, LayoutId,
+    MouseButton, MouseMoveEvent, Pixels, Point, StrikethroughStyle, Style, TextRun, UnderlineStyle,
+    Window, fill, outline, point, px, relative, size,
 };
 
 use crate::colors::{self, CellColors};
@@ -213,6 +213,21 @@ impl Element for TerminalElement {
             ElementInputHandler::new(bounds, self.view.clone()),
             cx,
         );
+        // gpui sends on_mouse_move only while hovered; a selection drag that leaves the pane
+        // (autoscroll, other panes) still has to reach us.
+        let view = self.view.clone();
+        window.on_mouse_event(move |ev: &MouseMoveEvent, phase, _, cx| {
+            if phase == DispatchPhase::Bubble
+                && !bounds.contains(&ev.position)
+                && ev.pressed_button == Some(MouseButton::Left)
+            {
+                view.update(cx, |v, cx| {
+                    if v.dragging && !v.tracking() {
+                        v.drag_to(ev.position, cx);
+                    }
+                });
+            }
+        });
         let frame = &*frame;
         for r in &frame.rects {
             window.paint_quad(fill(frame.cell_bounds(r.col, r.row, r.cells), r.color));
