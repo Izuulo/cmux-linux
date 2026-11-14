@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use cmux_meta::remote;
 use cmux_term::TermEvent;
-use cmux_term::ghostty_vt::{KeyAction, KeyEncoder, MouseEncoders};
+use cmux_term::ghostty_vt::{KeyAction, KeyEncoder, MouseEncoders, SelectionPoint};
 use cmux_term::input::{encode_focus, encode_paste, paste_needs_confirmation};
 use cmux_term::pty::{PtyEvent, Session};
 use cmux_term::selection::Selection;
@@ -105,6 +105,9 @@ pub struct TerminalView {
     pub(crate) mouse: MouseEncoders,
     /// A local selection drag is in progress.
     pub(crate) dragging: bool,
+    /// Cell and in-cell x fraction of the last left press; kept after release so Shift-click
+    /// can continue the gesture (Ghostty).
+    pub(crate) press: Option<(SelectionPoint, f32)>,
     /// The press opened a link: its release goes nowhere.
     pub(crate) link_press: bool,
     /// Wheel pixels not yet turned into whole lines.
@@ -225,6 +228,7 @@ impl TerminalView {
             key_encoder: KeyEncoder::new().expect("libghostty-vt key encoder"),
             mouse: MouseEncoders::new().expect("libghostty-vt mouse encoders"),
             dragging: false,
+            press: None,
             link_press: false,
             scroll_px: 0.0,
             forwarded_keys: HashSet::new(),
