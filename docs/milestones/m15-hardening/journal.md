@@ -19,3 +19,12 @@
   `cx.quit()`). Exit 2 checked: relaunch restored the earlier split; split down, 1 s,
   `kill -TERM`: app exits, `session.json` mtime equals the kill time to the ms and holds
   both splits.
+- Task 3: (a) a build without `browser` keeps a saved browser tab's URL on the terminal that
+  stands in for it (`Surface::kept_url`) and saves it back as the browser tab; that
+  terminal's own cwd is not saved. Checked on KDE: seeded `session.json` with a browser
+  tab, no-`browser` build, split + SIGTERM: the entry is still `{"kind": "browser", "url":
+  ...}`. (b) Settings commits a half-typed field on app quit (`on_app_quit`) and when the
+  main window goes (`WindowView` release calls `close_out` before removing Settings);
+  `commit_field` lost its unused `Window` param. Not yet checked on screen (Task 7).
+  (c) `.cmux-bak` is made only when none exists, so it keeps the file from before the first
+  cmux-linux write ever; the per-process list is gone. Unit test extended.

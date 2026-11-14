@@ -485,9 +485,14 @@ impl WindowView {
             }),
             cx.on_release(|this, cx| {
                 this.save_session(cx);
-                // Otherwise the open Settings window would keep the app running.
+                // Otherwise the open Settings window would keep the app running. Its
+                // half-typed field is committed first (M15).
                 if let Some(h) = this.settings.take() {
-                    h.update(cx, |_, window, _| window.remove_window()).ok();
+                    h.update(cx, |v, window, cx| {
+                        v.close_out(cx);
+                        window.remove_window();
+                    })
+                    .ok();
                 }
             }),
         ];

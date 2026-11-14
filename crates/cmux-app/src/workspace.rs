@@ -52,6 +52,9 @@ struct Surface {
     view: SurfaceView,
     /// The agent session running here, for resume after a restart (M10 Part 2).
     agent: Option<Agent>,
+    /// A saved browser tab's URL, on the terminal that stands in for it in a build without
+    /// the `browser` feature: saved back as the browser tab, so the URL survives (M15).
+    kept_url: Option<String>,
     _subscriptions: [Subscription; 2],
 }
 
@@ -297,6 +300,13 @@ impl WorkspaceView {
                         };
                     }
                 };
+                if s.kept_url.is_some() {
+                    return SavedTerm {
+                        cwd: None,
+                        agent: None,
+                        url: s.kept_url.clone(),
+                    };
+                }
                 let agent = s
                     .agent
                     .clone()
@@ -398,14 +408,17 @@ impl WorkspaceView {
         for surface in this.layout.surfaces() {
             let (cwd, env) = starts.next().unwrap_or_default();
             // Without the browser feature a saved browser tab comes back as a terminal.
-            if let Some(url) = urls.next().flatten()
-                && this.add_browser(surface, &url, window, cx)
+            let url = urls.next().flatten();
+            if let Some(url) = &url
+                && this.add_browser(surface, url, window, cx)
             {
                 continue;
             }
-            if !this.add_terminal(surface, cwd, &env, window, cx)
-                && this.layout.close_surface(surface) == Closed::LastSurface
-            {
+            if this.add_terminal(surface, cwd, &env, window, cx) {
+                if let Some(s) = this.surfaces.get_mut(&surface) {
+                    s.kept_url = url;
+                }
+            } else if this.layout.close_surface(surface) == Closed::LastSurface {
                 // The last one left failed: nothing started at all.
                 this.has_terminals = false;
                 return this;
@@ -643,6 +656,7 @@ impl WorkspaceView {
             Surface {
                 view: SurfaceView::Terminal(view),
                 agent: None,
+                kept_url: None,
                 _subscriptions: [events, focused],
             },
         );
@@ -714,6 +728,7 @@ impl WorkspaceView {
                 Surface {
                     view: SurfaceView::Browser(view),
                     agent: None,
+                    kept_url: None,
                     _subscriptions: [events, focused],
                 },
             );
