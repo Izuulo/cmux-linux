@@ -13,7 +13,10 @@ use cmux_ipc::snapshot::{GroupSnap, PaneSnap, Snapshot, SurfSnap, Target, WsSnap
 use cmux_ipc::wire::{Reply, RpcError};
 use cmux_term::ghostty_vt::KeyAction;
 use futures::channel::mpsc::UnboundedReceiver;
-use gpui::{App, Context, Keystroke, Modifiers, Window};
+use gpui::{
+    App, Context, Keystroke, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    PlatformInput, ScrollDelta, ScrollWheelEvent, TouchPhase, Window, point, px,
+};
 use serde_json::{Map, Value, json};
 
 use super::WindowView;
@@ -327,6 +330,24 @@ impl WindowView {
                     }
                     None => {
                         window.dispatch_keystroke(ks, cx);
+                    }
+                });
+                Ok(json!({}))
+            }
+            // Ours, next to it: scripted UI checks click here (M15). Window logical pixels.
+            "debug.mouse.simulate" => {
+                let events = mouse_events(params)?;
+                let other = cx.active_window().filter(|w| *w != window.window_handle());
+                window.defer(cx, move |window, cx| {
+                    for e in events {
+                        match other {
+                            Some(w) => {
+                                w.update(cx, |_, w, cx| w.dispatch_event(e, cx)).ok();
+                            }
+                            None => {
+                                window.dispatch_event(e, cx);
+                            }
+                        }
                     }
                 });
                 Ok(json!({}))
@@ -808,4 +829,102 @@ fn type_when_up(
         }
     })
     .detach();
+}
+
+/// `debug.mouse.simulate` params → the events a real pointer would send. `kind` is
+/// `click` (default: move, down, up), `move`, `down`, `up` or `scroll` (`dy` lines, + = down).
+fn mouse_events(params: &Map<String, Value>) -> Result<Vec<PlatformInput>, RpcError> {
+    let num = |k: &str| params.get(k).and_then(Value::as_f64);
+    let (Some(x), Some(y)) = (num("x"), num("y")) else {
+        return Err(RpcError::new("invalid_params", "x and y are required"));
+    };
+    let position = point(px(x as f32), px(y as f32));
+    let button = match params
+        .get("button")
+        .and_then(Value::as_str)
+        .unwrap_or("left")
+    {
+        "left" => MouseButton::Left,
+        "right" => MouseButton::Right,
+        "middle" => MouseButton::Middle,
+        _ => {
+            return Err(RpcError::new(
+                "invalid_params",
+                "button must be left, right or middle",
+            ));
+        }
+    };
+    let click_count = params
+        .get("click_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(1) as usize;
+    let modifiers = Modifiers::default();
+    let pressed = |b| MouseMoveEvent {
+        position,
+        pressed_button: b,
+        modifiers,
+    };
+    let down = PlatformInput::MouseDown(MouseDownEvent {
+        button,
+        position,
+        modifiers,
+        click_count,
+        first_mouse: false,
+    });
+    let up = PlatformInput::MouseUp(MouseUpEvent {
+        button,
+        position,
+        modifiers,
+        click_count,
+    });
+    Ok(
+        match params
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or("click")
+        {
+            "click" => vec![PlatformInput::MouseMove(pressed(None)), down, up],
+            "move" => vec![PlatformInput::MouseMove(pressed(None))],
+            // A drag step: move with the button held.
+            "drag" => vec![PlatformInput::MouseMove(pressed(Some(button)))],
+            "down" => vec![down],
+            "up" => vec![up],
+            "scroll" => vec![PlatformInput::ScrollWheel(ScrollWheelEvent {
+                position,
+                delta: ScrollDelta::Lines(point(0., -num("dy").unwrap_or(1.) as f32)),
+                modifiers,
+                touch_phase: TouchPhase::Moved,
+            })],
+            _ => return Err(RpcError::new("invalid_params", "unknown kind")),
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn params(v: Value) -> Map<String, Value> {
+        v.as_object().unwrap().clone()
+    }
+
+    #[test]
+    fn mouse_click_is_move_down_up_at_the_point() {
+        let ev = mouse_events(&params(json!({"x": 10, "y": 20.5, "button": "right"}))).unwrap();
+        assert!(matches!(ev[0], PlatformInput::MouseMove(_)));
+        let PlatformInput::MouseDown(d) = &ev[1] else {
+            panic!()
+        };
+        assert_eq!(d.position, point(px(10.), px(20.5)));
+        assert_eq!(d.button, MouseButton::Right);
+        assert!(matches!(ev[2], PlatformInput::MouseUp(_)));
+        assert_eq!(ev.len(), 3);
+    }
+
+    #[test]
+    fn mouse_bad_params_are_rejected() {
+        assert!(mouse_events(&params(json!({"x": 1}))).is_err());
+        assert!(mouse_events(&params(json!({"x": 1, "y": 1, "kind": "wiggle"}))).is_err());
+        assert!(mouse_events(&params(json!({"x": 1, "y": 1, "button": "fourth"}))).is_err());
+    }
 }

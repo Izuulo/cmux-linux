@@ -17,6 +17,8 @@ pub mod ime;
 pub mod keys;
 pub mod mac;
 pub mod mouse;
+#[cfg(unix)]
+pub mod quit_signal;
 pub mod settings;
 pub mod style;
 pub mod terminal_element;

@@ -3,13 +3,12 @@
 <!-- Max 100 lines (CI-enforced from M0). Before replacing this file, append the
      current version to docs/status-archive.md. -->
 
-**Updated:** 2026-11-12
-**Current milestone:** M14 mac-look (PR #23, branch `m14-mac-look`): shared `mac` UI kit (`crates/cmux-app/src/mac/`), Inter UI font, animated glass popover with arrow, menu, palette, Settings restyle, title bar, browser strip button and omnibar. All 11 plan tasks built and reviewed; calibration against real Tahoe not done. M11–M13 merged (#20–#22).
-**Next action:** owner: click through M14 (bell popover open/close, right-click a sidebar row for the menu, palette, title bar drag/double-click, Settings window buttons and controls, the globe button), then say "done" to merge PR #23. Older owner checks (M7–M13 mouse/typing, real Claude runs, tmux, `makepkg -si`) are in `docs/status-archive.md` (2026-11-12 — before M14).
+**Updated:** 2026-11-14
+**Current milestone:** M15 hardening (branch `m15-hardening`): spec/plan in `docs/milestones/m15-hardening/`. Done: Task 1 scripted clicks (`debug.mouse.simulate`, needs patched gpui in `vendor/gpui`), Task 2 SIGTERM/SIGHUP save; exits 1–2 checked on KDE. M14 merged (#23).
+**Next action:** M15 plan Task 3 (lost-state fixes: browser tabs in no-`browser` builds, Settings field on quit, `.cmux-bak` once). Owner checks from M7–M14 are in `docs/status-archive.md` (2026-11-14 — before M15).
 
 ## Where things are
-- Project design and milestone table: `docs/design.md`
-- Milestone docs: `docs/milestones/<id>/` (`spec.md`, `plan.md`, `journal.md`)
+- Design and milestone table: `docs/design.md`; milestone docs: `docs/milestones/<id>/`
 - Full status history: `docs/status-archive.md`
 - Upstream reference: https://github.com/manaflow-ai/cmux (Swift app = behaviour/visual reference)
 
@@ -30,12 +29,13 @@
 | M11 productivity | done; exits by script on KDE, ssh vs a fake `ssh`; prompt buttons, real host, drop unclicked |
 | M12 settings | done; exits by script on KDE (writer calls + armed recorder); no control clicked |
 | M13 browser | done; CEF off-screen rendering; exits by script on KDE; mouse/IME in pages unverified |
-| M14 mac-look | built and calibrated against cmux on macOS 27 (dark + light); popover, palette, Settings, title bar, browser bar seen on KDE side by side; clicks/hovers and the context menu on screen pending |
+| M14 mac-look | merged (PR #23); built and calibrated against cmux on macOS 27 (dark + light); popover, palette, Settings, title bar, browser bar seen on KDE side by side; clicks/hovers and the context menu on screen pending |
+| M15 hardening | in progress; Tasks 1–2 done (exits 1–2) |
 
 ## Decisions so far
 - Port from source (cmux is GPL-3.0-or-later); REA not needed. Our license: GPL-3.0-or-later.
 - Never copy from cmux's BUSL-1.1 server directories.
-- gpui `=0.2.2` for UI; libghostty-vt (vendored from cmux @ 21dcc2b, Ghostty fork @ ef4f157) for terminal state.
+- gpui `=0.2.2` for UI, vendored with one change (`vendor/gpui/PATCHED.md`, M15); libghostty-vt (vendored from cmux @ 21dcc2b, Ghostty fork @ ef4f157) for terminal state.
 - Dev setup: Zig 0.16.0 via `scripts/install-zig.sh`; `.tools/zig` on PATH. libc pinned to 0.2.189 in Cargo.lock; never bare `cargo update`. Toolchain pinned in `rust-toolchain.toml`.
 - Local app only: no cmux Cloud, Manaflow relays. In-app browser (M13): CEF off-screen via `cef` crate, cargo feature `browser`. v1 = M0–M6; M7–M13 add the extras.
 - `ui_scale` (config.toml, re-read every 1 s): chrome files take `px` from `cmux-app::ui`; measured values use `gpui::px`.
@@ -70,9 +70,9 @@
 - M13: CEF 156 (`cef =156.4.0`) off-screen, frames as gpui images (full upload per frame; video heavy); HiDPI via page zoom (CEF ignores the scale on Linux); a no-`browser` build drops saved browser URLs on its next save; every restored browser tab starts CEF at launch; physical mouse, IME and popups unverified.
 - M12: Settings UI never clicked. Agent edits write every field (`argv_option = ""`); removing the first of two same-id agents keeps the first entry's extras; `.cmux-bak` is overwritten each run; quitting from the main window loses a half-typed Settings field; 819 theme cards rebuild per keystroke (frame time unmeasured); one recorded chord replaces all of an action's chords.
 - M11: palette, `cmux.json` and `cmux ssh` (details in its journal). Trust prompt buttons never clicked (gpui Linux prompt takes no keys). ssh: no reconnect loop; multi-pane restore with password auth asks per pane; cwd/branch need OSC 7 from the remote shell; probes run one workspace after another.
-- M10: SIGTERM (logout) skips the quit save, so up to 8 s of layout changes are lost. Restored workspaces fire `workspace.created`. Claude resume is a bare `claude --resume <id>` (no permission mode or launch flags). local-tmux matches sessions by name only. Scripted checks must clear inherited `CMUX_*` and set `CMUX_SOCKET_PATH` to the dev app, or they hit the owner's app.
+- M10: Restored workspaces fire `workspace.created`. Claude resume is a bare `claude --resume <id>` (no permission mode or launch flags). local-tmux matches sessions by name only. Scripted checks must clear inherited `CMUX_*` and set `CMUX_SOCKET_PATH` to the dev app, or they hit the owner's app.
 - M9: nothing ran under a real Claude Code. Messages: hook output shapes match the hooks reference; no idle wake, no off switch, not persisted. Claude Teams: the tmux commands a team sends were taken from cmux's shim, not observed; an unhandled one fails loudly; splits can fail for lack of room (no column layout). Auto-naming's default `claude -p` line is untested. Automations: a `run` that calls `cmux` can loop at its rate limit.
-- M8: nothing in it was clicked or dragged (see Next action b). The Dock is invisible to the socket: `cmux notify`, the Feed hook and OSC notifications don't work from Dock terminals, and CLI commands can't target them. Dock keeps the main area's minimum pane size, so side-by-side splits need a wide sidebar. Groups and Dock are not persisted (M10).
+- M8: nothing in it was clicked or dragged (see Next action b). The Dock is invisible to the socket: `cmux notify`, the Feed hook and OSC notifications don't work from Dock terminals, and CLI commands can't target them. Dock keeps the main area's minimum pane size, so side-by-side splits need a wide sidebar.
 - gpui is pre-1.0 (pinned). No public FontMetrics → `line_gap` 0.
 - Blur shim runs on Plasma 6.8.2 without errors (KWin offers `ext_background_effect_manager_v1`); that the backdrop is really blurred is not yet confirmed by eye.
 - M2–M7 UI has been seen drawn on KDE only through socket-driven screenshots; nothing was clicked, dragged or typed into by hand yet. On macOS a **debug** build hangs in gpui's `Application::new` (ActionRegistry insert loop); a **release** build (`cargo build --release --features gpui/runtime_shaders`) runs.
@@ -83,7 +83,7 @@
 - M6 perf on macOS: loaded p95 10.7 ms, CPU 0.1 % after stop; footprint 971 MB at the old 50 MB scrollback, not re-measured at 10 MB. Linux (KDE, release): RSS 483 MB under 19 floods, CPU 0.8 % after stop.
 - Agent messages (M9): app-side store, delivered only through Claude Code hooks (`hooks message` on UserPromptSubmit, PostToolUse, Stop); a workspace's agent is the surface that last claimed.
 - M9 Parts 2–4: the app, not a hook, runs the naming command (`[auto_naming]`, off by default; user titles win); automations are cmux's `automations.json` with `notify` and `run` only, over six events from one `emit`; Claude Teams maps tmux pane `%N` to `surface:N` through a private `tmux` script.
-- Scripted UI checks: `debug.shortcut.simulate {combo}` (raw v2 request) presses a chord; needs `CMUX_SOCKET_MODE=allowAll` from outside the app.
+- Scripted UI checks: `debug.shortcut.simulate {combo}` presses a chord, `debug.mouse.simulate {x, y, kind}` clicks (raw v2 requests); needs `CMUX_SOCKET_MODE=allowAll` from outside the app.
 - Groups (M8): runs in the workspace list, anchor first, kept by `Workspaces::normalize`; the sidebar draws `rows()`; no empty groups; notification bump stays inside the group; inline group rename; a context menu instead of a palette. Dock (M8): one window-owned `WorkspaceView` in the right sidebar (mode bar Feed/Dock, draggable width), seeded by `~/.config/cmux-linux/dock.json`.
 
 ## Carry to M4+

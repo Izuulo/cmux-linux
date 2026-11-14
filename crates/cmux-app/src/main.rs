@@ -69,6 +69,8 @@ fn main() {
         )
         .expect("open window");
         cx.activate(true);
+        #[cfg(unix)]
+        cmux_app::quit_signal::install(cx);
     });
     #[cfg(feature = "browser")]
     cmux_app::browser::shutdown();
