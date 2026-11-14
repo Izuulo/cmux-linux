@@ -116,6 +116,8 @@ pub struct TerminalView {
     pub(crate) link_press: bool,
     /// Wheel pixels not yet turned into whole lines.
     pub(crate) scroll_px: f32,
+    /// Horizontal wheel pixels not yet turned into whole reports.
+    pub(crate) scroll_px_x: f32,
     /// `Keystroke.key` of presses that went to the PTY, so their release goes there too even
     /// when a binding (a Copy with nothing selected) let the press through.
     forwarded_keys: HashSet<String>,
@@ -237,6 +239,7 @@ impl TerminalView {
             autoscroll_task: None,
             link_press: false,
             scroll_px: 0.0,
+            scroll_px_x: 0.0,
             forwarded_keys: HashSet::new(),
             title: None,
             cwd: None,

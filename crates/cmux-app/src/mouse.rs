@@ -13,7 +13,7 @@ use cmux_term::gesture::{self, Autoscroll};
 use cmux_term::selection::{SelectMode, Selection};
 use gpui::{
     Context, Keystroke, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    Pixels, Point, ScrollWheelEvent, Window, px,
+    Pixels, Point, ScrollDelta, ScrollWheelEvent, Window, px,
 };
 
 use crate::keys;
@@ -47,6 +47,24 @@ fn cell_frac(g: &Geometry, pos: Point<Pixels>) -> f32 {
 /// Absolute screen row of a viewport row, given the scrollbar offset of the viewport top.
 fn absolute_row(offset: u64, viewport_row: u16) -> u32 {
     (offset + u64::from(viewport_row)) as u32
+}
+
+/// gpui's Wayland backend triples touchpad pixels and makes a notch 3 lines on both axes
+/// (vendor/gpui wayland/client.rs); Ghostty uses touchpad pixels as they come and sends one
+/// report per horizontal notch (Surface.zig `scrollCallback`).
+const GPUI_AXIS_FACTOR: f32 = if cfg!(target_os = "linux") { 3.0 } else { 1.0 };
+
+/// `(x, y)` wheel pixels in Ghostty's units: y one cell height per line (3 per notch), x one
+/// cell width per report.
+fn wheel_px(delta: ScrollDelta, cell_w: f32, cell_h: f32) -> (f32, f32) {
+    let x = f32::from(delta.pixel_delta(px(cell_w)).x) / GPUI_AXIS_FACTOR;
+    let y = f32::from(delta.pixel_delta(px(cell_h)).y);
+    let y = if matches!(delta, ScrollDelta::Pixels(_)) {
+        y / GPUI_AXIS_FACTOR
+    } else {
+        y
+    };
+    (x, y)
 }
 
 /// Adds `delta_px` (positive = wheel up) to the pending pixels and splits off whole lines.
@@ -320,15 +338,12 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         let Some(g) = self.geometry else { return };
-        // gpui's Wayland backend already turns one wheel notch into 3 lines (SCROLL_LINES in
-        // platform/linux/platform.rs), Ghostty's discrete default, so no multiplier here.
-        let (lines, rest) = wheel_lines(
-            self.scroll_px,
-            f32::from(ev.delta.pixel_delta(px(g.cell_h)).y),
-            g.cell_h,
-        );
+        let (dx, dy) = wheel_px(ev.delta, g.cell_w, g.cell_h);
+        let (lines, rest) = wheel_lines(self.scroll_px, dy, g.cell_h);
         self.scroll_px = rest;
-        if lines == 0 {
+        let (cols, rest_x) = wheel_lines(self.scroll_px_x, dx, g.cell_w);
+        self.scroll_px_x = rest_x;
+        if lines == 0 && cols == 0 {
             return;
         }
         // gpui: positive y is wheel-up, toward history.
@@ -351,6 +366,17 @@ impl TerminalView {
             for _ in 0..lines.unsigned_abs() {
                 self.report(MouseAction::Press, Some(button), ev.position, &ev.modifiers);
             }
+            // Horizontal goes only to the app (buttons 6/7); gpui's positive x is wheel-left.
+            let button = if cols > 0 {
+                VtButton::WheelLeft
+            } else {
+                VtButton::WheelRight
+            };
+            for _ in 0..cols.unsigned_abs() {
+                self.report(MouseAction::Press, Some(button), ev.position, &ev.modifiers);
+            }
+        } else if lines == 0 {
+            // Ghostty has no horizontal scrollback.
         } else if alternate_scroll {
             // Mode 1007 is not handled by libghostty-vt (Ghostty does it in Surface.zig
             // scrollCallback), so full-screen apps such as less get arrow keys here.
@@ -403,6 +429,28 @@ mod tests {
     fn viewport_rows_become_absolute_through_the_scroll_offset() {
         assert_eq!(absolute_row(0, 5), 5);
         assert_eq!(absolute_row(120, 5), 125);
+    }
+
+    #[test]
+    fn wheel_px_undoes_gpuis_wayland_factor() {
+        use gpui::point;
+        // One notch: gpui's 3 lines stay 3 lines vertically and become 1 report horizontally.
+        assert_eq!(
+            wheel_px(ScrollDelta::Lines(point(0., 3.)), 8., 16.),
+            (0., 48.)
+        );
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(
+                wheel_px(ScrollDelta::Lines(point(3., 0.)), 8., 16.),
+                (8., 0.)
+            );
+            // Touchpad: gpui triples pixels on Linux; Ghostty uses them as they come.
+            assert_eq!(
+                wheel_px(ScrollDelta::Pixels(point(px(24.), px(30.))), 8., 16.),
+                (8., 10.)
+            );
+        }
     }
 
     #[test]
