@@ -1,5 +1,6 @@
 //! cmux-term: PTY + libghostty-vt wrapper.
 
+pub mod gesture;
 pub mod input;
 pub mod links;
 pub mod osc;
