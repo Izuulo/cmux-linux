@@ -185,7 +185,7 @@ impl Element for TerminalElement {
         }
         drop(term);
         let preedit_cell = cursor.1.as_ref().map(|m| (m.col, m.row));
-        self.view.update(cx, |view, _| {
+        self.view.update(cx, |view, cx| {
             if selection_lost {
                 // Lost rows: drop it to release its tracked points (selection.rs `range`).
                 view.selection = None;
@@ -193,6 +193,7 @@ impl Element for TerminalElement {
             view.cursor_cell = cursor_cell;
             view.preedit_cell = preedit_cell;
             view.cursor_blinks = cursor_blinks;
+            view.sync_blink(focused, cx);
         });
 
         Frame {

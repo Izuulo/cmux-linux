@@ -87,6 +87,12 @@ pub enum TerminalEvent {
     OpenLink(String),
 }
 
+/// An unfocused cursor is drawn hollow and never blinks, and we draw no SGR 5 text blink, so
+/// the timer is needed only for a focused blinking cursor.
+pub(crate) fn blink_wanted(focused: bool, cursor_blinks: bool) -> bool {
+    focused && cursor_blinks
+}
+
 pub struct TerminalView {
     pub(crate) session: Session,
     pub(crate) style: Rc<TermStyle>,
@@ -103,6 +109,8 @@ pub struct TerminalView {
     pub(crate) preedit_cell: Option<(u16, u16)>,
     pub(crate) cursor_blinks: bool,
     pub(crate) blink_on: bool,
+    /// Flips `blink_on` every 600 ms; only alive while `blink_wanted` (an idle app sleeps).
+    pub(crate) blink_task: Option<Task<()>>,
     key_encoder: KeyEncoder,
     pub(crate) mouse: MouseEncoders,
     /// A local selection drag is in progress.
@@ -199,23 +207,6 @@ impl TerminalView {
                 }
             }
         });
-        let blink_task = cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(600))
-                    .await;
-                let alive = this.update(cx, |view, cx| {
-                    view.blink_on = !view.blink_on;
-                    if view.cursor_blinks {
-                        cx.notify();
-                    }
-                });
-                if alive.is_err() {
-                    break;
-                }
-            }
-        });
-
         let focus = cx.focus_handle();
         let subscriptions = vec![
             cx.on_focus_in(&focus, window, |view, _, cx| view.focus_changed(true, cx)),
@@ -234,6 +225,7 @@ impl TerminalView {
             preedit_cell: None,
             cursor_blinks: false,
             blink_on: true,
+            blink_task: None,
             key_encoder: KeyEncoder::new().expect("libghostty-vt key encoder"),
             mouse: MouseEncoders::new().expect("libghostty-vt mouse encoders"),
             dragging: false,
@@ -251,7 +243,7 @@ impl TerminalView {
             trace_latency: std::env::var_os("CMUX_TRACE_LATENCY").is_some(),
             key_at: None,
             echo_at: None,
-            _tasks: vec![pty_task, blink_task],
+            _tasks: vec![pty_task],
             _subscriptions: subscriptions,
         }
     }
@@ -419,7 +411,31 @@ impl TerminalView {
         if self.session.term.lock().unwrap().vt().mode(1004, false) {
             self.session.write(encode_focus(focused));
         }
+        self.sync_blink(focused, cx);
         cx.notify();
+    }
+
+    /// Starts or stops the blink timer to match the focus and the cursor's blink mode.
+    pub(crate) fn sync_blink(&mut self, focused: bool, cx: &mut Context<Self>) {
+        if !blink_wanted(focused, self.cursor_blinks) {
+            self.blink_task = None;
+            self.blink_on = true;
+        } else if self.blink_task.is_none() {
+            self.blink_task = Some(cx.spawn(async move |this, cx| {
+                loop {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(600))
+                        .await;
+                    let alive = this.update(cx, |view, cx| {
+                        view.blink_on = !view.blink_on;
+                        cx.notify();
+                    });
+                    if alive.is_err() {
+                        break;
+                    }
+                }
+            }));
+        }
     }
 
     pub(crate) fn set_geometry(&mut self, g: Geometry) {
@@ -595,6 +611,13 @@ impl Render for TerminalView {
 mod tests {
     use super::*;
     use gpui::point;
+
+    #[test]
+    fn blink_timer_runs_only_for_a_focused_blinking_cursor() {
+        assert!(blink_wanted(true, true));
+        assert!(!blink_wanted(false, true));
+        assert!(!blink_wanted(true, false));
+    }
 
     #[test]
     fn cell_at_maps_and_clamps_positions() {
