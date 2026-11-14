@@ -4525,14 +4525,31 @@ impl Window {
         cx: &App,
     ) {
         self.invalidator.debug_assert_paint_or_prepaint();
-        if !self.is_inspector_picking(cx) {
-            return;
-        }
+        // cmux-linux patch: recorded in every debug frame, not only while picking, so
+        // `debug_element_bounds` can answer scripted UI checks.
+        let _ = cx;
         if let Some(inspector_id) = inspector_id {
             self.next_frame
                 .inspector_hitboxes
                 .insert(hitbox_id, inspector_id.clone());
         }
+    }
+
+    /// cmux-linux patch: every element with an id and a hitbox in the last drawn frame, as its
+    /// `GlobalElementId` path and its visible bounds (clipped by its content mask), for
+    /// scripted UI checks. Debug builds only.
+    #[cfg(any(feature = "inspector", debug_assertions))]
+    pub fn debug_element_bounds(&self) -> Vec<(String, Bounds<Pixels>)> {
+        let frame = &self.rendered_frame;
+        frame
+            .hitboxes
+            .iter()
+            .filter_map(|h| {
+                let id = frame.inspector_hitboxes.get(&h.id)?;
+                let visible = h.bounds.intersect(&h.content_mask.bounds);
+                (!visible.is_empty()).then(|| (id.path.global_id.to_string(), visible))
+            })
+            .collect()
     }
 
     #[cfg(any(feature = "inspector", debug_assertions))]

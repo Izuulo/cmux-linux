@@ -367,6 +367,27 @@ impl WindowView {
                 });
                 Ok(json!({}))
             }
+            // Where scripted checks click (M15): every id'd element in the last frame of the
+            // window a click would reach. Debug builds only (gpui's inspector ids).
+            #[cfg(debug_assertions)]
+            "debug.ui.bounds" => {
+                let filter = params.get("match").and_then(Value::as_str).unwrap_or("");
+                let other = cx.active_window().filter(|w| *w != window.window_handle());
+                let all = match other {
+                    Some(w) => w.update(cx, |_, w, _| w.debug_element_bounds()).unwrap_or_default(),
+                    None => window.debug_element_bounds(),
+                };
+                let rows: Vec<Value> = all
+                    .into_iter()
+                    .filter(|(id, _)| id.contains(filter))
+                    .map(|(id, b)| {
+                        let (o, sz) = (b.origin, b.size);
+                        json!({"id": id, "x": f32::from(o.x), "y": f32::from(o.y),
+                               "w": f32::from(sz.width), "h": f32::from(sz.height)})
+                    })
+                    .collect();
+                Ok(json!({ "elements": rows }))
+            }
             _ => Err(RpcError::new("method_not_found", "Unknown method")),
         }
     }

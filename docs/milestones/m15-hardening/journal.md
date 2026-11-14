@@ -64,3 +64,28 @@
   file events; a plain edit touches neither, so we re-check on a timer too); sidebar shows
   `branch*`. `scrollback-limit` (bytes) → `Session::spawn` → `Term::with_scrollback`; a
   value Ghostty would reject (e.g. `10MB`) warns and keeps 10 MB. Applies to new terminals.
+- Task 7, click-through (`scripts/click-through.py`):
+  - Found: a dev window behind the owner's windows draws no frames (KWin sends no frame
+    callbacks), so clicks hit-test a stale frame. Scripted UI checks now run in a headless
+    `kwin_wayland --virtual` (own `WAYLAND_DISPLAY`), with their own `XDG_STATE_HOME` and
+    `XDG_CONFIG_HOME` and a dead session D-Bus address (no desktop bubbles): nothing appears
+    on or changes the owner's desktop.
+  - Finding controls: vendored gpui patch 2 (debug builds): the inspector's hitbox ids are
+    kept every frame and `Window::debug_element_bounds()` returns each id'd element's path
+    and visible bounds; socket `debug.ui.bounds {match}` (debug builds only). Typing into a
+    field: `debug.shortcut.simulate` with gpui's `x->x` form (carries the character).
+  - Result on 2026-11-14, 13/13 PASS: sidebar row select; sidebar "+"; sidebar toggle;
+    tab strip Split Right, New Terminal, tab close; bell popover opens and a notification
+    row jumps to its workspace and closes it; row right-click menu opens, "New Group from
+    Workspace" makes a group and closes it; group chevron collapses/expands; palette row
+    "Split Right" runs and closes; right sidebar Dock tab, empty Dock "New Terminal", Feed
+    tab; Feed card "Allow Once" resolves the held `feed.push` with `{"kind": "permission",
+    "mode": "once"}`; window zoom button and title bar double-click maximize (1100×700 ↔
+    1400×900); Settings UI scale +, blur switch, cursor style write their files; a
+    half-typed Automation command is saved on SIGTERM (fails with Task 3's `on_app_quit`
+    removed: checked).
+  - Not covered: the trust prompt (gpui's own prompt), browser chrome (needs a `browser`
+    build and CEF), Feed plan/question cards and feedback field, drags (sidebar reorder,
+    dividers, group drop), hover styles, the long-rename caret layout (no id to measure).
+  - Lesson: `pkill -f <pattern>` in a shell whose own command line holds the pattern kills
+    that shell; match with `pgrep -x` and the cmdline instead.
