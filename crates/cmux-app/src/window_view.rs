@@ -24,6 +24,10 @@ use crate::mac::Fading;
 use crate::style::TermStyle;
 use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
+/// The window's Dock as a notification owner and socket target (M15): workspace ids start
+/// at 1, so 0 is free. Never in `Workspaces`.
+pub(crate) const DOCK: WorkspaceId = WorkspaceId(cmux_ipc::snapshot::DOCK_KEY);
+
 mod automation_ctl;
 mod autoname_ctl;
 mod commands_ctl;
@@ -417,6 +421,10 @@ impl WindowView {
     }
 
     fn select(&mut self, id: WorkspaceId, window: &mut Window, cx: &mut Context<Self>) {
+        // Selecting the Dock (a socket focus or a notification in it) shows it instead.
+        if id == DOCK {
+            return self.show_right(Some(dock::RightMode::Dock), window, cx);
+        }
         self.workspaces.select(id);
         let inset = self.sidebar_px(window).unwrap_or(0.);
         let right = self.right_sidebar_px(window);
@@ -503,8 +511,20 @@ impl WindowView {
         Some(cmux_meta::remote::host(v.remote()?.last()?).to_string())
     }
 
-    /// Custom title, else the cached OSC title, else "Terminal".
+    /// A workspace's view, or the Dock's for [`DOCK`].
+    pub(crate) fn view_of(&self, id: WorkspaceId) -> Option<&Entity<WorkspaceView>> {
+        if id == DOCK {
+            self.dock.as_ref()
+        } else {
+            self.views.get(&id)
+        }
+    }
+
+    /// Custom title, else the cached OSC title, else "Terminal" ("Dock" for the Dock).
     pub(crate) fn title_of(&self, id: WorkspaceId) -> String {
+        if id == DOCK {
+            return "Dock".to_string();
+        }
         self.workspaces
             .list()
             .iter()

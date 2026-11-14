@@ -17,6 +17,15 @@ use serde_json::Value;
 /// pane P2 {S3 "htop"}, P2 focused. Workspace B (`workspace:2`, custom title "Build"): one
 /// pane {S4 "make"}.
 pub fn fixture() -> Snapshot {
+    build(false)
+}
+
+/// `fixture()` plus a Dock with one pane {S5 "dock"} (handles minted after the others).
+pub fn fixture_with_dock() -> Snapshot {
+    build(true)
+}
+
+fn build(dock: bool) -> Snapshot {
     let mut h = Handles::new();
     let window = h.handle(Kind::Window, (0, 0));
     let a = h.handle(Kind::Workspace, (1, 0));
@@ -33,6 +42,7 @@ pub fn fixture() -> Snapshot {
         surf(1, 3, "htop"),
         surf(2, 1, "make"),
     );
+    let s5 = dock.then(|| surf(0, 1, "dock"));
     let mut pane = |ws: u64, key: u64, surfaces: Vec<SurfSnap>| PaneSnap {
         key,
         handle: h.handle(Kind::Pane, (ws, key)),
@@ -44,6 +54,16 @@ pub fn fixture() -> Snapshot {
         pane(1, 2, vec![s3]),
         pane(2, 1, vec![s4]),
     );
+    let dock = s5.map(|s5| WsSnap {
+        key: 0,
+        handle: window.clone(),
+        title: "Dock".into(),
+        custom_title: None,
+        cwd: None,
+        ports: vec![],
+        focused_pane: 0,
+        panes: vec![pane(0, 1, vec![s5])],
+    });
     Snapshot {
         window,
         selected: 0,
@@ -70,6 +90,7 @@ pub fn fixture() -> Snapshot {
             },
         ],
         groups: Vec::new(),
+        dock,
     }
 }
 

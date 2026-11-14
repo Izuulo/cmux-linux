@@ -7,7 +7,7 @@ use cmux_ipc::wire::{Reply, RpcError};
 use gpui::{Context, Window};
 use serde_json::{Map, Value, json};
 
-use super::WindowView;
+use super::{DOCK, WindowView};
 
 fn err(code: &str, msg: &str) -> RpcError {
     RpcError::new(code, msg)
@@ -29,6 +29,7 @@ fn workspace(
         .ok_or_else(|| err("invalid_params", missing))?;
     let ws = snap
         .find_workspace(h)
+        .filter(|ws| ws.key != DOCK.0)
         .ok_or_else(|| err("not_found", unknown))?;
     Ok((WorkspaceId(ws.key), ws.handle.id.clone()))
 }
@@ -204,6 +205,7 @@ impl WindowView {
                 .iter()
                 .map(|h| {
                     snap.find_workspace(h)
+                        .filter(|ws| ws.key != DOCK.0)
                         .map(|ws| WorkspaceId(ws.key))
                         .ok_or(*h)
                 })

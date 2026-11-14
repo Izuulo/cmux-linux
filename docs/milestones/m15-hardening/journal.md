@@ -28,3 +28,18 @@
   `commit_field` lost its unused `Window` param. Not yet checked on screen (Task 7).
   (c) `.cmux-bak` is made only when none exists, so it keeps the file from before the first
   cmux-linux write ever; the per-process list is gone. Unit test extended.
+- Task 4, Dock on the socket: `Snapshot::dock` (key `DOCK_KEY` 0, handle = the window's,
+  as cmux gives Dock shells the window id as `CMUX_WORKSPACE_ID`; alias
+  `D0CCD0CC-…0001` accepted). Found by `find_workspace`/`find_surface`/`caller`, never in
+  `workspace.list`; `pane.list`/`surface.list` rows get `dock_scope: "global"`, CLI text
+  `[dock:global]` (rd §9.6). App: `DOCK` id, `view_of` (Dock for 0) replaces `views.get` in
+  the socket and notification paths, `select(DOCK)` shows the Dock, Dock events (OSC
+  notify, focus, typing, close) go to the same handlers as a workspace's; ring and flash
+  while the Dock is on screen; groups refuse it. Not done: cmux's `--placement dock` for
+  `new-pane`/`new-surface`, mark-unread, a Dock unread count in the mode bar.
+- Exit 3 checked on KDE: Super+Shift+E, Ctrl+5, one scripted click on the empty Dock's
+  button opened a Dock terminal; in it `cmux notify --title DockHi` printed `OK
+  notification:…` and a D-Bus `Notify` with DockHi went out; `cmux list-panes` printed
+  `* pane:2 [1 surface] [focused]`; `surface.send_text` to it works.
+- Found by that check: a scripted click right after the move missed (hit test uses the last
+  drawn frame). `debug.mouse.simulate` now sends one event per frame (`dispatch_paced`).

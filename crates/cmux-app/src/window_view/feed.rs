@@ -207,7 +207,7 @@ impl WindowView {
         let Some((ws, surface)) = self.feed.get(id).map(|i| (i.workspace, i.surface)) else {
             return;
         };
-        if let Some(view) = self.views.get(&ws).cloned() {
+        if let Some(view) = self.view_of(ws).cloned() {
             view.update(cx, |v, cx| v.focus_surface(surface, window, cx));
         }
         if ws != self.workspaces.selected() {

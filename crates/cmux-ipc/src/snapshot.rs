@@ -14,7 +14,17 @@ pub struct Snapshot {
     pub workspaces: Vec<WsSnap>,
     /// Workspace groups in sidebar order (M8).
     pub groups: Vec<GroupSnap>,
+    /// The window's Dock (M15), keyed [`DOCK_KEY`]. Its handle is the window's: cmux gives
+    /// Dock shells the window id as `CMUX_WORKSPACE_ID`. Found by id like a workspace, never
+    /// listed as one.
+    pub dock: Option<WsSnap>,
 }
+
+/// The Dock's `WsSnap::key` (workspace keys start at 1).
+pub const DOCK_KEY: u64 = 0;
+
+/// cmux's fixed alias for the window Dock in `workspace_id` (rd §9.3).
+const DOCK_ALIAS: &str = "D0CCD0CC-0000-4000-8000-000000000001";
 
 #[derive(Debug, Clone)]
 pub struct GroupSnap {
@@ -146,6 +156,7 @@ impl Snapshot {
                             "surface_count": p.surfaces.len(),
                         })
                     })
+                    .map(|row| dock_scoped(ws, row))
                     .collect();
                 self.with_window(json!({
                     "workspace_id": ws.handle.id, "workspace_ref": ws.handle.r#ref,
@@ -181,7 +192,7 @@ impl Snapshot {
                         let mut row = surface_row(i, t.surface, t.surface.key == active);
                         row["pane_id"] = json!(t.pane.handle.id);
                         row["pane_ref"] = json!(t.pane.handle.r#ref);
-                        row
+                        dock_scoped(ws, row)
                     })
                     .collect();
                 self.with_window(json!({
@@ -314,7 +325,13 @@ impl Snapshot {
     }
 
     pub fn find_workspace(&self, h: &str) -> Option<&WsSnap> {
-        self.workspaces.iter().find(|ws| matches(&ws.handle, h))
+        self.workspaces
+            .iter()
+            .find(|ws| matches(&ws.handle, h))
+            .or_else(|| {
+                let d = self.dock.as_ref()?;
+                (matches(&d.handle, h) || h.eq_ignore_ascii_case(DOCK_ALIAS)).then_some(d)
+            })
     }
 
     /// An agent message's target (M9 plan D4): a surface or workspace id or ref, else a
@@ -356,6 +373,7 @@ impl Snapshot {
         let h = alias.as_deref().unwrap_or(h);
         self.workspaces
             .iter()
+            .chain(&self.dock)
             .flat_map(|ws| ws.targets())
             .find(|t| matches(&t.surface.handle, h))
     }
@@ -376,6 +394,14 @@ impl Snapshot {
             "listening_ports": ws.ports, "current_directory": ws.cwd,
         })
     }
+}
+
+/// cmux tags Dock rows with their scope; the window Dock is "global" (rd §9.6).
+fn dock_scoped(ws: &WsSnap, mut row: Value) -> Value {
+    if ws.key == DOCK_KEY {
+        row["dock_scope"] = json!("global");
+    }
+    row
 }
 
 fn surface_row(i: usize, s: &SurfSnap, selected: bool) -> Value {

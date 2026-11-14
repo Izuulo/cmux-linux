@@ -2,7 +2,7 @@ mod support;
 
 use cmux_ipc::wire::RpcError;
 use serde_json::{Map, Value, json};
-use support::fixture;
+use support::{fixture, fixture_with_dock};
 
 fn p(v: Value) -> Map<String, Value> {
     v.as_object().unwrap().clone()
@@ -316,4 +316,58 @@ fn message_target_takes_handles_then_titles() {
         Ok((2, None)),
         "exact wins"
     );
+}
+
+/// M15: the Dock answers to the window id (cmux's Dock `CMUX_WORKSPACE_ID`) and its alias,
+/// lists its panes and surfaces with `dock_scope`, and is never a workspace.
+#[test]
+fn dock_is_reachable_but_not_a_workspace() {
+    let s = fixture_with_dock();
+    let w = s.window.clone();
+    let list = s.read("workspace.list", &Map::new()).unwrap().unwrap();
+    assert_eq!(list["workspaces"].as_array().unwrap().len(), 2);
+
+    for id in [
+        w.id.as_str(),
+        "window:1",
+        "d0ccd0cc-0000-4000-8000-000000000001",
+    ] {
+        let v = s
+            .read("pane.list", &p(json!({"workspace_id": id})))
+            .unwrap()
+            .unwrap();
+        assert_eq!(v["workspace_id"], json!(w.id), "{id}");
+        assert_eq!(v["panes"][0]["surface_refs"], json!(["surface:5"]));
+        assert_eq!(v["panes"][0]["dock_scope"], json!("global"));
+    }
+    let v = s
+        .read("surface.list", &p(json!({"workspace_id": w.id})))
+        .unwrap()
+        .unwrap();
+    assert_eq!(v["surfaces"][0]["title"], json!("dock"));
+    assert_eq!(v["surfaces"][0]["dock_scope"], json!("global"));
+    // Workspace rows stay as they were.
+    let v = s.read("pane.list", &Map::new()).unwrap().unwrap();
+    assert!(v["panes"][0].get("dock_scope").is_none());
+
+    let t = s.find_surface("surface:5").expect("dock surface");
+    assert_eq!(t.ws.key, 0);
+    let dock_surface = t.surface.handle.id.clone();
+    let (ws, t) = s
+        .caller(&p(json!({
+            "preferred_workspace_id": w.id, "preferred_surface_id": dock_surface,
+        })))
+        .unwrap();
+    assert_eq!((ws.key, t.map(|t| t.surface.key)), (0, Some(1)));
+}
+
+#[test]
+fn without_a_dock_the_window_id_is_not_a_workspace() {
+    let s = fixture();
+    let id = s.window.id.clone();
+    let err = s
+        .read("pane.list", &p(json!({"workspace_id": id})))
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(err.code, "not_found");
 }

@@ -19,8 +19,8 @@ use gpui::{
 };
 use serde_json::{Map, Value, json};
 
-use super::WindowView;
-use crate::workspace::SplitFailed;
+use super::{DOCK, WindowView};
+use crate::workspace::{SplitFailed, WorkspaceView};
 
 /// What a new shell needs to find the app: shared by the window and its workspaces.
 pub(crate) struct ShellEnv {
@@ -110,6 +110,29 @@ pub(super) fn start_server() -> Option<(Server, UnboundedReceiver<Request>)> {
     }
 }
 
+/// A workspace's (or the Dock's) panes as the socket sees them; handles keyed `(ws, id)`.
+fn panes_of(h: &mut Handles, ws: u64, view: &WorkspaceView, cx: &App) -> Vec<PaneSnap> {
+    view.layout()
+        .panes()
+        .into_iter()
+        .map(|p| PaneSnap {
+            key: p.id.0,
+            handle: h.handle(Kind::Pane, (ws, p.id.0)),
+            selected: p.selected,
+            surfaces: p
+                .tabs
+                .iter()
+                .map(|s| SurfSnap {
+                    key: s.0,
+                    handle: h.handle(Kind::Surface, (ws, s.0)),
+                    title: view.tab_title(*s, cx).to_string(),
+                    browser: view.is_browser(*s),
+                })
+                .collect(),
+        })
+        .collect()
+}
+
 fn require(params: &Map<String, Value>, key: &str) -> Result<(), RpcError> {
     match params.get(key) {
         Some(Value::String(s)) if !s.is_empty() => Ok(()),
@@ -130,28 +153,10 @@ impl WindowView {
             .list()
             .iter()
             .filter_map(|w| {
-                let view = self.views.get(&w.id)?.read(cx);
+                let view = self.view_of(w.id)?.read(cx);
                 let layout = view.layout();
                 let ws = w.id.0;
-                let panes: Vec<PaneSnap> = layout
-                    .panes()
-                    .into_iter()
-                    .map(|p| PaneSnap {
-                        key: p.id.0,
-                        handle: h.handle(Kind::Pane, (ws, p.id.0)),
-                        selected: p.selected,
-                        surfaces: p
-                            .tabs
-                            .iter()
-                            .map(|s| SurfSnap {
-                                key: s.0,
-                                handle: h.handle(Kind::Surface, (ws, s.0)),
-                                title: view.tab_title(*s, cx).to_string(),
-                                browser: view.is_browser(*s),
-                            })
-                            .collect(),
-                    })
-                    .collect();
+                let panes = panes_of(&mut h, ws, view, cx);
                 let focused = layout.focused().0;
                 Some(WsSnap {
                     key: ws,
@@ -192,11 +197,27 @@ impl WindowView {
                     .collect(),
             })
             .collect();
+        let dock = self.dock.as_ref().map(|d| {
+            let view = d.read(cx);
+            let panes = panes_of(&mut h, DOCK.0, view, cx);
+            let focused = view.layout().focused().0;
+            WsSnap {
+                key: DOCK.0,
+                handle: window.clone(),
+                title: "Dock".into(),
+                custom_title: None,
+                cwd: view.active_cwd(cx),
+                ports: Vec::new(),
+                focused_pane: panes.iter().position(|p| p.key == focused).unwrap_or(0),
+                panes,
+            }
+        });
         Snapshot {
             window,
             selected,
             workspaces,
             groups,
+            dock,
         }
     }
 
@@ -234,7 +255,7 @@ impl WindowView {
                 let ws = snap.workspace(params)?;
                 let pane = snap.pane(ws, params)?;
                 let id = WorkspaceId(ws.key);
-                if let Some(view) = self.views.get(&id).cloned() {
+                if let Some(view) = self.view_of(id).cloned() {
                     view.update(cx, |v, cx| v.focus_pane(PaneId(pane.key), window, cx));
                 }
                 if id != self.workspaces.selected() {
@@ -250,7 +271,7 @@ impl WindowView {
                 let t = snap.surface(params)?;
                 let id = WorkspaceId(t.ws.key);
                 // Target tab first, as in `jump_to`: selecting reads the active surface.
-                if let Some(view) = self.views.get(&id).cloned() {
+                if let Some(view) = self.view_of(id).cloned() {
                     view.update(cx, |v, cx| {
                         v.focus_surface(SurfaceId(t.surface.key), window, cx)
                     });
@@ -279,7 +300,7 @@ impl WindowView {
                 require(params, "surface_id")?;
                 let t = snap.surface(params)?;
                 let reply = snap.target_payload(&t);
-                if let Some(view) = self.views.get(&WorkspaceId(t.ws.key)).cloned() {
+                if let Some(view) = self.view_of(WorkspaceId(t.ws.key)).cloned() {
                     view.update(cx, |v, cx| {
                         v.close_surface(SurfaceId(t.surface.key), window, cx)
                     });
@@ -338,17 +359,11 @@ impl WindowView {
             "debug.mouse.simulate" => {
                 let events = mouse_events(params)?;
                 let other = cx.active_window().filter(|w| *w != window.window_handle());
-                window.defer(cx, move |window, cx| {
-                    for e in events {
-                        match other {
-                            Some(w) => {
-                                w.update(cx, |_, w, cx| w.dispatch_event(e, cx)).ok();
-                            }
-                            None => {
-                                window.dispatch_event(e, cx);
-                            }
-                        }
+                window.defer(cx, move |window, cx| match other {
+                    Some(w) => {
+                        w.update(cx, |_, w, cx| dispatch_paced(w, events, cx)).ok();
                     }
+                    None => dispatch_paced(window, events, cx),
                 });
                 Ok(json!({}))
             }
@@ -384,7 +399,7 @@ impl WindowView {
         let old = self.workspaces.selected();
         let cwd = text("cwd")
             .map(str::to_string)
-            .or_else(|| self.views.get(&old).and_then(|v| v.read(cx).active_cwd(cx)));
+            .or_else(|| self.view_of(old).and_then(|v| v.read(cx).active_cwd(cx)));
         let id = self.workspaces.add_after_selected();
         if !self.make_view(id, cwd, remote, window, cx) {
             self.workspaces.close(id);
@@ -414,7 +429,7 @@ impl WindowView {
             // The new view focused its shell as it started: give focus back (plan D6).
             self.workspaces.select(old);
             view.update(cx, |v, cx| v.set_active(false, cx));
-            if let Some(v) = self.views.get(&old) {
+            if let Some(v) = self.view_of(old) {
                 v.update(cx, |v, cx| v.focus_active(window, cx));
             }
             cx.notify();
@@ -455,7 +470,7 @@ impl WindowView {
         let focus = flag(params, "focus");
         let t = snap.surface(params)?;
         let id = WorkspaceId(t.ws.key);
-        let Some(view) = self.views.get(&id).cloned() else {
+        let Some(view) = self.view_of(id).cloned() else {
             return Err(RpcError::new("not_found", "Workspace not found"));
         };
         let input = params.get("initial_input").and_then(Value::as_str);
@@ -526,7 +541,7 @@ impl WindowView {
         }
         let t = snap.surface(params)?;
         let id = WorkspaceId(t.ws.key);
-        let Some(view) = self.views.get(&id).cloned() else {
+        let Some(view) = self.view_of(id).cloned() else {
             return Err(RpcError::new("not_found", "Workspace not found"));
         };
         let pane = PaneId(t.pane.key);
@@ -575,8 +590,7 @@ impl WindowView {
             return Err(RpcError::new("invalid_params", "Surface is not a terminal"));
         }
         let Some(term) = self
-            .views
-            .get(&WorkspaceId(t.ws.key))
+            .view_of(WorkspaceId(t.ws.key))
             .and_then(|v| v.read(cx).terminal(SurfaceId(t.surface.key)).cloned())
         else {
             return Err(RpcError::new("not_found", "Surface not found"));
@@ -829,6 +843,19 @@ fn type_when_up(
         }
     })
     .detach();
+}
+
+/// One event per frame: gpui hit-tests against the last drawn frame, so a press right after
+/// a move would miss what the move hovered.
+fn dispatch_paced(window: &mut Window, events: Vec<PlatformInput>, cx: &mut App) {
+    let mut events = events.into_iter();
+    let Some(first) = events.next() else { return };
+    window.dispatch_event(first, cx);
+    let rest: Vec<_> = events.collect();
+    if !rest.is_empty() {
+        window.refresh();
+        window.on_next_frame(move |window, cx| dispatch_paced(window, rest, cx));
+    }
 }
 
 /// `debug.mouse.simulate` params → the events a real pointer would send. `kind` is
