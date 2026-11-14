@@ -390,6 +390,31 @@ impl WindowView {
                     .collect();
                 Ok(json!({ "elements": rows }))
             }
+            // Scripted input checks (M16): what a terminal shows and where its cells are.
+            #[cfg(debug_assertions)]
+            "debug.terminal.state" => {
+                let t = snap.surface(params)?;
+                let Some(term) = self
+                    .view_of(WorkspaceId(t.ws.key))
+                    .and_then(|v| v.read(cx).terminal(SurfaceId(t.surface.key)).cloned())
+                else {
+                    return Err(RpcError::new("not_found", "Surface not found"));
+                };
+                let view = term.read(cx);
+                let mut vt = view.session.term.lock().unwrap();
+                let selection = view.selection.as_ref().and_then(|s| s.text(&mut vt));
+                let offset = vt.vt().scrollbar().map_or(0, |s| s.offset);
+                let lines = vt.text_lines().unwrap_or_default();
+                drop(vt);
+                let geometry = view.geometry.map(|g| {
+                    json!({"x": f32::from(g.origin.x), "y": f32::from(g.origin.y),
+                           "cell_w": g.cell_w, "cell_h": g.cell_h, "cols": g.cols, "rows": g.rows})
+                });
+                Ok(
+                    json!({"selection": selection, "scroll_offset": offset, "lines": lines,
+                          "blink_timer": view.blink_task.is_some(), "geometry": geometry}),
+                )
+            }
             _ => Err(RpcError::new("method_not_found", "Unknown method")),
         }
     }
@@ -882,7 +907,8 @@ fn dispatch_paced(window: &mut Window, events: Vec<PlatformInput>, cx: &mut App)
 }
 
 /// `debug.mouse.simulate` params → the events a real pointer would send. `kind` is
-/// `click` (default: move, down, up), `move`, `down`, `up` or `scroll` (`dy` lines, + = down).
+/// `click` (default: move, down, up), `move`, `drag`, `down`, `up` or `scroll` (`dy` lines,
+/// + = down; `dx` lines, + = right). `shift: true` holds Shift.
 fn mouse_events(params: &Map<String, Value>) -> Result<Vec<PlatformInput>, RpcError> {
     let num = |k: &str| params.get(k).and_then(Value::as_f64);
     let (Some(x), Some(y)) = (num("x"), num("y")) else {
@@ -908,7 +934,13 @@ fn mouse_events(params: &Map<String, Value>) -> Result<Vec<PlatformInput>, RpcEr
         .get("click_count")
         .and_then(Value::as_u64)
         .unwrap_or(1) as usize;
-    let modifiers = Modifiers::default();
+    let modifiers = Modifiers {
+        shift: params
+            .get("shift")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        ..Modifiers::default()
+    };
     let pressed = |b| MouseMoveEvent {
         position,
         pressed_button: b,
@@ -941,7 +973,10 @@ fn mouse_events(params: &Map<String, Value>) -> Result<Vec<PlatformInput>, RpcEr
             "up" => vec![up],
             "scroll" => vec![PlatformInput::ScrollWheel(ScrollWheelEvent {
                 position,
-                delta: ScrollDelta::Lines(point(0., -num("dy").unwrap_or(1.) as f32)),
+                delta: ScrollDelta::Lines(point(
+                    -num("dx").unwrap_or(0.) as f32,
+                    -num("dy").unwrap_or(if params.contains_key("dx") { 0. } else { 1. }) as f32,
+                )),
                 modifiers,
                 touch_phase: TouchPhase::Moved,
             })],
@@ -969,6 +1004,20 @@ mod tests {
         assert_eq!(d.button, MouseButton::Right);
         assert!(matches!(ev[2], PlatformInput::MouseUp(_)));
         assert_eq!(ev.len(), 3);
+    }
+
+    #[test]
+    fn mouse_shift_and_horizontal_scroll() {
+        let ev = mouse_events(&params(json!({"x": 1, "y": 1, "shift": true}))).unwrap();
+        let PlatformInput::MouseDown(d) = &ev[1] else {
+            panic!()
+        };
+        assert!(d.modifiers.shift);
+        let ev = mouse_events(&params(json!({"x": 1, "y": 1, "kind": "scroll", "dx": 1}))).unwrap();
+        let PlatformInput::ScrollWheel(w) = &ev[0] else {
+            panic!()
+        };
+        assert!(matches!(w.delta, ScrollDelta::Lines(p) if p == point(-1., 0.)));
     }
 
     #[test]

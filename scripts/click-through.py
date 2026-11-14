@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scripted click-through of cmux-linux's UI (M15), off the owner's screen.
+"""Scripted click-through of cmux-linux's UI (M15) and terminal input (M16), off the owner's screen.
 
 Runs a debug build (`cargo build -p cmux-app -p cmux-ipc`) inside a headless KWin
 (`kwin_wayland --virtual`), with its own state and config dirs, no session D-Bus (no desktop
@@ -7,7 +7,8 @@ bubbles) and `CMUX_SOCKET_MODE=allowAll`. Each check clicks real controls throug
 `debug.mouse.simulate`, finds them with `debug.ui.bounds` (gpui element ids, debug builds
 only) and reads the result back over the socket or from disk.
 
-Usage: scripts/click-through.py   (from the repo root; prints one line per check, exit 1 on a fail)
+Usage: scripts/click-through.py [check ...]   (from the repo root; all checks by default;
+prints one line per check, exit 1 on a fail)
 """
 
 import json
@@ -287,12 +288,121 @@ def settings_field_survives_sigterm(app):
     return "typed command saved on SIGTERM"
 
 
+# ---- M16 input checks: a terminal's cells, selection and scroll offset via debug.terminal.state
+
+
+def tstate():
+    return rpc("debug.terminal.state")
+
+
+def mouse(kind, x, y, **kw):
+    rpc("debug.mouse.simulate", kind=kind, x=x, y=y, **kw)
+    time.sleep(0.2)
+
+
+def cell(g, col, row, frac=0.5):
+    return g["x"] + (col + frac) * g["cell_w"], g["y"] + (row + 0.5) * g["cell_h"]
+
+
+def shell(text):
+    rpc("surface.send_text", text=text + "\n")
+
+
+def row_of(text):
+    """Viewport row whose line is exactly `text`, waiting for it to appear."""
+    def find_row():
+        lines = tstate()["lines"]
+        return next((str(i) for i, l in enumerate(lines) if l.rstrip() == text), None)
+    r = wait_for(find_row)
+    if r is None:
+        raise RuntimeError(f"{text!r} not on screen")
+    return int(r)
+
+
+def input_workspace():
+    rpc("workspace.create", title="input", focus=True)
+    g = wait_for(lambda: tstate()["geometry"])
+    assert g, "terminal has no geometry"
+    return g
+
+
+def drag_threshold():
+    g = input_workspace()
+    # Indented: column 0 sits under the sidebar's resize grip.
+    shell("clear; echo '      hello world'")
+    r = row_of("      hello world")
+    c = 6
+    mouse("down", *cell(g, c, r, 0.1))
+    mouse("drag", *cell(g, c, r, 0.5))
+    assert tstate()["selection"] is None, "selected before crossing 60 % of the cell"
+    mouse("drag", *cell(g, c + 4, r, 0.9))
+    mouse("up", *cell(g, c + 4, r, 0.9))
+    got = tstate()["selection"]
+    assert got == "hello", f"drag selected {got!r}"
+    mouse("down", *cell(g, c + 1, r), click_count=2)
+    mouse("up", *cell(g, c + 1, r), click_count=2)
+    time.sleep(0.6)  # past gpui's double-click interval, so the Shift-click is not a repeat
+    mouse("click", *cell(g, c + 8, r), shift=True)
+    got = tstate()["selection"]
+    assert got == "hello world", f"shift-click after a word selected {got!r}"
+    return "no cell below 60 %, 'hello' after, shift-click extends by words"
+
+
+def autoscroll():
+    g = input_workspace()
+    shell("clear; seq 1 300")
+    row_of("300")
+    mouse("scroll", *cell(g, 2, g["rows"] // 2), dy=-100)
+    top = tstate()["scroll_offset"]
+    _, root_h = root_size()
+    below = min(g["y"] + g["rows"] * g["cell_h"] + 3, root_h - 1)
+    mouse("down", *cell(g, 2, g["rows"] // 2))
+    mouse("drag", g["x"] + 2 * g["cell_w"], below)
+    time.sleep(0.6)
+    moved = tstate()["scroll_offset"]
+    assert moved >= top + 10, f"offset {top} -> {moved} while held below the pane"
+    mouse("up", g["x"] + 2 * g["cell_w"], below)
+    held = tstate()["scroll_offset"]
+    time.sleep(0.5)
+    after = tstate()["scroll_offset"]
+    assert after == held, f"kept scrolling after release ({held} -> {after})"
+    return f"offset {top} -> {moved}, stops on release"
+
+
+def horizontal_wheel():
+    g = input_workspace()
+    shell("clear; printf '\\e[?1000h\\e[?1006h'; cat -v")
+    time.sleep(0.5)
+    mid = cell(g, 5, g["rows"] // 2)
+    # gpui's Wayland backend sends a notch as 3 lines on either axis.
+    mouse("scroll", *mid, dx=3)
+    mouse("scroll", *mid, dx=-3)
+    text = wait_for(lambda: "<67;" in "".join(tstate()["lines"]) and "".join(tstate()["lines"]))
+    rpc("surface.send_key", key="ctrl+c")
+    shell("printf '\\e[?1000l\\e[?1006l'")
+    assert text and "<66;" in text, f"no button 6/7 reports: {''.join(tstate()['lines'])!r}"
+    return "right -> button 7 (67), left -> button 6 (66)"
+
+
+def idle_blink():
+    input_workspace()
+    shell("printf '\\e[2 q'")  # steady block
+    assert wait_for(lambda: not tstate()["blink_timer"]), "timer runs for a steady cursor"
+    shell("printf '\\e[1 q'")  # blinking block
+    assert wait_for(lambda: tstate()["blink_timer"]), "no timer for a blinking cursor"
+    shell("printf '\\e[2 q'")
+    assert wait_for(lambda: not tstate()["blink_timer"]), "timer kept after blink off"
+    return "timer only while the focused cursor blinks"
+
+
 CHECKS = [sidebar_row, sidebar_new, sidebar_toggle, strip_buttons, bell_popover,
           context_menu, group_header, palette, right_sidebar_and_dock, feed_card,
-          window_buttons, settings_controls]
+          window_buttons, drag_threshold, autoscroll, horizontal_wheel, idle_blink,
+          settings_controls]
 
 
 def main():
+    only = set(sys.argv[1:])
     if not os.path.exists(APP):
         sys.exit(f"build first: cargo build -p cmux-app -p cmux-ipc ({APP} missing)")
     os.makedirs(CFG)
@@ -319,6 +429,8 @@ def main():
             sys.exit("app did not come up (see app.log)")
         checks = CHECKS + [lambda: settings_field_survives_sigterm(app)]
         names = [c.__name__ for c in CHECKS] + ["settings_field_survives_sigterm"]
+        if only:
+            names, checks = zip(*[(n, c) for n, c in zip(names, checks) if n in only])
         for name, check in zip(names, checks):
             try:
                 print(f"PASS {name}: {check()}", flush=True)
