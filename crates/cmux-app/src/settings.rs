@@ -223,11 +223,16 @@ impl SettingsView {
             cx.on_blur(&field_focus, window, |this, window, cx| {
                 // Alt-tab clears focus too; a half-typed value must survive a window switch.
                 if window.is_window_active() {
-                    this.commit_field(window, cx);
+                    this.commit_field(cx);
                 }
             }),
             // Closing within the debounce must not lose the last change.
             cx.on_release(|this, _| this.write_pending()),
+            // Super+Q from the main window: keep a half-typed value too (M15).
+            cx.on_app_quit(|this, cx| {
+                this.close_out(cx);
+                async {}
+            }),
             // cmux's recorder stops when its window resigns key.
             cx.observe_window_activation(window, |this, window, cx| {
                 if !window.is_window_active() && this.recording.is_some() {
@@ -238,8 +243,8 @@ impl SettingsView {
         ];
         // The title bar's close button: keep a half-typed value.
         let view = cx.entity().downgrade();
-        window.on_window_should_close(cx, move |window, cx| {
-            view.update(cx, |this, cx| this.close_out(window, cx)).ok();
+        window.on_window_should_close(cx, move |_, cx| {
+            view.update(cx, |this, cx| this.close_out(cx)).ok();
             true
         });
         let theme_dark = env.dark;
@@ -373,8 +378,8 @@ impl SettingsView {
     }
 
     /// Before the window goes: the field being typed in and the debounced writes are saved.
-    fn close_out(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.commit_field(window, cx);
+    pub(crate) fn close_out(&mut self, cx: &mut Context<Self>) {
+        self.commit_field(cx);
         self.write_pending();
     }
 
@@ -461,7 +466,7 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) {
         // Starting field B while A is open keeps A's text.
-        self.commit_field(window, cx);
+        self.commit_field(cx);
         self.field = Some((id, RenameState::new(current, true), current.to_string()));
         window.focus(&self.field_focus);
         cx.notify();
@@ -475,7 +480,7 @@ impl SettingsView {
         match state.apply(RenameKey::from(&ev.keystroke)) {
             RenameOutcome::Editing => {}
             RenameOutcome::Commit(_) => {
-                self.commit_field(window, cx);
+                self.commit_field(cx);
                 window.focus(&self.focus);
             }
             RenameOutcome::Cancel => {
@@ -486,7 +491,7 @@ impl SettingsView {
         cx.notify();
     }
 
-    fn commit_field(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+    fn commit_field(&mut self, cx: &mut Context<Self>) {
         let Some((id, state, start)) = self.field.take() else {
             return;
         };
@@ -753,13 +758,13 @@ impl Render for SettingsView {
             .font_family(crate::style::UI_FONT_FAMILY)
             .key_context("Settings")
             .track_focus(&self.focus)
-            .on_action(cx.listener(|this, _: &Quit, window, cx| {
-                this.close_out(window, cx);
+            .on_action(cx.listener(|this, _: &Quit, _, cx| {
+                this.close_out(cx);
                 cx.quit()
             }))
             .on_action(|_: &OpenSettings, _, _| {})
             .on_action(cx.listener(|this, _: &CloseTab, window, cx| {
-                this.close_out(window, cx);
+                this.close_out(cx);
                 window.remove_window()
             }))
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| this.on_key(ev, cx)))
@@ -777,7 +782,7 @@ impl Render for SettingsView {
                 cx.listener(|this, _, window, cx| {
                     // A click anywhere else ends a text edit or a recording.
                     if this.field.is_some() {
-                        this.commit_field(window, cx);
+                        this.commit_field(cx);
                         window.focus(&this.focus);
                     }
                     if this.recording.is_some() {

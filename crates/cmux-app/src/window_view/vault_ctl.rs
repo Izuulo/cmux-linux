@@ -47,7 +47,7 @@ impl WindowView {
                 }
                 let (ws, surface) = (WorkspaceId(t.ws.key), SurfaceId(t.surface.key));
                 let reply = snap.target_payload(&t);
-                let Some(view) = self.views.get(&ws).cloned() else {
+                let Some(view) = self.view_of(ws).cloned() else {
                     return Err(RpcError::new("not_found", "Surface not found"));
                 };
                 if method == "vault.resume" {
@@ -106,7 +106,7 @@ impl WindowView {
 
     /// The surface's cwd and agent: the hook-reported one, else a registered process.
     fn agent_term(&self, ws: WorkspaceId, surface: SurfaceId, cx: &gpui::App) -> Option<SavedTerm> {
-        let view = self.views.get(&ws)?.read(cx);
+        let view = self.view_of(ws)?.read(cx);
         let term = view.terminal(surface)?.read(cx);
         let agent = view
             .agent(surface)

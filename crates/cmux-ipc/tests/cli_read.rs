@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use cmux_ipc::wire::RpcError;
 use serde_json::{Value, json};
-use support::{Fake, T, err, fixture, ok};
+use support::{Fake, T, err, fixture, fixture_with_dock, ok};
 
 #[test]
 fn list_workspaces_text() {
@@ -246,5 +246,54 @@ fn window_flag_resolves_through_window_list() {
             .lines()
             .count(),
         2
+    );
+}
+
+/// M15: a Dock shell's env names the window as its workspace; its panes come back tagged.
+#[test]
+fn list_panes_from_a_dock_shell() {
+    let s = fixture_with_dock();
+    let t = T {
+        fake: Fake::start(s.clone(), HashMap::new()),
+        s,
+    };
+    let w = t.s.window.id.clone();
+    let ds = t.s.dock.as_ref().unwrap().panes[0].surfaces[0]
+        .handle
+        .id
+        .clone();
+    let env = [
+        ("CMUX_WORKSPACE_ID", w.as_str()),
+        ("CMUX_SURFACE_ID", ds.as_str()),
+    ];
+    assert_eq!(
+        ok(t.run_env(&["list-panes"], &env)),
+        "* pane:4  [1 surface]  [focused]  [dock:global]\n"
+    );
+}
+
+/// M15: an unusable response timeout falls back to the default instead of panicking.
+#[test]
+fn odd_response_timeouts_do_not_panic() {
+    let t = T::new(HashMap::new());
+    for v in ["inf", "NaN", "1e300", "-1", "x"] {
+        let out = t.run_env(&["list-panes"], &[("CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC", v)]);
+        assert_eq!(out.0, 0, "{v}: {out:?}");
+    }
+}
+
+/// M15: the binary refuses a non-UTF-8 argument with an error, not a panic.
+#[test]
+fn non_utf8_args_are_refused() {
+    use std::os::unix::ffi::OsStrExt;
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_cmux"))
+        .arg(std::ffi::OsStr::from_bytes(b"\xff"))
+        .env_clear()
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr),
+        "Error: arguments must be valid UTF-8\n"
     );
 }

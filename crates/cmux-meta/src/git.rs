@@ -1,6 +1,10 @@
-//! Git branch lookup by reading `.git/HEAD` directly (no `git` subprocess).
+//! Git branch lookup by reading `.git/HEAD` directly (no `git` subprocess), and the dirty
+//! marker (one bounded `git status`, cached).
 
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::Mutex;
+use std::time::{Duration, Instant, SystemTime};
 
 /// Walk up from `start` to the nearest `.git` dir, or the target of a `.git` file ("gitdir: X").
 pub fn find_git_dir(start: &Path) -> Option<PathBuf> {
@@ -29,6 +33,51 @@ pub fn branch(dir: &Path) -> Option<(PathBuf, String)> {
     let git_dir = find_git_dir(dir)?;
     let head = std::fs::read_to_string(git_dir.join("HEAD")).ok()?;
     Some((git_dir, parse_head(&head)?))
+}
+
+/// Whether tracked files in `dir`'s work tree have changes: cmux's dirty `*`
+/// (`GitDirtyStatusReading`, 2 s bound). cmux re-probes when files in the git dir change; we
+/// poll, so the answer is cached per dir and re-run when HEAD or the index changed, else at
+/// most every 10 s (a plain file edit touches neither).
+pub fn dirty(dir: &Path, git_dir: &Path) -> bool {
+    type Stamp = (Option<SystemTime>, Option<SystemTime>);
+    static CACHE: Mutex<Vec<(PathBuf, Stamp, Instant, bool)>> = Mutex::new(Vec::new());
+    let mtime = |f: &str| {
+        std::fs::metadata(git_dir.join(f))
+            .and_then(|m| m.modified())
+            .ok()
+    };
+    let stamp = (mtime("HEAD"), mtime("index"));
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((_, s, at, d)) = cache.iter().find(|(p, ..)| p == dir)
+        && *s == stamp
+        && at.elapsed() < Duration::from_secs(10)
+    {
+        return *d;
+    }
+    let d = probe_dirty(dir);
+    cache.retain(|(p, ..)| p != dir);
+    cache.push((dir.to_path_buf(), stamp, Instant::now(), d));
+    d
+}
+
+/// One `git status` (cmux's flags); false when git is missing, fails or takes over 2 s.
+fn probe_dirty(dir: &Path) -> bool {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(dir)
+        .args([
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=no",
+            "--ignore-submodules=dirty",
+            "--no-renames",
+        ])
+        // A status refresh must not rewrite the index (that would re-trigger the probe).
+        .env("GIT_OPTIONAL_LOCKS", "0");
+    crate::pr::run_with_deadline(cmd, Vec::new(), Duration::from_secs(2))
+        .is_ok_and(|o| o.status.success() && !o.stdout.is_empty())
 }
 
 #[cfg(test)]
@@ -85,6 +134,41 @@ mod tests {
         std::fs::write(root.join(".git/HEAD"), "0123456789abcdef\n").unwrap();
         assert_eq!(branch(&root), None);
         assert_eq!(branch(Path::new("/")), None); // CI's / has no .git
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn probe_dirty_sees_tracked_changes_only() {
+        let root = scratch("dirty");
+        let git = |args: &[&str]| {
+            let ok = Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args([
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(args)
+                .output()
+                .unwrap()
+                .status
+                .success();
+            assert!(ok, "git {args:?}");
+        };
+        git(&["init", "-q"]);
+        std::fs::write(root.join("a"), "1").unwrap();
+        git(&["add", "a"]);
+        git(&["commit", "-q", "-m", "a"]);
+        assert!(!probe_dirty(&root), "clean");
+        std::fs::write(root.join("new"), "x").unwrap();
+        assert!(!probe_dirty(&root), "untracked files don't count");
+        std::fs::write(root.join("a"), "2").unwrap();
+        assert!(probe_dirty(&root), "modified");
+        assert!(!probe_dirty(&root.join("nonexistent")));
         std::fs::remove_dir_all(&root).unwrap();
     }
 }

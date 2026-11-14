@@ -4,7 +4,6 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
 use super::Env;
 
@@ -33,8 +32,8 @@ pub fn set(path: &Path, key: &str, value: &str) -> io::Result<()> {
     set_all(path, &[(key, value)])
 }
 
-/// Applies `changes` to the file at `path` (created if missing). The first write to a file in
-/// this process keeps the old content as `<file>.cmux-bak`.
+/// Applies `changes` to the file at `path` (created if missing). The first write to a file
+/// keeps the old content as `<file>.cmux-bak`, which no later write replaces.
 pub fn set_all(path: &Path, changes: &[(&str, &str)]) -> io::Result<()> {
     for &(key, value) in changes {
         let bad_key = key.is_empty()
@@ -57,15 +56,12 @@ pub fn set_all(path: &Path, changes: &[(&str, &str)]) -> io::Result<()> {
     if new == text {
         return Ok(());
     }
-    static BACKED_UP: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
-    let mut backed_up = BACKED_UP.lock().unwrap_or_else(|e| e.into_inner());
-    if !backed_up.iter().any(|p| p == path) {
-        if path.is_file() {
-            let mut bak = path.as_os_str().to_owned();
-            bak.push(".cmux-bak");
-            std::fs::copy(path, PathBuf::from(bak))?;
-        }
-        backed_up.push(path.to_path_buf());
+    // The first write ever keeps the user's own file; later runs leave that copy alone (M15).
+    let mut bak = path.as_os_str().to_owned();
+    bak.push(".cmux-bak");
+    let bak = PathBuf::from(bak);
+    if path.is_file() && !bak.exists() {
+        std::fs::copy(path, &bak)?;
     }
     crate::write::replace_file(path, &new)
 }
@@ -235,6 +231,11 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "font-size = 13\n");
         let bak = std::fs::read_to_string(dir.join("config.cmux-bak")).unwrap();
         assert_eq!(bak, "font-size = 10\n", "backup is the pre-session file");
+        // A later run (the file changed since) keeps the first backup.
+        std::fs::write(&path, "font-size = 20\n").unwrap();
+        set(&path, "font-size", "21").unwrap();
+        let bak = std::fs::read_to_string(dir.join("config.cmux-bak")).unwrap();
+        assert_eq!(bak, "font-size = 10\n", "backup is never overwritten");
 
         for (k, v) in [
             ("config-file", "x"),

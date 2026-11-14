@@ -24,6 +24,10 @@ use crate::mac::Fading;
 use crate::style::TermStyle;
 use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
+/// The window's Dock as a notification owner and socket target (M15): workspace ids start
+/// at 1, so 0 is free. Never in `Workspaces`.
+pub(crate) const DOCK: WorkspaceId = WorkspaceId(cmux_ipc::snapshot::DOCK_KEY);
+
 mod automation_ctl;
 mod autoname_ctl;
 mod commands_ctl;
@@ -257,6 +261,10 @@ impl WindowView {
                         }
                         continue;
                     }
+                    // Its client was already told it timed out: doing it now would surprise.
+                    if req.expired() {
+                        continue;
+                    }
                     let reply = this.update_in(cx, |this, window, cx| {
                         this.control(&req.method, &req.params, window, cx)
                     });
@@ -417,6 +425,10 @@ impl WindowView {
     }
 
     fn select(&mut self, id: WorkspaceId, window: &mut Window, cx: &mut Context<Self>) {
+        // Selecting the Dock (a socket focus or a notification in it) shows it instead.
+        if id == DOCK {
+            return self.show_right(Some(dock::RightMode::Dock), window, cx);
+        }
         self.workspaces.select(id);
         let inset = self.sidebar_px(window).unwrap_or(0.);
         let right = self.right_sidebar_px(window);
@@ -433,12 +445,22 @@ impl WindowView {
         if let Some(view) = self.views.get(&id) {
             view.update(cx, |v, cx| v.focus_active(window, cx));
         }
-        let rows = self.workspaces.rows();
-        if let Some(ix) = rows.iter().position(|r| r.workspace() == id) {
-            self.sidebar_scroll.scroll_to_item(ix);
-        }
+        self.scroll_to_selected();
         self.read_selected(window, cx);
         cx.notify();
+    }
+
+    /// Keeps the selected workspace's sidebar row in view.
+    fn scroll_to_selected(&self) {
+        let id = self.workspaces.selected();
+        if let Some(ix) = self
+            .workspaces
+            .rows()
+            .iter()
+            .position(|r| r.workspace() == id)
+        {
+            self.sidebar_scroll.scroll_to_item(ix);
+        }
     }
 
     fn request_close(&mut self, id: WorkspaceId, window: &mut Window, cx: &mut Context<Self>) {
@@ -503,8 +525,20 @@ impl WindowView {
         Some(cmux_meta::remote::host(v.remote()?.last()?).to_string())
     }
 
-    /// Custom title, else the cached OSC title, else "Terminal".
+    /// A workspace's view, or the Dock's for [`DOCK`].
+    pub(crate) fn view_of(&self, id: WorkspaceId) -> Option<&Entity<WorkspaceView>> {
+        if id == DOCK {
+            self.dock.as_ref()
+        } else {
+            self.views.get(&id)
+        }
+    }
+
+    /// Custom title, else the cached OSC title, else "Terminal" ("Dock" for the Dock).
     pub(crate) fn title_of(&self, id: WorkspaceId) -> String {
+        if id == DOCK {
+            return "Dock".to_string();
+        }
         self.workspaces
             .list()
             .iter()
@@ -767,11 +801,15 @@ impl Render for WindowView {
             }))
             .on_action(cx.listener(|this, _: &MoveWorkspaceUp, _, cx| {
                 if this.workspaces.move_selected(-1) {
+                    // M15: a keyboard move follows the row out of view.
+                    this.scroll_to_selected();
                     cx.notify();
                 }
             }))
             .on_action(cx.listener(|this, _: &MoveWorkspaceDown, _, cx| {
                 if this.workspaces.move_selected(1) {
+                    // M15: a keyboard move follows the row out of view.
+                    this.scroll_to_selected();
                     cx.notify();
                 }
             }))

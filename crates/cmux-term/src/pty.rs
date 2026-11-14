@@ -127,6 +127,7 @@ impl Session {
         cmd: CommandBuilder,
         cols: u16,
         rows: u16,
+        scrollback: usize,
         init: impl FnOnce(&mut Term),
         mut on_event: impl FnMut(PtyEvent) + Send + 'static,
     ) -> io::Result<Session> {
@@ -162,7 +163,8 @@ impl Session {
         let (wake, wake_peer) = UnixStream::pair()?;
 
         let (tx, rx) = mpsc::channel::<Vec<u8>>();
-        let mut term = Term::new(cols, rows, tx.clone()).map_err(io::Error::other)?;
+        let mut term =
+            Term::with_scrollback(cols, rows, scrollback, tx.clone()).map_err(io::Error::other)?;
         init(&mut term);
         let term = Arc::new(Mutex::new(term));
 

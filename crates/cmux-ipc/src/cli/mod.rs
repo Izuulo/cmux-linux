@@ -42,7 +42,10 @@ impl Ctx {
     /// The process's own environment and working directory.
     pub fn from_process() -> Ctx {
         Ctx {
-            env: std::env::vars().collect(),
+            // `vars()` panics on a non-UTF-8 variable; such variables are none of ours.
+            env: std::env::vars_os()
+                .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)))
+                .collect(),
             cwd: std::env::current_dir().unwrap_or_default(),
             stdin: None,
             exe: std::env::current_exe().ok(),
@@ -213,6 +216,14 @@ pub(crate) struct Cmd<'a> {
 
 impl Cmd<'_> {
     /// A non-blank environment variable, trimmed.
+    /// In a cmux-linux terminal talking to its own app: `CMUX_LINUX` is set to that app's
+    /// socket path (M15), so a cmux.app started from our terminal, which sets its own
+    /// `CMUX_SOCKET_PATH`, does not get our hooks' requests.
+    pub(crate) fn in_our_terminal(&self) -> bool {
+        self.env("CMUX_LINUX")
+            .is_some_and(|l| Some(l) == self.env("CMUX_SOCKET_PATH"))
+    }
+
     pub(crate) fn env(&self, key: &str) -> Option<&str> {
         self.ctx
             .env
@@ -232,7 +243,8 @@ impl Cmd<'_> {
                 .env("CMUXTERM_CLI_RESPONSE_TIMEOUT_SEC")
                 .and_then(|s| s.parse::<f64>().ok())
                 .filter(|s| *s > 0.0)
-                .map(Duration::from_secs_f64)
+                // `inf`, NaN and overflowing values fall back instead of panicking (M15).
+                .and_then(|s| Duration::try_from_secs_f64(s).ok())
                 .unwrap_or(Duration::from_secs(15));
             let mut client = Client::connect(&path, timeout)?;
             if let Some(password) = self.password() {

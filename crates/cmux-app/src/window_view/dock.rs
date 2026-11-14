@@ -14,8 +14,8 @@ use gpui::{
 };
 use serde_json::Value;
 
-use super::WindowView;
 use super::feed::{BADGE_ALPHA, FeedColors, badge_label, with_alpha};
+use super::{DOCK, WindowView};
 use crate::workspace::{WorkspaceEvent, WorkspaceView};
 
 /// cmux's floor for the right sidebar (rd §2); the main area keeps `MAIN_MIN` beside it.
@@ -280,15 +280,30 @@ impl WindowView {
         if !view.read(cx).has_terminals() {
             return false;
         }
-        let sub = cx.subscribe_in(&view, window, |this, _, ev, window, cx| {
-            // shortcut: Dock notifications are dropped (rd §8 gives them rings and unread
-            // state); they need a notification owner that is not a workspace.
-            if matches!(ev, WorkspaceEvent::Empty) {
+        // Dock terminals are notification owners like workspaces, under the id `DOCK` (rd §8).
+        let sub = cx.subscribe_in(&view, window, |this, _, ev, window, cx| match ev {
+            WorkspaceEvent::Empty => {
                 // The last terminal closed: back to the empty pane (rd §4.7).
                 this.dock = None;
                 this._dock_sub = None;
                 this.focus_terminal(window, cx);
                 cx.notify();
+            }
+            WorkspaceEvent::Changed => {}
+            WorkspaceEvent::Notify {
+                surface,
+                title,
+                body,
+            } => {
+                let (title, body) = (title.clone(), body.clone());
+                this.on_notify(DOCK, *surface, title, String::new(), body, true, window, cx);
+            }
+            WorkspaceEvent::Focused(s) => this.on_focused(DOCK, *s, window, cx),
+            WorkspaceEvent::Typed(s) => this.on_typed(DOCK, *s, cx),
+            WorkspaceEvent::Closed(s) => {
+                this.feed_close_surface(DOCK, *s, cx);
+                this.messages.forget(DOCK, Some(*s));
+                this.on_closed(DOCK, *s, cx);
             }
         });
         self.dock = Some(view);

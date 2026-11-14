@@ -130,6 +130,7 @@ pub fn meta(destination: &str, cwd: Option<&str>, probe: Option<&str>) -> Worksp
                 None => host.to_string(),
             }),
             git_dir: None,
+            dirty: false,
         }],
         ports,
     }

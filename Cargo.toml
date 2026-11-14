@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "vendor/ghostty-vt", "vendor/ghostty-vt-sys"]
+# Patched gpui (see the [patch] at the end): a dependency, not ours to test or lint.
+exclude = ["vendor/gpui"]
 
 [workspace.package]
 edition = "2024"
@@ -44,3 +46,8 @@ wayland-client = "0.31"
 wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-protocols = { version = "0.32.9", features = ["client", "staging"] }
 raw-window-handle = "0.6"
+
+# gpui 0.2.2 with one change: `DispatchEventResult` is pub, so scripted UI checks can call
+# `Window::dispatch_event` (M15). See vendor/gpui/PATCHED.md.
+[patch.crates-io]
+gpui = { path = "vendor/gpui" }

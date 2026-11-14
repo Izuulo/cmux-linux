@@ -17,11 +17,12 @@ use ghostty_vt::{
 };
 use osc::{OscEvent, OscScanner};
 
-/// Scrollback bytes per terminal (upstream Ghostty's default `scrollback-limit`). Not cmux's
-/// 50 MB: history is never compressed here (libghostty-vt leaves that to the caller,
-/// `vendor/ghostty/include/ghostty/vt/terminal.h:43-52`), so 20 full panes would hold ~1 GB.
-// shortcut: fixed; config key `scrollback-limit` not mapped and no idle compression. Add with M10.
-const SCROLLBACK: usize = 10_000_000;
+/// Scrollback bytes per terminal unless Ghostty's `scrollback-limit` says otherwise (its
+/// default). Not cmux's 50 MB: history is never compressed here (libghostty-vt leaves that to
+/// the caller, `vendor/ghostty/include/ghostty/vt/terminal.h:43-52`), so 20 full panes would
+/// hold ~1 GB.
+// shortcut: no idle compression; add it if memory with many panes becomes a problem.
+pub const SCROLLBACK: usize = 10_000_000;
 
 const TITLE_CHANGED: u8 = 1;
 const BELL: u8 = 2;
@@ -80,6 +81,16 @@ impl Term {
     /// `pty_tx` receives the terminal's replies (DA, DSR, OSC colour queries). The caller
     /// writes them to the PTY; they are produced inside `feed`, so never write from there.
     pub fn new(cols: u16, rows: u16, pty_tx: Sender<Vec<u8>>) -> Result<Self, Error> {
+        Self::with_scrollback(cols, rows, SCROLLBACK, pty_tx)
+    }
+
+    /// `new` with `scrollback` bytes of history.
+    pub fn with_scrollback(
+        cols: u16,
+        rows: u16,
+        scrollback: usize,
+        pty_tx: Sender<Vec<u8>>,
+    ) -> Result<Self, Error> {
         let flags = Arc::new(AtomicU8::new(0));
         let (title, bell) = (flags.clone(), flags.clone());
         let callbacks = Callbacks {
@@ -94,7 +105,7 @@ impl Term {
             })),
         };
         Ok(Self {
-            vt: Terminal::new(cols, rows, SCROLLBACK, callbacks)?,
+            vt: Terminal::new(cols, rows, scrollback, callbacks)?,
             render: RenderState::new()?,
             osc: OscScanner::new(),
             flags,

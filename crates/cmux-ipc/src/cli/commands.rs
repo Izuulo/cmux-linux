@@ -302,11 +302,15 @@ pub(crate) fn list_panes(cmd: &mut Cmd) -> Result<String, CliError> {
             let focused = r["focused"].as_bool() == Some(true);
             let n = r["surface_count"].as_u64().unwrap_or(0);
             format!(
-                "{}{}  [{n} {}]{}\n",
+                "{}{}  [{n} {}]{}{}\n",
                 if focused { "* " } else { "  " },
                 cmd.row(r),
                 if n == 1 { "surface" } else { "surfaces" },
                 if focused { "  [focused]" } else { "" },
+                // cmux's `dockScopeTag` (rd §9.6).
+                r["dock_scope"]
+                    .as_str()
+                    .map_or(String::new(), |s| format!("  [dock:{s}]")),
             )
         })
         .collect())

@@ -7,7 +7,7 @@ use std::time::SystemTime;
 use cmux_core::{NotificationId, SurfaceId, WorkspaceId};
 use gpui::{Context, Window};
 
-use super::WindowView;
+use super::{DOCK, WindowView};
 use crate::attention::is_focused_arrival;
 
 impl WindowView {
@@ -35,7 +35,7 @@ impl WindowView {
         payload.insert("subtitle".into(), subtitle.as_str().into());
         payload.insert("body".into(), body.as_str().into());
         self.emit("notification.created", Some(ws), Some(surface), payload, cx);
-        let selected = ws == self.workspaces.selected();
+        let selected = self.on_screen(ws);
         let focused = is_focused_arrival(
             window.is_window_active(),
             selected,
@@ -82,7 +82,7 @@ impl WindowView {
         window: &Window,
         cx: &mut Context<Self>,
     ) {
-        if window.is_window_active() && ws == self.workspaces.selected() {
+        if window.is_window_active() && self.on_screen(ws) {
             self.read_surface(ws, surface, cx);
         }
     }
@@ -143,7 +143,7 @@ impl WindowView {
             return false;
         };
         let (ws, surface) = (n.workspace, n.surface);
-        let Some(view) = self.views.get(&ws).cloned() else {
+        let Some(view) = self.view_of(ws).cloned() else {
             return false;
         };
         if view.read(cx).terminal(surface).is_none() {
@@ -152,7 +152,7 @@ impl WindowView {
         // Target tab first: selecting the workspace reads its active surface, which must be
         // this one, not whichever pane was active there before.
         view.update(cx, |v, cx| v.focus_surface(surface, window, cx));
-        if ws != self.workspaces.selected() {
+        if ws == DOCK || ws != self.workspaces.selected() {
             self.select(ws, window, cx);
         }
         let read = self.notifications.mark_read(id);
@@ -188,32 +188,42 @@ impl WindowView {
         cx.notify();
     }
 
-    /// Ring state for the selected (the only drawn) workspace.
+    /// Ring state for the selected (the only drawn) workspace and the Dock.
     pub(super) fn push_attention(&mut self, cx: &mut Context<Self>) {
-        let ws = self.workspaces.selected();
-        let Some(view) = self.views.get(&ws).cloned() else {
-            return;
-        };
-        let ring: HashSet<SurfaceId> = view
-            .read(cx)
-            .layout()
-            .surfaces()
-            .into_iter()
-            .filter(|s| self.notifications.shows_ring(ws, *s))
-            .collect();
-        view.update(cx, |v, cx| v.set_attention(ring, cx));
+        for ws in [self.workspaces.selected(), DOCK] {
+            let Some(view) = self.view_of(ws).cloned() else {
+                continue;
+            };
+            let ring: HashSet<SurfaceId> = view
+                .read(cx)
+                .layout()
+                .surfaces()
+                .into_iter()
+                .filter(|s| self.notifications.shows_ring(ws, *s))
+                .collect();
+            view.update(cx, |v, cx| v.set_attention(ring, cx));
+        }
+    }
+
+    /// The selected workspace, or the Dock while the right sidebar shows it.
+    fn on_screen(&self, ws: WorkspaceId) -> bool {
+        if ws == DOCK {
+            self.right_sidebar_open && self.right_mode == super::dock::RightMode::Dock
+        } else {
+            ws == self.workspaces.selected()
+        }
     }
 
     fn flash(&mut self, ws: WorkspaceId, surface: SurfaceId, cx: &mut Context<Self>) {
-        if ws == self.workspaces.selected()
-            && let Some(view) = self.views.get(&ws).cloned()
+        if self.on_screen(ws)
+            && let Some(view) = self.view_of(ws).cloned()
         {
             view.update(cx, |v, cx| v.flash(surface, cx));
         }
     }
 
     fn active_surface(&self, ws: WorkspaceId, cx: &Context<Self>) -> Option<SurfaceId> {
-        Some(self.views.get(&ws)?.read(cx).layout().active_surface())
+        Some(self.view_of(ws)?.read(cx).layout().active_surface())
     }
 }
 

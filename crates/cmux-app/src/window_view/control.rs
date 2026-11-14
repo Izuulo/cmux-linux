@@ -13,11 +13,14 @@ use cmux_ipc::snapshot::{GroupSnap, PaneSnap, Snapshot, SurfSnap, Target, WsSnap
 use cmux_ipc::wire::{Reply, RpcError};
 use cmux_term::ghostty_vt::KeyAction;
 use futures::channel::mpsc::UnboundedReceiver;
-use gpui::{App, Context, Keystroke, Modifiers, Window};
+use gpui::{
+    App, Context, Keystroke, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    PlatformInput, ScrollDelta, ScrollWheelEvent, TouchPhase, Window, point, px,
+};
 use serde_json::{Map, Value, json};
 
-use super::WindowView;
-use crate::workspace::SplitFailed;
+use super::{DOCK, WindowView};
+use crate::workspace::{SplitFailed, WorkspaceView};
 
 /// What a new shell needs to find the app: shared by the window and its workspaces.
 pub(crate) struct ShellEnv {
@@ -107,6 +110,29 @@ pub(super) fn start_server() -> Option<(Server, UnboundedReceiver<Request>)> {
     }
 }
 
+/// A workspace's (or the Dock's) panes as the socket sees them; handles keyed `(ws, id)`.
+fn panes_of(h: &mut Handles, ws: u64, view: &WorkspaceView, cx: &App) -> Vec<PaneSnap> {
+    view.layout()
+        .panes()
+        .into_iter()
+        .map(|p| PaneSnap {
+            key: p.id.0,
+            handle: h.handle(Kind::Pane, (ws, p.id.0)),
+            selected: p.selected,
+            surfaces: p
+                .tabs
+                .iter()
+                .map(|s| SurfSnap {
+                    key: s.0,
+                    handle: h.handle(Kind::Surface, (ws, s.0)),
+                    title: view.tab_title(*s, cx).to_string(),
+                    browser: view.is_browser(*s),
+                })
+                .collect(),
+        })
+        .collect()
+}
+
 fn require(params: &Map<String, Value>, key: &str) -> Result<(), RpcError> {
     match params.get(key) {
         Some(Value::String(s)) if !s.is_empty() => Ok(()),
@@ -127,28 +153,10 @@ impl WindowView {
             .list()
             .iter()
             .filter_map(|w| {
-                let view = self.views.get(&w.id)?.read(cx);
+                let view = self.view_of(w.id)?.read(cx);
                 let layout = view.layout();
                 let ws = w.id.0;
-                let panes: Vec<PaneSnap> = layout
-                    .panes()
-                    .into_iter()
-                    .map(|p| PaneSnap {
-                        key: p.id.0,
-                        handle: h.handle(Kind::Pane, (ws, p.id.0)),
-                        selected: p.selected,
-                        surfaces: p
-                            .tabs
-                            .iter()
-                            .map(|s| SurfSnap {
-                                key: s.0,
-                                handle: h.handle(Kind::Surface, (ws, s.0)),
-                                title: view.tab_title(*s, cx).to_string(),
-                                browser: view.is_browser(*s),
-                            })
-                            .collect(),
-                    })
-                    .collect();
+                let panes = panes_of(&mut h, ws, view, cx);
                 let focused = layout.focused().0;
                 Some(WsSnap {
                     key: ws,
@@ -189,11 +197,27 @@ impl WindowView {
                     .collect(),
             })
             .collect();
+        let dock = self.dock.as_ref().map(|d| {
+            let view = d.read(cx);
+            let panes = panes_of(&mut h, DOCK.0, view, cx);
+            let focused = view.layout().focused().0;
+            WsSnap {
+                key: DOCK.0,
+                handle: window.clone(),
+                title: "Dock".into(),
+                custom_title: None,
+                cwd: view.active_cwd(cx),
+                ports: Vec::new(),
+                focused_pane: panes.iter().position(|p| p.key == focused).unwrap_or(0),
+                panes,
+            }
+        });
         Snapshot {
             window,
             selected,
             workspaces,
             groups,
+            dock,
         }
     }
 
@@ -231,7 +255,7 @@ impl WindowView {
                 let ws = snap.workspace(params)?;
                 let pane = snap.pane(ws, params)?;
                 let id = WorkspaceId(ws.key);
-                if let Some(view) = self.views.get(&id).cloned() {
+                if let Some(view) = self.view_of(id).cloned() {
                     view.update(cx, |v, cx| v.focus_pane(PaneId(pane.key), window, cx));
                 }
                 if id != self.workspaces.selected() {
@@ -247,7 +271,7 @@ impl WindowView {
                 let t = snap.surface(params)?;
                 let id = WorkspaceId(t.ws.key);
                 // Target tab first, as in `jump_to`: selecting reads the active surface.
-                if let Some(view) = self.views.get(&id).cloned() {
+                if let Some(view) = self.view_of(id).cloned() {
                     view.update(cx, |v, cx| {
                         v.focus_surface(SurfaceId(t.surface.key), window, cx)
                     });
@@ -276,7 +300,7 @@ impl WindowView {
                 require(params, "surface_id")?;
                 let t = snap.surface(params)?;
                 let reply = snap.target_payload(&t);
-                if let Some(view) = self.views.get(&WorkspaceId(t.ws.key)).cloned() {
+                if let Some(view) = self.view_of(WorkspaceId(t.ws.key)).cloned() {
                     view.update(cx, |v, cx| {
                         v.close_surface(SurfaceId(t.surface.key), window, cx)
                     });
@@ -331,6 +355,41 @@ impl WindowView {
                 });
                 Ok(json!({}))
             }
+            // Ours, next to it: scripted UI checks click here (M15). Window logical pixels.
+            "debug.mouse.simulate" => {
+                let events = mouse_events(params)?;
+                let other = cx.active_window().filter(|w| *w != window.window_handle());
+                window.defer(cx, move |window, cx| match other {
+                    Some(w) => {
+                        w.update(cx, |_, w, cx| dispatch_paced(w, events, cx)).ok();
+                    }
+                    None => dispatch_paced(window, events, cx),
+                });
+                Ok(json!({}))
+            }
+            // Where scripted checks click (M15): every id'd element in the last frame of the
+            // window a click would reach. Debug builds only (gpui's inspector ids).
+            #[cfg(debug_assertions)]
+            "debug.ui.bounds" => {
+                let filter = params.get("match").and_then(Value::as_str).unwrap_or("");
+                let other = cx.active_window().filter(|w| *w != window.window_handle());
+                let all = match other {
+                    Some(w) => w
+                        .update(cx, |_, w, _| w.debug_element_bounds())
+                        .unwrap_or_default(),
+                    None => window.debug_element_bounds(),
+                };
+                let rows: Vec<Value> = all
+                    .into_iter()
+                    .filter(|(id, _)| id.contains(filter))
+                    .map(|(id, b)| {
+                        let (o, sz) = (b.origin, b.size);
+                        json!({"id": id, "x": f32::from(o.x), "y": f32::from(o.y),
+                               "w": f32::from(sz.width), "h": f32::from(sz.height)})
+                    })
+                    .collect();
+                Ok(json!({ "elements": rows }))
+            }
             _ => Err(RpcError::new("method_not_found", "Unknown method")),
         }
     }
@@ -363,7 +422,7 @@ impl WindowView {
         let old = self.workspaces.selected();
         let cwd = text("cwd")
             .map(str::to_string)
-            .or_else(|| self.views.get(&old).and_then(|v| v.read(cx).active_cwd(cx)));
+            .or_else(|| self.view_of(old).and_then(|v| v.read(cx).active_cwd(cx)));
         let id = self.workspaces.add_after_selected();
         if !self.make_view(id, cwd, remote, window, cx) {
             self.workspaces.close(id);
@@ -393,7 +452,7 @@ impl WindowView {
             // The new view focused its shell as it started: give focus back (plan D6).
             self.workspaces.select(old);
             view.update(cx, |v, cx| v.set_active(false, cx));
-            if let Some(v) = self.views.get(&old) {
+            if let Some(v) = self.view_of(old) {
                 v.update(cx, |v, cx| v.focus_active(window, cx));
             }
             cx.notify();
@@ -434,7 +493,7 @@ impl WindowView {
         let focus = flag(params, "focus");
         let t = snap.surface(params)?;
         let id = WorkspaceId(t.ws.key);
-        let Some(view) = self.views.get(&id).cloned() else {
+        let Some(view) = self.view_of(id).cloned() else {
             return Err(RpcError::new("not_found", "Workspace not found"));
         };
         let input = params.get("initial_input").and_then(Value::as_str);
@@ -505,7 +564,7 @@ impl WindowView {
         }
         let t = snap.surface(params)?;
         let id = WorkspaceId(t.ws.key);
-        let Some(view) = self.views.get(&id).cloned() else {
+        let Some(view) = self.view_of(id).cloned() else {
             return Err(RpcError::new("not_found", "Workspace not found"));
         };
         let pane = PaneId(t.pane.key);
@@ -554,8 +613,7 @@ impl WindowView {
             return Err(RpcError::new("invalid_params", "Surface is not a terminal"));
         }
         let Some(term) = self
-            .views
-            .get(&WorkspaceId(t.ws.key))
+            .view_of(WorkspaceId(t.ws.key))
             .and_then(|v| v.read(cx).terminal(SurfaceId(t.surface.key)).cloned())
         else {
             return Err(RpcError::new("not_found", "Surface not found"));
@@ -808,4 +866,115 @@ fn type_when_up(
         }
     })
     .detach();
+}
+
+/// One event per frame: gpui hit-tests against the last drawn frame, so a press right after
+/// a move would miss what the move hovered.
+fn dispatch_paced(window: &mut Window, events: Vec<PlatformInput>, cx: &mut App) {
+    let mut events = events.into_iter();
+    let Some(first) = events.next() else { return };
+    window.dispatch_event(first, cx);
+    let rest: Vec<_> = events.collect();
+    if !rest.is_empty() {
+        window.refresh();
+        window.on_next_frame(move |window, cx| dispatch_paced(window, rest, cx));
+    }
+}
+
+/// `debug.mouse.simulate` params → the events a real pointer would send. `kind` is
+/// `click` (default: move, down, up), `move`, `down`, `up` or `scroll` (`dy` lines, + = down).
+fn mouse_events(params: &Map<String, Value>) -> Result<Vec<PlatformInput>, RpcError> {
+    let num = |k: &str| params.get(k).and_then(Value::as_f64);
+    let (Some(x), Some(y)) = (num("x"), num("y")) else {
+        return Err(RpcError::new("invalid_params", "x and y are required"));
+    };
+    let position = point(px(x as f32), px(y as f32));
+    let button = match params
+        .get("button")
+        .and_then(Value::as_str)
+        .unwrap_or("left")
+    {
+        "left" => MouseButton::Left,
+        "right" => MouseButton::Right,
+        "middle" => MouseButton::Middle,
+        _ => {
+            return Err(RpcError::new(
+                "invalid_params",
+                "button must be left, right or middle",
+            ));
+        }
+    };
+    let click_count = params
+        .get("click_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(1) as usize;
+    let modifiers = Modifiers::default();
+    let pressed = |b| MouseMoveEvent {
+        position,
+        pressed_button: b,
+        modifiers,
+    };
+    let down = PlatformInput::MouseDown(MouseDownEvent {
+        button,
+        position,
+        modifiers,
+        click_count,
+        first_mouse: false,
+    });
+    let up = PlatformInput::MouseUp(MouseUpEvent {
+        button,
+        position,
+        modifiers,
+        click_count,
+    });
+    Ok(
+        match params
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or("click")
+        {
+            "click" => vec![PlatformInput::MouseMove(pressed(None)), down, up],
+            "move" => vec![PlatformInput::MouseMove(pressed(None))],
+            // A drag step: move with the button held.
+            "drag" => vec![PlatformInput::MouseMove(pressed(Some(button)))],
+            "down" => vec![down],
+            "up" => vec![up],
+            "scroll" => vec![PlatformInput::ScrollWheel(ScrollWheelEvent {
+                position,
+                delta: ScrollDelta::Lines(point(0., -num("dy").unwrap_or(1.) as f32)),
+                modifiers,
+                touch_phase: TouchPhase::Moved,
+            })],
+            _ => return Err(RpcError::new("invalid_params", "unknown kind")),
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn params(v: Value) -> Map<String, Value> {
+        v.as_object().unwrap().clone()
+    }
+
+    #[test]
+    fn mouse_click_is_move_down_up_at_the_point() {
+        let ev = mouse_events(&params(json!({"x": 10, "y": 20.5, "button": "right"}))).unwrap();
+        assert!(matches!(ev[0], PlatformInput::MouseMove(_)));
+        let PlatformInput::MouseDown(d) = &ev[1] else {
+            panic!()
+        };
+        assert_eq!(d.position, point(px(10.), px(20.5)));
+        assert_eq!(d.button, MouseButton::Right);
+        assert!(matches!(ev[2], PlatformInput::MouseUp(_)));
+        assert_eq!(ev.len(), 3);
+    }
+
+    #[test]
+    fn mouse_bad_params_are_rejected() {
+        assert!(mouse_events(&params(json!({"x": 1}))).is_err());
+        assert!(mouse_events(&params(json!({"x": 1, "y": 1, "kind": "wiggle"}))).is_err());
+        assert!(mouse_events(&params(json!({"x": 1, "y": 1, "button": "fourth"}))).is_err());
+    }
 }
